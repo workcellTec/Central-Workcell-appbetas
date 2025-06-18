@@ -162,7 +162,7 @@
         </div>
         <div class="mb-3 d-flex justify-content-center flex-wrap">
             <label class="me-3"><input type="radio" name="modeFechar" value="total" id="modeFecharTotal" checked/> Valor total da venda</label>
-            <label><input type="radio" name="modeFechar" value="parcela" id="modeFecharParcela"/> Modo parcelas</label>
+            <label class="me-3"><input type="radio" name="modeFechar" value="parcela" id="modeFecharParcela"/> Modo parcelas</label>
         </div>
         <div class="w-100 d-flex justify-content-center" id="fecharVendaInputs"></div>
         <div class="w-100 d-flex justify-content-center" id="resultFecharVenda"></div>
@@ -341,7 +341,6 @@
             appId: "1:149501336928:web:05ff020a37756c6bd9d205"
         };
 
-        // ========== ESTRUTURA DE TAXAS ATUALIZADA ==========
         const rates = {
             pagbank: {
                 debito: 0.99,
@@ -352,11 +351,10 @@
                     debito: 0.75,
                     credito: [2.69, 3.94, 4.46, 4.98, 5.49, 5.99, 6.51, 6.99, 7.51, 7.99, 8.49, 8.99]
                 },
-                mastercard: { // Infinity: Visa e Master têm as mesmas taxas
+                mastercard: {
                     debito: 0.75,
                     credito: [2.69, 3.94, 4.46, 4.98, 5.49, 5.99, 6.51, 6.99, 7.51, 7.99, 8.49, 8.99]
                 },
-                // Hiper, Hipercard, Elo, Amex usam as mesmas taxas na Infinity
                 hiper: { 
                     debito: 1.88,
                     credito: [4.46, 5.81, 6.32, 6.83, 7.33, 7.83, 8.34, 8.83, 9.32, 9.81, 10.29, 10.77]
@@ -373,7 +371,7 @@
                 },
                 elo: { 
                     debito: 1.69,
-                    credito: [3.65, 5.43, 6.11, 6.70, 7.17, 8.15, 9.13, 10.49, 11.17, 11.85, 12.53, 12.66, 13.39, 14.57, 15.25, 15.93, 16.61, 17.23, 17.97, 18.65]
+                    credito: [3.65, 5.43, 6.11, 6.70, 7.17, 8.15, 9.13, 9.81, 10.49, 11.17, 11.85, 12.53, 12.66, 13.39, 14.57, 15.25, 15.93, 16.61, 17.23, 17.97, 18.65]
                 },
                 amex: {
                     debito: null,
@@ -385,7 +383,6 @@
                 }
             }
         };
-
 
         // ========== FUNÇÕES UTILITÁRIAS E DE UI ==========
 
@@ -402,7 +399,7 @@
         
         function parseBrazilianCurrencyToFloat(valueString) {
             if (typeof valueString !== 'string') valueString = String(valueString);
-            let cleaned = valueString.replace(/R\$?\s?/g, '').trim();
+            let cleaned = valueString.replace(/R\$?\s?|\$\s?/g, '').trim();
             cleaned = cleaned.replace(/\./g, '').replace(',', '.');
             return parseFloat(cleaned);
         }
@@ -486,10 +483,18 @@
         }
 
         function toggleFecharVendaMode() {
+            const installments = parseInt(document.getElementById("installments1").value, 10);
+            const isDebit = installments === 0;
+
+            if (isDebit) {
+                document.getElementById('modeFecharTotal').checked = true;
+            }
+            
             const mode = document.querySelector('input[name="modeFechar"]:checked').value;
             const fecharVendaInputs = document.getElementById("fecharVendaInputs");
-            const inputId = mode === "total" ? "fecharVendaValue" : "fecharVendaValueParcela";
-            const placeholder = mode === "total" ? "Digite o valor total da venda" : "Digite o valor da parcela";
+            const inputId = (mode === "total" || isDebit) ? "fecharVendaValue" : "fecharVendaValueParcela";
+            const placeholder = (mode === "total" || isDebit) ? "Digite o valor total da venda" : "Digite o valor da parcela";
+            
             fecharVendaInputs.innerHTML = `<input type="number" step="0.01" min="0" id="${inputId}" class="form-control form-control-lg mb-3" placeholder="${placeholder}" style="max-width: 400px;"/>`;
             document.getElementById(inputId).addEventListener('input', calculateFecharVenda);
             calculateFecharVenda();
@@ -503,18 +508,16 @@
             }
 
             if (machine === 'infinity') {
-                // Agrupando bandeiras da Infinity
                 if (['visa', 'mastercard'].includes(brand)) {
                     const rateSet = rates.infinity.visa;
                     return installments === 0 ? rateSet.debito : rateSet.credito[installments - 1];
-                } else { // Hiper, Hipercard, Elo, Amex
+                } else { 
                     const rateSet = rates.infinity.hiper;
                     return installments === 0 ? rateSet.debito : rateSet.credito[installments - 1];
                 }
             }
 
             if (machine === 'valorante') {
-                 // Trata 'hiper' como 'hipercard' para consistência
                 const effectiveBrand = brand === 'hiper' ? 'hipercard' : brand;
                 const rateSet = rates.valorante[effectiveBrand];
                 if (!rateSet) return undefined;
@@ -524,17 +527,20 @@
         }
 
         function calculateFecharVenda() {
+            const installments = parseInt(document.getElementById("installments1").value, 10);
+            const isDebit = installments === 0;
+            const mode = isDebit ? 'total' : document.querySelector('input[name="modeFechar"]:checked').value;
+            
             const machine = document.getElementById("machine1").value;
             const brand = document.getElementById("brand1").value;
-            const mode = document.querySelector('input[name="modeFechar"]:checked').value;
-            const installments = parseInt(document.getElementById("installments1").value);
             let value;
 
             if (mode === "total") {
-                value = parseFloat(document.getElementById("fecharVendaValue")?.value);
-            } else {
+                 const inputEl = document.getElementById("fecharVendaValue") || document.getElementById("fecharVendaValueParcela");
+                 value = parseFloat(inputEl?.value);
+            } else { 
                 const parcela = parseFloat(document.getElementById("fecharVendaValueParcela")?.value);
-                if (isNaN(parcela) || parcela <= 0 || installments === 0) {
+                if (isNaN(parcela) || parcela <= 0) {
                     document.getElementById("resultFecharVenda").innerHTML = "";
                     return;
                 }
@@ -693,28 +699,25 @@
         
         function filterAdminProducts() {
             const searchTerm = document.getElementById('adminSearchInput').value;
-            const normalizedSearch = normalizeString(searchTerm);
-            if (!normalizedSearch) {
+            if (!fuse || !searchTerm) {
                 renderAdminTable(products);
                 return;
             }
-            const keywords = normalizedSearch.split(' ').filter(w => w);
-            const filtered = products.filter(p => {
-                const productName = normalizeString(p.nome);
-                return keywords.every(kw => productName.includes(kw));
-            });
-            renderAdminTable(filtered);
+            const results = fuse.search(searchTerm);
+            renderAdminTable(results.map(r => r.item));
         }
 
         async function importFromPasteOrFile(content, sourceName) {
             const lines = content.split('\n').filter(line => line.trim());
             const productsToImport = [];
             lines.forEach(line => {
-                const match = line.match(/^(.*?)\s*[- ]*\s*([\d.,]+)$/);
+                const match = line.match(/^(.*?)\s*[- ]*(?:R\$?\s*)?([\d.,]+)$/i);
                 if (match) {
                     const nome = match[1].trim();
                     const valor = parseBrazilianCurrencyToFloat(match[2]);
-                    if (nome && !isNaN(valor)) productsToImport.push({ nome, valor });
+                    if (nome && !isNaN(valor)) {
+                        productsToImport.push({ nome, valor });
+                    }
                 }
             });
 
@@ -804,22 +807,25 @@
             const command = document.getElementById('naturalCommandInput').value.toLowerCase();
             if (!command) return;
 
-            const valueRegex = /(?:para|por|de|valendo|no valor de|pra)\s*([RrSs\$]?\s*[\d.,]+)$|([RrSs\$]?\s*[\d.,]+)$/i;
-            const valueMatch = command.match(valueRegex);
+            const numberRegex = /(?:R\$?\s*|\$\s*)?[\d.,]+/g;
+            const matches = command.match(numberRegex);
             
-            if (!valueMatch) {
-                displayMessage('commandStatus', 'Comando inválido. Não foi possível encontrar um valor. Ex: "alterar iphone 13 para 3500"', 'warning');
+            if (!matches) {
+                displayMessage('commandStatus', 'Comando inválido. Não foi possível encontrar um valor numérico.', 'warning');
                 return;
             }
 
-            const newValue = parseBrazilianCurrencyToFloat(valueMatch[1] || valueMatch[2]);
+            const valueStr = matches.pop();
+            const newValue = parseBrazilianCurrencyToFloat(valueStr);
             if (isNaN(newValue)) {
-                displayMessage('commandStatus', 'Valor monetário inválido no comando.', 'warning');
+                displayMessage('commandStatus', `Valor "${valueStr}" não é um número válido.`, 'warning');
                 return;
             }
 
-            let productNameQuery = command.replace(valueMatch[0], '').trim();
-            const actionWords = ['aumentar', 'baixar', 'alterar', 'mudar', 'trocar', 'preço', 'valor', 'do', 'da', 'o', 'a', 'de', 'para', 'pra'];
+            const valueIndex = command.lastIndexOf(valueStr);
+            let productNameQuery = command.substring(0, valueIndex).trim();
+
+            const actionWords = ['mudar', 'aumentar', 'baixar', 'alterar', 'preço', 'valor', 'do', 'da', 'o', 'a', 'de', 'para', 'pra'];
             const regexRemove = new RegExp(`\\b(${actionWords.join('|')})\\b`, 'gi');
             productNameQuery = productNameQuery.replace(regexRemove, '').replace(/\s+/g, ' ').trim();
 
@@ -935,7 +941,18 @@
             setupMachineListener('machine2', calculateRepassarValores, updateBrandVisibility);
             setupMachineListener('machine3', calculateAparelho, updateBrandVisibilityAparelho);
 
-            ['brand1', 'installments1'].forEach(id => document.getElementById(id).addEventListener('change', calculateFecharVenda));
+            document.getElementById('installments1').addEventListener('change', () => {
+                const isDebit = parseInt(document.getElementById('installments1').value, 10) === 0;
+                const modeParcelaRadio = document.getElementById('modeFecharParcela');
+                modeParcelaRadio.disabled = isDebit;
+                if (isDebit) {
+                    document.getElementById('modeFecharTotal').checked = true;
+                }
+                toggleFecharVendaMode();
+                calculateFecharVenda();
+            });
+
+            ['brand1'].forEach(id => document.getElementById(id).addEventListener('change', calculateFecharVenda));
             document.querySelectorAll('input[name="modeFechar"]').forEach(radio => radio.addEventListener('change', toggleFecharVendaMode));
             document.getElementById('brand2').addEventListener('change', calculateRepassarValores);
             document.getElementById('repassarValue').addEventListener('input', calculateRepassarValores);
@@ -991,5 +1008,3 @@
     </script>
 </body>
 </html>
-
-By Brendon V2.1
