@@ -1,0 +1,1662 @@
+<meta name='viewport' content='width=device-width, initial-scale=1'/><meta content="width=device-width, initial-scale=1" name="viewport"/>
+<!DOCTYPE html>
+
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<title>Calcule Taxas By Brendon</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<style>
+    /* GARANTINDO QUE HTML E BODY OCUPEM A TELA INTEIRA SEM MARGENS/PADDINGS */
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%; /* Garante que html e body ocupem 100% da altura */
+      width: 100%;  /* Garante que html e body ocupem 100% da largura */
+      overflow-x: hidden; /* Permite rolagem vertical, mas previne horizontal */
+      box-sizing: border-box; /* Garante que padding e border sejam incluídos no cálculo de width/height */
+    }
+
+    body {
+      background-color: #1a1a1a; /* Fundo padrão do body (para outras seções/quando nenhum tema está ativo) */
+      color: white;
+      font-family: Arial, sans-serif;
+      /* O padding de 20px foi removido daqui para evitar bordas pretas */
+    }
+
+    /* Animação para o efeito de "fumaça" */
+    @keyframes fumaca {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    /* Estilos base para a classe .container (aplicados a todas as seções) */
+    .container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        box-sizing: border-box; /* Importante para o controle de tamanho */
+    }
+
+    /* ESTILOS ESPECÍFICOS PARA A TELA INICIAL (#mainMenu) - Ocupando 100% da tela */
+    #mainMenu {
+      width: 100vw;   /* Ocupa 100% da largura da viewport */
+      height: 100vh;  /* Ocupa 100% da altura da viewport */
+      max-width: none; /* Remove qualquer limite de largura imposto pelo .container */
+      min-height: 100vh; /* Garante que ocupe pelo menos 100% da altura da viewport */
+      margin: 0;      /* Remove quaisquer margens herdadas */
+      padding: 0;     /* Remove quaisquer paddings herdados, para preencher totalmente */
+      
+      /* Gradiente e animação (conforme solicitado) */
+      background: linear-gradient(-45deg, #1abc9c, #3498db, #16a085, #2980b9);
+      background-size: 400% 400%;
+      animation: fumaca 20s ease infinite;
+
+      /* Assegura que não há bordas arredondadas ou sombras visíveis */
+      border-radius: 0;
+      box-shadow: none;
+      
+      overflow: hidden; /* Mantém o overflow hidden apenas para a tela inicial se desejar */
+    }
+
+    /* Estilos para os outros containers (TODAS AS OUTRAS ABAS, EXCETO A INICIAL) */
+    .container:not(#mainMenu) {
+        min-height: calc(100vh - 40px); /* Mantém o min-height para outras seções */
+        padding: 15px; /* Padding interno para o conteúdo das outras seções */
+        max-width: 500px; /* Limita a largura das outras seções */
+        margin: auto; /* Centraliza as outras seções */
+        margin-top: 20px; /* Margem para o topo em outras seções */
+        margin-bottom: 20px; /* Margem para a base em outras seções */
+        
+        /* Permite rolagem vertical dentro desses containers se o conteúdo for maior */
+        overflow-y: auto; 
+    }
+
+    /* Garante que elementos com 'hidden' não ocupem espaço */
+    /* Esta classe continua existindo, mas os elementos principais usarão style="display:none" */
+    .hidden {
+      display: none; 
+    }
+    select, input {
+      border-radius: 15px !important;
+    }
+    .single-line {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: 0.95rem; /* você pode ajustar esse tamanho conforme necessário */
+    }
+    
+    .d-grid button {
+        width: 100%; /* Botões ocupam 100% da largura em telas pequenas */
+        max-width: 300px; /* Limite a largura máxima para botões em telas maiores */
+        margin-bottom: 10px; /* Espaçamento entre os botões */
+    }
+    .form-select, .form-control {
+        width: 100%;
+        max-width: 400px; /* Limite a largura máxima dos inputs e selects */
+    }
+    .alert {
+        width: 100%;
+        max-width: 400px;
+    }
+    /* Styles for the Administration section */
+    #administracao.container {
+        max-width: 900px; /* Wider for the table */
+        /* FORÇAR TEMA ESCURO PARA ADMINISTRAÇÃO */
+        background-color: #000 !important; /* Fundo preto do InfinityPay */
+        color: #fff !important; /* Texto branco do InfinityPay */
+    }
+    #administracao .table-dark th, #administracao .table-dark td {
+        color: #fff;
+        background-color: rgba(255, 255, 255, 0.15);
+        border-color: rgba(255, 255, 255, 0.2);
+    }
+    #administracao .table-dark tbody tr:nth-of-type(odd) {
+        background-color: rgba(255, 255, 255, 0.1);
+    }
+    /* Explicitly set text color for inputs in administration tab */
+    #administracao .form-control,
+    #administracao textarea.form-control {
+        background-color: rgba(255, 255, 255, 0.2);
+        color: white !important; /* Ensure text is always white */
+        border: 1px solid rgba(255, 255, 255, 0.3);
+    }
+    #administracao .form-control::placeholder {
+        color: rgba(255, 255, 255, 0.7) !important; /* Ensure placeholder is visible */
+    }
+    #administracao .form-control:focus {
+        background-color: rgba(255, 255, 255, 0.3);
+        border-color: #007bff;
+        box-shadow: 0 0 0 0.25rem rgba(0, 123, 255, 0.25);
+    }
+    #administracao .btn-primary {
+        background-color: #007bff;
+        border-color: #007bff;
+    }
+    #administracao .btn-primary:hover {
+        background-color: #0056b3;
+        border-color: #0056b3;
+    }
+
+    /* Adjusted button colors for admin section to ensure visibility on dark background */
+    #administracao .btn-secondary {
+        background-color: #6c757d; /* Darker secondary for dark background */
+        border-color: #6c757d;
+        color: #fff;
+    }
+    #administracao .btn-secondary:hover {
+        background-color: #5a6268;
+        border-color: #545b62;
+    }
+
+    #administracao .btn-danger {
+        background-color: #dc3545;
+        border-color: #dc3545;
+    }
+    #administracao .btn-danger:hover {
+        background-color: #c82333;
+        border-color: #bd2130;
+    }
+    #administracao .btn-success {
+        background-color: #28a745;
+        border-color: #28a745;
+    }
+    #administracao .btn-success:hover {
+        background-color: #218838;
+        border-color: #1e7e34;
+    }
+    #administracao .btn-info {
+        background-color: #17a2b8;
+        border-color: #17a2b8;
+    }
+    #administracao .btn-info:hover {
+        background-color: #138496;
+        border-color: #117a8b;
+    }
+
+    /* Adjust the new "Excluir todos" button */
+    .btn-danger-lg {
+        background-color: #dc3545;
+        border-color: #dc3545;
+        font-size: 1.25rem;
+        padding: 0.8rem 1.5rem;
+        width: 100%;
+        max-width: 300px;
+        margin-top: 20px;
+    }
+    .btn-danger-lg:hover {
+        background-color: #c82333;
+        border-color: #bd2130;
+    }
+
+
+    /* Ajustes para telas menores */
+    @media (max-width: 576px) {
+        .container:not(#mainMenu) { /* Aplica-se apenas aos outros containers */
+            padding: 10px;
+        }
+        h2, h3 {
+            font-size: 1.5rem; /* Reduz o tamanho da fonte dos títulos */
+        }
+        .btn-lg {
+            font-size: 1rem; /* Reduz o tamanho da fonte dos botões */
+            padding: 0.75rem 1rem;
+        }
+        .row .col-12 {
+            margin-bottom: 10px; /* Adiciona espaçamento entre as colunas empilhadas */
+        }
+    }
+    .user-id-display {
+      position: fixed;
+      bottom: 10px;
+      left: 10px;
+      background-color: rgba(0, 0, 0, 0.6);
+      color: white;
+      padding: 5px 10px;
+      border-radius: 5px;
+      font-size: 0.75rem;
+      z-index: 1000; /* Garante que fique acima de outros elementos */
+    }
+
+    /* Estilos do Modal Customizado */
+    .custom-modal-overlay {
+        display: none; /* ESSA LINHA É CRÍTICA: GARANTE QUE ESTEJA ESCONDIDO POR PADRÃO VIA CSS INLINE */
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.7);
+        justify-content: center; 
+        align-items: center; 
+        z-index: 9999; 
+    }
+
+    .custom-modal-content {
+        background: #fff;
+        padding: 25px;
+        border-radius: 10px;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        text-align: center;
+        max-width: 400px;
+        width: 90%;
+        color: #333; /* Cor do texto dentro do modal */
+    }
+
+    .custom-modal-content h4 {
+        margin-top: 0;
+        margin-bottom: 20px;
+        color: #333;
+    }
+
+    .custom-modal-content input[type="password"] {
+        width: calc(100% - 20px); /* Ajusta largura com padding */
+        padding: 10px;
+        margin-bottom: 15px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        box-sizing: border-box; /* Inclui padding na largura */
+    }
+
+    .custom-modal-content button {
+        margin: 5px;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 1rem;
+    }
+
+    .custom-modal-content .btn-ok {
+        background-color: #007bff;
+        color: white;
+    }
+
+    .custom-modal-content .btn-cancel {
+        background-color: #6c757d;
+        color: white;
+    }
+  </style>
+</head>
+<body>
+<div class="container text-center" id="mainMenu" style="display: flex;">
+<h2 class="mb-4">Bem vindo(a) a calculadora de taxas Workcell,<br/>O que você quer fazer?</h2>
+<div class="d-grid gap-2">
+<button class="btn btn-primary btn-lg" id="openFecharVenda">Fechar uma venda</button>
+<button class="btn btn-dark btn-lg" id="openRepassarValores">Repassar valores</button>
+<button class="btn btn-info btn-lg" id="openCalcularPorAparelho">Calcular por aparelho</button>
+<button class="btn btn-secondary btn-lg" id="openAdministracao">Administração de Produtos</button> <!-- NEW BUTTON -->
+</div>
+</div>
+<div class="container" id="fecharVenda" style="display: none;">
+<h3 class="mb-4">Taxas de Maquininha e Fechamento de Venda</h3>
+<div class="row mb-3 w-100 justify-content-center"> <!-- Adicionado w-100 e justify-content-center -->
+<div class="col-12 col-md-4 mb-3"> <!-- Colunas responsivas -->
+<label>Maquininha</label>
+<select class="form-select" id="machine1">
+<option value="pagbank">PagBank</option>
+<option value="infinity">InfinityPay</option>
+<option value="valorante">Valorante</option>
+</select>
+</div>
+<div class="col-12 col-md-4 mb-3" id="brand1Container" style="display: none;">
+<label>Bandeira</label>
+<select class="form-select" id="brand1">
+<option value="visa">Visa / Master</option>
+<option value="hiper">Hipercard</option>
+<option value="elo">Elo</option>
+<option value="amex">Amex</option>
+</select>
+</div>
+<div class="col-12 col-md-4 mb-3">
+<label>Parcelas</label>
+<select class="form-select" id="installments1"></select>
+</div>
+</div>
+<div class="mb-3 d-flex justify-content-center flex-wrap"> <!-- Flexbox para centralizar e quebrar linha -->
+<label class="me-3"><input checked="" name="modeFechar" type="radio" value="total" id="modeFecharTotal"/> Valor total da venda</label>
+<label><input name="modeFechar" type="radio" value="parcela" id="modeFecharParcela"/> Modo parcelas</label>
+</div>
+<div class="w-100 d-flex justify-content-center" id="fecharVendaInputs"></div>
+<div class="w-100 d-flex justify-content-center" id="resultFecharVenda"></div>
+<button class="btn btn-outline-secondary mt-4" id="backFromFecharVenda">Voltar</button>
+</div>
+<div class="container" id="repassarValores" style="display: none;">
+<h3 class="mb-4">Simulação para Clientes</h3>
+<div class="row mb-3 w-100 justify-content-center">
+<div class="col-12 col-md-6 mb-3">
+<label>Maquininha</label>
+<select class="form-select" id="machine2">
+<option value="pagbank">PagBank</option>
+<option value="infinity">InfinityPay</option>
+<option value="valorante">Valorante</option>
+</select>
+</div>
+<div class="col-12 col-md-6 mb-3" id="brand2Container" style="display: none;">
+<label>Bandeira</label>
+<select class="form-select" id="brand2">
+<option value="visa">Visa / Master</option>
+<option value="hiper">Hipercard</option>
+<option value="elo">Elo</option>
+<option value="amex">Amex</option>
+</select>
+</div>
+</div>
+<input class="form-control form-control-lg mb-3 w-100" id="repassarValue" min="0" placeholder="Digite o valor desejado (líquido)" step="0.01" style="max-width: 400px;" type="number"/>
+<div class="w-100 d-flex flex-column align-items-center" id="resultRepassarValores"></div>
+<button class="btn btn-outline-secondary mt-4" id="backFromRepassarValores">Voltar</button>
+</div>
+<!-- Aba Calcular por Aparelho -->
+<div class="container" id="calcularPorAparelho" style="display: none;">
+<h3 class="mb-4">Calcular por Aparelho</h3>
+<div class="mb-3 w-100" style="max-width: 400px;">
+<label class="form-label" for="aparelhoSearch">Pesquisar Aparelho</label>
+<input class="form-control" id="aparelhoSearch" placeholder="Digite o nome do aparelho" type="text"/>
+</div>
+<div class="row mb-3 w-100 justify-content-center">
+<div class="col-12 col-md-8">
+<label>Aparelho</label>
+<select class="form-select" id="aparelhoSelect">
+<option value="">Selecione um aparelho</option>
+</select>
+</div>
+</div>
+<div class="row mb-3 w-100 justify-content-center">
+<div class="col-12 col-md-6 mb-3">
+<label>Maquininha</label>
+<select class="form-select" id="machine3">
+<option value="pagbank">PagBank</option>
+<option value="infinity">InfinityPay</option>
+<option value="valorante">Valorante</option>
+</select>
+</div>
+<div class="col-12 col-md-6 mb-3" id="brand3Container" style="display: none;">
+<label>Bandeira</label>
+<select class="form-select" id="brand3">
+<option value="visa">Visa / Master</option>
+<option value="hiper">Hipercard</option>
+<option value="elo">Elo</option>
+<option value="amex">Amex</option>
+</select>
+</div>
+</div>
+<div class="w-100 d-flex flex-column align-items-center" id="resultCalcularPorAparelho"></div>
+<button class="btn btn-outline-secondary mt-4" id="backFromCalcularPorAparelho">Voltar</button>
+</div>
+<!-- NEW SECTION: Administração de Produtos -->
+<div class="container" id="administracao" style="display: none;">
+<h3 class="mb-4">Administração de Produtos</h3>
+<div class="alert alert-info mt-3" id="loadingMessage" style="display: none;">
+        Carregando produtos...
+    </div>
+<div class="alert alert-danger mt-3" id="errorMessage" style="display: none;">
+        Ocorreu um erro.
+    </div>
+<div class="mb-4 text-start">
+<h4 class="text-white mb-3">Importar Produtos</h4>
+<div class="mb-3">
+<label class="form-label" for="pasteInput">Colar Lista (Ex: iPhone 14 - 3999.00):</label>
+<textarea class="form-control" id="pasteInput" placeholder="Cole sua lista de produtos aqui, um por linha." rows="5"></textarea>
+</div>
+<button class="btn btn-primary mb-3 me-2" id="importFromPasteBtn">Importar Colados</button>
+<button class="btn btn-secondary mb-3" id="uploadFileBtn">Upload de Arquivo (.txt/.csv)</button>
+<input accept=".txt,.csv" class="d-none" id="fileInput" type="file"/>
+<div class="mt-2" id="importStatus"></div>
+</div>
+<div class="mb-4 text-start">
+<h4 class="text-white mb-3">Pesquisar Produtos</h4>
+<div class="mb-3">
+<input class="form-control" id="adminSearchInput" placeholder="Digite o nome do produto para pesquisar..." type="text"/>
+</div>
+</div>
+<!-- Comando Rápido Input - Título alterado aqui -->
+<div class="mb-4 text-start">
+<h4 class="text-white mb-3">Comando Rápido (IA*)</h4>
+<div class="input-group">
+<input class="form-control" id="naturalCommandInput" placeholder="Ex: baixar valor iPhone 13 para 3399" type="text">
+<button class="btn btn-primary" id="applyNaturalCommand">Aplicar Comando</button>
+</input></div>
+<div class="mt-2" id="commandStatus"></div>
+</div>
+<!-- END Comando Rápido Input -->
+<div class="mb-4 text-start">
+<h4 class="text-white mb-3">Produtos Cadastrados</h4>
+<div class="table-responsive">
+<table class="table table-dark table-striped table-hover">
+<thead>
+<tr>
+<th>Nome do Produto</th>
+<th>Valor</th>
+<th>Ações</th>
+</tr>
+</thead>
+<tbody id="productsTableBody">
+<!-- Products will be loaded here -->
+</tbody>
+</table>
+</div>
+<button class="btn btn-success mt-3" id="addNewProduct">Adicionar Novo Produto</button>
+</div>
+<div class="mb-4 text-start">
+<h4 class="text-white mb-3">Exportar Produtos</h4>
+<button class="btn btn-info me-2" id="exportTxt">Exportar como TXT</button>
+<button class="btn btn-info" id="exportJson">Exportar como JSON</button>
+</div>
+<div class="mb-4 text-start">
+<button class="btn btn-danger-lg" id="deleteAllProductsBtn">Excluir todos os produtos</button>
+</div>
+<button class="btn btn-outline-secondary mt-4" id="backFromAdministracao">Voltar</button>
+</div>
+<!-- END NEW SECTION -->
+<div class="user-id-display" id="userIdDisplay" style="display: none;"></div>
+<!-- Custom Modal HTML Structure -->
+<div class="custom-modal-overlay" id="customModalOverlay" style="display: none;">
+<div class="custom-modal-content">
+<h4 id="customModalMessage"></h4>
+<input class="hidden" id="customModalPasswordInput" placeholder="Digite a senha (se necessário)" type="password">
+<div id="customModalButtons">
+<button class="btn-ok">OK</button>
+<button class="btn-cancel">Cancelar</button>
+</div>
+</input></div>
+</div>
+<!-- END Custom Modal HTML Structure -->
+<script type="module">
+    console.log("Script execution started at top level.");
+
+    // Import the functions you need from the SDKs you need
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-auth.js";
+    // Import Realtime Database functions
+    import { getDatabase, ref, push, update, remove, onValue } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-database.js";
+
+    // Global Firebase instances and user ID
+    let app;
+    let db; // Agora é a instância do Realtime Database
+    let auth;
+    let userId = null;
+    let isAuthReady = false; // Flag to indicate if authentication is complete
+
+    // =====================================================================
+    // SUA CONFIGURAÇÃO FIREBASE INTEGRADA AQUI
+    // =====================================================================
+    const firebaseConfig = {
+      apiKey: "AIzaSyBt0LbXsXZEKlctfuCPM0G5rd8MqnzYNRw",
+      authDomain: "calculadora-de-taxas-b3f1f.firebaseapp.com",
+      databaseURL: "https://calculadora-de-taxas-b3f1f-default-rtdb.firebaseio.com",
+      projectId: "calculadora-de-taxas-b3f1f",
+      storageBucket: "calculadora-de-taxas-b3f1f.firebasestorage.app",
+      messagingSenderId: "149501336928",
+      appId: "1:149501336928:web:05ff020a37756c6bd9d205"
+    };
+
+    const appId = firebaseConfig.projectId; // Atribua o projectId do seu objeto de configuração
+
+    // Esta variável __initial_auth_token é para o ambiente do Canvas.
+    // Em um servidor web externo, ela será nula, e o signInAnonymously(auth) será acionado.
+    const __initial_auth_token = null; // Definido como null para ambiente externo
+    // =====================================================================
+
+    // Firebase initialization and authentication
+    async function initFirebase() {
+        console.log("initFirebase called.");
+        try {
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getDatabase(app); // Inicializa o Realtime Database
+
+            // Sign in with custom token if available, otherwise anonymously
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    userId = user.uid;
+                    isAuthReady = true;
+                    document.getElementById('userIdDisplay').textContent = `User ID: ${userId}`;
+                    document.getElementById('userIdDisplay').style.display = 'block'; // Usar style.display
+                    console.log("Firebase initialized and authenticated. User ID:", userId);
+                    // Load products only after authentication is ready
+                    if (currentSectionId === 'administracao' || currentSectionId === 'calcularPorAparelho') {
+                        loadProductsFromFirestore();
+                    }
+                } else {
+                    console.log("No user found, attempting anonymous sign-in.");
+                    try {
+                        if (__initial_auth_token) { 
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                            console.log("Signed in with custom token.");
+                        } else {
+                            await signInAnonymously(auth);
+                            console.log("Signed in anonymously.");
+                        }
+                    } catch (error) {
+                        console.error("Error during anonymous sign-in:", error);
+                        displayMessage('errorMessage', `Erro de autenticação: ${error.message}. Por favor, verifique a ativação do provedor 'Anonymous' no Firebase.`, 'danger');
+                    }
+                }
+            });
+        } catch (error) {
+            console.error("Failed to initialize Firebase:", error);
+            displayMessage('errorMessage', `Falha na inicialização do Firebase: ${error.message}`, 'danger');
+        }
+    }
+
+    let products = []; 
+    let selectedAparelhoValue = 0; 
+
+    const rates = {
+      pagbank: {
+        debito: 0.99,
+        credito: [2.99, 4.09, 4.78, 5.47, 6.14, 6.81, 7.67, 8.33, 8.98, 9.63, 10.26, 10.90, 12.32, 12.94, 13.56, 14.17, 14.77, 15.37]
+      },
+      infinity: {
+        visa: {
+          debito: 0.75,
+          credito: [2.69, 3.94, 4.46, 4.98, 5.49, 5.99, 6.51, 6.99, 7.51, 7.99, 8.49, 8.99]
+        },
+        hiper: { 
+          debito: 1.88,
+          credito: [4.46, 5.81, 6.32, 6.83, 7.33, 7.83, 8.34, 8.83, 9.32, 9.81, 10.29, 10.77]
+        }
+      },
+      valorante: {
+        visa: {
+          debito: 0.95,
+          credito: [3.45, 4.73, 5.47, 6.08, 6.57, 7.45, 8.43, 9.11, 9.79, 10.47, 11.15, 11.83, 11.96, 12.64, 13.32, 14.00, 14.68, 15.36, 16.04, 16.72, 17.40]
+        },
+        mastercard: {
+          debito: 0.95,
+          credito: [3.45, 4.73, 5.47, 6.08, 6.57, 7.45, 8.43, 9.11, 9.79, 10.47, 11.15, 11.83, 11.96, 12.64, 13.32, 14.00, 14.68, 15.36, 16.04, 16.72, 17.40]
+        },
+        elo: {
+          debito: 1.69,
+          credito: [3.65, 5.43, 6.11, 6.70, 7.17, 8.15, 9.13, 9.81, 11.17, 11.85, 12.53, 12.66, 13.39, 14.57, 15.25, 15.93, 16.61, 17.23, 17.97, 18.65] 
+        },
+        hipercard: {
+          debito: null, // Alterado para null
+          credito: [3.95, 4.93, 5.61, 6.22, 6.71, 7.65, 8.43, 9.11, 9.79, 10.47, 11.15, 11.83, 12.51, 13.19, 13.87, 14.55, 15.23, 15.91, 16.53, 17.21, 17.95]
+        },
+        amex: {
+          debito: null, // Alterado para null
+          credito: [3.95, 4.93, 5.61, 6.22, 6.71, 7.65, 8.43, 9.11, 9.79, 10.47, 11.15, 11.83, 12.51, 13.19, 13.87, 14.55, 15.23, 15.91, 16.53, 17.21, 17.95]
+        }
+      }
+    };
+
+    let currentSectionId = 'mainMenu'; 
+
+    /**
+     * Utility function to normalize strings (convert to lowercase, remove accents, and remove symbols).
+     * @param {string} str - The string to be normalized.
+     * @returns {string} The normalized string.
+     */
+    const normalizeString = str => str
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "") // remove acentos
+      .replace(/[^a-z0-9\s]/gi, "");   // remove símbolos
+
+    /**
+     * Main function to switch between sections.
+     * @param {string} sectionId - The ID of the section to open.
+     * @param {boolean} [fromHistory=false] - True if called from browser history API.
+     */
+    function openSection(sectionId, fromHistory = false) {
+        console.log(`Opening section: ${sectionId}`);
+        // Esconder todas as seções explicitamente
+        document.getElementById("mainMenu").style.display = 'none';
+        document.getElementById("fecharVenda").style.display = 'none';
+        document.getElementById("repassarValores").style.display = 'none';
+        document.getElementById("calcularPorAparelho").style.display = 'none';
+        document.getElementById("administracao").style.display = 'none';
+
+        // Mostrar a seção desejada explicitamente
+        const targetSection = document.getElementById(sectionId);
+        if (targetSection) {
+            targetSection.style.display = 'flex'; // Containers são flex
+        }
+        currentSectionId = sectionId;
+
+        // Gerenciar a classe do body para os temas
+        if (sectionId === 'mainMenu') {
+            document.body.className = ''; 
+        } else if (sectionId === 'administracao') {
+            document.body.className = 'infinity'; 
+        } else {
+            let machineSelectId = '';
+            if (sectionId === 'fecharVenda') machineSelectId = 'machine1';
+            else if (sectionId === 'repassarValores') machineSelectId = 'machine2';
+            else if (sectionId === 'calcularPorAparelho') machineSelectId = 'machine3';
+            
+            if (machineSelectId) {
+                updateTheme(document.getElementById(machineSelectId).value);
+            }
+        }
+
+        if (!fromHistory) {
+            history.pushState({ sectionId: sectionId }, '', `#${sectionId}`);
+        }
+        
+        // Executa funções de inicialização específicas para cada seção
+        if (sectionId === 'fecharVenda') {
+            updateInstallmentsOptions();
+            updateBrandVisibility(); 
+            toggleFecharVendaMode(); // Esta função agora anexa os listeners de input
+            autoCalculateFecharVenda();
+        } else if (sectionId === 'repassarValores') {
+            updateBrandVisibility();
+            calculateRepassarValores();
+        } else if (sectionId === 'calcularPorAparelho') {
+            document.getElementById('aparelhoSearch').value = '';
+            loadProductsFromFirestore(); 
+            updateBrandVisibilityAparelho();
+        } else if (sectionId === 'administracao') {
+            loadProductsFromFirestore(); 
+            document.getElementById('adminSearchInput').value = '';
+            document.getElementById('naturalCommandInput').value = '';
+        }
+    }
+
+    function updateTheme(machine) {
+      document.body.className = machine;
+    }
+
+    function updateInstallmentsOptions() {
+      const machine = document.getElementById("machine1").value;
+      const installments = document.getElementById("installments1");
+      installments.innerHTML = '<option value="0">Débito</option>'; 
+      let max = 0;
+      if(machine === "pagbank") max = 18;
+      else if(machine === "infinity") max = 12;
+      else if(machine === "valorante") max = 21;
+
+      for (let i = 1; i <= max; i++) {
+        const opt = document.createElement("option");
+        opt.value = i;
+        opt.textContent = `${i}x`;
+        installments.appendChild(opt);
+      }
+    }
+
+    // Função unificada para atualizar a visibilidade das bandeiras
+    function updateBrandVisibility() {
+      const machine1 = document.getElementById("machine1");
+      const brand1Container = document.getElementById("brand1Container");
+      if (machine1 && brand1Container) {
+          if (machine1.value === "infinity" || machine1.value === "valorante") {
+              brand1Container.style.display = 'block'; 
+          } else {
+              brand1Container.style.display = 'none'; 
+          }
+      }
+      
+      const machine2 = document.getElementById("machine2");
+      const brand2Container = document.getElementById("brand2Container");
+      if (machine2 && brand2Container) {
+          if (machine2.value === "infinity" || machine2.value === "valorante") {
+              brand2Container.style.display = 'block'; 
+          } else {
+              brand2Container.style.display = 'none'; 
+          }
+      }
+    }
+
+    // Função específica para a visibilidade das bandeiras na aba "Calcular por Aparelho"
+    function updateBrandVisibilityAparelho() {
+        const machine3 = document.getElementById("machine3");
+        const brand3Container = document.getElementById("brand3Container");
+        if (machine3 && brand3Container) {
+            if (machine3.value === "infinity" || machine3.value === "valorante") {
+                brand3Container.style.display = 'block'; 
+            } else {
+                brand3Container.style.display = 'none'; 
+            }
+        }
+        calculateAparelho(); 
+    }
+
+    function toggleFecharVendaMode() {
+      const mode = document.querySelector('input[name="modeFechar"]:checked').value;
+      const fecharVendaInputs = document.getElementById("fecharVendaInputs");
+      fecharVendaInputs.innerHTML = "";
+      let inputElement;
+
+      if (mode === "total") {
+        fecharVendaInputs.innerHTML = `<input type="number" step="0.01" min="0" id="fecharVendaValue" class="form-control form-control-lg mb-3" placeholder="Digite o valor total da venda" style="max-width: 400px;"/>`;
+        inputElement = document.getElementById('fecharVendaValue');
+      } else {
+        fecharVendaInputs.innerHTML = `
+          <input type="number" step="0.01" min="0" id="fecharVendaValueParcela" class="form-control form-control-lg mb-3" placeholder="Digite o valor da parcela" style="max-width: 400px;"/>
+        `;
+        inputElement = document.getElementById('fecharVendaValueParcela');
+      }
+
+      // Adicionar o event listener `input` APÓS o elemento ser criado no DOM
+      if (inputElement) {
+          inputElement.addEventListener('input', autoCalculateFecharVenda);
+      }
+      autoCalculateFecharVenda(); 
+    }
+
+    function autoCalculateFecharVenda() {
+      setTimeout(calculateFecharVenda, 50); 
+    }
+
+    function calculateFecharVenda() {
+      const machine = document.getElementById("machine1").value;
+      const brand = document.getElementById("brand1").value || "visa";
+      const mode = document.querySelector('input[name="modeFechar"]:checked').value;
+      const installments = parseInt(document.getElementById("installments1").value);
+      let value;
+
+      if (mode === "total") {
+        value = parseFloat(document.getElementById("fecharVendaValue")?.value);
+      } else {
+        const parcela = parseFloat(document.getElementById("fecharVendaValueParcela")?.value);
+        if (isNaN(parcela) || parcela <= 0) {
+          document.getElementById("resultFecharVenda").innerHTML = "";
+          return;
+        }
+        value = parcela * (installments === 0 ? 1 : installments);
+      }
+
+      if (isNaN(value) || value <= 0) {
+        document.getElementById("resultFecharVenda").innerHTML = "";
+        return;
+      }
+
+      let tax = 0;
+      if (machine === "pagbank") {
+        tax = installments === 0 ? rates.pagbank.debito : rates.pagbank.credito[installments - 1];
+      } else if (machine === "infinity") {
+        let infinityBrandActual = brand;
+        if (infinityBrandActual === 'hiper' || infinityBrandActual === 'elo' || infinityBrandActual === 'amex') {
+          infinityBrandActual = 'hiper'; 
+        } else {
+          infinityBrandActual = 'visa'; 
+        }
+        tax = installments === 0 ? rates.infinity[infinityBrandActual].debito : rates.infinity[infinityBrandActual].credito[installments - 1];
+      } else if (machine === "valorante") {
+        let actualBrand = brand.toLowerCase();
+        if (actualBrand === 'hiper') {
+          actualBrand = 'hipercard';
+        } else if (actualBrand === 'master') { 
+          actualBrand = 'mastercard';
+        }
+        tax = installments === 0 ? (rates.valorante[actualBrand]?.debito ?? rates.valorante.visa.debito) : (rates.valorante[actualBrand]?.credito[installments - 1] ?? rates.valorante.visa.credito[installments - 1]);
+      }
+
+      const liquid = value * (1 - tax / 100);
+      document.getElementById("resultFecharVenda").innerHTML = `
+        <div class="alert alert-success fs-5 w-100" style="max-width: 400px;">
+          <strong>Valor Líquido: </strong>R$ ${liquid.toFixed(2)} <br/>
+          Taxa aplicada: ${tax.toFixed(2)}% (${installments === 0 ? "Débito" : `${installments}x`})
+        </div>`;
+    }
+
+    function calculateRepassarValores() {
+      const valorDesejado = parseFloat(document.getElementById("repassarValue").value);
+      if (isNaN(valorDesejado) || valorDesejado <= 0) {
+        document.getElementById("resultRepassarValores").innerHTML = "";
+        return;
+      }
+
+      const machine = document.getElementById("machine2").value;
+      const brand = document.getElementById("brand2").value || "visa";
+
+      let maxInstallments = 0;
+      if (machine === "pagbank") maxInstallments = 18;
+      else if (machine === "infinity") maxInstallments = 12;
+      else if (machine === "valorante") maxInstallments = 21;
+
+      let resultHtml = "";
+
+      let actualBrandForRates = brand.toLowerCase();
+      if (actualBrandForRates === 'hiper') {
+        actualBrandForRates = 'hipercard';
+      } else if (actualBrandForRates === 'master') {
+          actualBrandForRates = 'mastercard';
+      }
+      else if (actualBrandForRates === 'elo') {
+          actualBrandForRates = 'elo';
+      }
+      else if (actualBrandForRates === 'amex') {
+          actualBrandForRates = 'amex';
+      }
+      if (machine === 'infinity') { // Corrigir a lógica de bandeira para Infinity
+          if (actualBrandForRates === 'hipercard' || actualBrandForRates === 'elo' || actualBrandForRates === 'amex') {
+            actualBrandForRates = 'hiper';
+          } else {
+            actualBrandForRates = 'visa'; 
+          }
+      }
+
+
+      // Calcular para Débito
+      let debitTax = 0;
+      if (machine === "pagbank") {
+          debitTax = rates.pagbank.debito;
+        } else if (machine === "infinity") {
+          debitTax = rates.infinity[actualBrandForRates]?.debito;
+        } else if (machine === "valorante") {
+          debitTax = rates.valorante[actualBrandForRates]?.debito ?? rates.valorante.visa.debito;
+        }
+        const valorBrutoDebit = valorDesejado / (1 - debitTax / 100);
+      resultHtml += `<div class="alert alert-dark single-line w-100" style="max-width: 400px;">Débito: R$ ${valorBrutoDebit.toFixed(2)} (${debitTax.toFixed(2)}%)</div>`;
+
+      // Calcular para Parcelas de Crédito
+      for (let i = 1; i <= maxInstallments; i++) {
+        let creditTax = 0;
+        if (machine === "pagbank") {
+            creditTax = rates.pagbank.credito[i - 1];
+        } else if (machine === "infinity") {
+            creditTax = rates.infinity[actualBrandForRates]?.credito[i - 1];
+        } else if (machine === "valorante") {
+            creditTax = rates.valorante[actualBrandForRates]?.credito[i - 1] ?? rates.valorante.visa.credito[i - 1];
+        }
+
+        const valorBrutoCredit = valorDesejado / (1 - creditTax / 100);
+        const valorParcela = valorBrutoCredit / i;
+        resultHtml += `<div class="alert alert-dark single-line w-100" style="max-width: 400px;">${i}x de R$ ${valorParcela.toFixed(2)} (Total: R$ ${valorBrutoCredit.toFixed(2)} )</div>`;
+      }
+      document.getElementById("resultRepassarValores").innerHTML = resultHtml;
+      updateTheme(machine);
+    }
+
+    // --- Realtime Database Functions ---
+    // A referência para a coleção de produtos no Realtime Database
+    const getProductsRef = () => {
+        return ref(db, 'products'); 
+    };
+
+    function displayMessage(elementId, message, type) {
+        const element = document.getElementById(elementId);
+        if (element) {
+            element.textContent = message;
+            element.className = `alert alert-${type} mt-3`;
+            element.style.display = 'block'; // Usar style.display
+            setTimeout(() => {
+                element.style.display = 'none'; // Usar style.display
+            }, 5000); 
+        } else {
+            console.warn(`Element with ID ${elementId} not found.`);
+        }
+    }
+
+    function loadProductsFromFirestore() { 
+        if (!db || !isAuthReady) {
+            console.log("Database not initialized or auth not ready. Skipping load.");
+            const loadingMessage = document.getElementById('loadingMessage');
+            if (loadingMessage && loadingMessage.style.display !== 'block') { // Verifica se já está visível
+                displayMessage('loadingMessage', 'Aguardando autenticação e conexão com o banco de dados...', 'info');
+            }
+            return;
+        }
+
+        displayMessage('loadingMessage', 'Carregando produtos do banco de dados...', 'info');
+        document.getElementById('errorMessage').style.display = 'none'; // Usar style.display
+
+        const productsRef = getProductsRef();
+        onValue(productsRef, (snapshot) => {
+            products = [];
+            snapshot.forEach(childSnapshot => {
+                products.push({ id: childSnapshot.key, ...childSnapshot.val() });
+            });
+            console.log('Products loaded from Realtime Database:', products);
+
+            if (currentSectionId === 'administracao') {
+                filterAdminProducts(); 
+            } else if (currentSectionId === 'calcularPorAparelho') {
+                populateAparelhoSelect(products); 
+            }
+            displayMessage('loadingMessage', 'Produtos carregados!', 'success');
+        }, (error) => {
+            console.error("Error loading products from Realtime Database:", error);
+            displayMessage('errorMessage', `Erro ao carregar produtos: ${error.message}`, 'danger');
+        });
+    }
+
+    async function addProductToFirestore(newProduct) { 
+        if (!db || !isAuthReady) {
+            displayMessage('errorMessage', 'Erro: Banco de dados não inicializado ou autenticação pendente.', 'danger');
+            return;
+        }
+        try {
+            await push(getProductsRef(), newProduct);
+            displayMessage('importStatus', 'Produto adicionado com sucesso ao banco de dados!', 'success');
+        } catch (e) {
+            console.error('Error adding product to Realtime Database:', e);
+            displayMessage('importStatus', `Erro ao adicionar produto: ${e.message}`, 'danger');
+        }
+    }
+
+    async function updateProductInFirestore(id, field, newValue) { 
+        if (!db || !isAuthReady) {
+            displayMessage('errorMessage', 'Erro: Banco de dados não inicializado ou autenticação pendente.', 'danger');
+            return;
+        }
+        try {
+            const updates = {};
+            updates[field] = newValue;
+            await update(ref(db, `products/${id}`), updates);
+            displayMessage('importStatus', 'Produto atualizado com sucesso no banco de dados!', 'success');
+        } catch (e) {
+            console.error('Error updating product in Realtime Database:', e);
+            displayMessage('importStatus', `Erro ao atualizar produto: ${e.message}`, 'danger');
+        }
+    }
+
+    async function deleteProductFromFirestore(id) { 
+        if (!db || !isAuthReady) {
+            displayMessage('errorMessage', 'Erro: Banco de dados não inicializado ou autenticação pendente.', 'danger');
+            return;
+        }
+        try {
+            await remove(ref(db, `products/${id}`));
+            displayMessage('importStatus', 'Produto excluído com sucesso do banco de dados!', 'success');
+        } catch (e) {
+            console.error('Error deleting product from Realtime Database:', e);
+            displayStatusAdmin('Erro ao excluir produto.', 'danger');
+        }
+    }
+
+    // --- Admin Table Rendering ---
+    function renderAdminTable(filteredList = products) {
+        const tableBody = document.getElementById('productsTableBody');
+        tableBody.innerHTML = ''; 
+
+        if (filteredList.length === 0) {
+            tableBody.innerHTML = '<tr><td colspan="3" class="text-center">Nenhum produto cadastrado ou encontrado.</td></tr>';
+            return;
+        }
+
+        filteredList.forEach(product => {
+            const row = tableBody.insertRow();
+            row.innerHTML = `
+                <td><input type="text" class="form-control" value="${escapeHtml(product.nome || '')}" data-id="${product.id}" data-field="nome" class="editable-product-nome"></td>
+                <td><input type="text" class="form-control" value="${(product.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}" data-id="${product.id}" data-field="valor" class="editable-product-valor"></td>
+                <td><button class="btn btn-danger btn-sm delete-product-btn" data-id="${product.id}">Excluir</button></td>
+            `;
+        });
+        // Adicionar listeners para os campos editáveis e botões de exclusão na tabela administrativa
+        document.querySelectorAll('.editable-product-nome').forEach(input => {
+            input.addEventListener('change', (e) => {
+                const id = e.target.dataset.id;
+                const field = e.target.dataset.field;
+                const newValue = e.target.value;
+                editProductFirebase(id, field, newValue);
+            });
+        });
+        document.querySelectorAll('.editable-product-valor').forEach(input => {
+            input.addEventListener('change', (e) => {
+                const id = e.target.dataset.id;
+                const field = e.target.dataset.field;
+                const newValue = e.target.value;
+                editProductFirebase(id, field, newValue);
+            });
+        });
+        document.querySelectorAll('.delete-product-btn').forEach(button => {
+            button.addEventListener('click', (e) => {
+                const id = e.target.dataset.id;
+                deleteProductFirebase(id);
+            });
+        });
+    }
+
+    // Helper function to escape HTML for input values
+    function escapeHtml(text) {
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return text.replace(/[&<>"']/g, function (m) { return map[m]; });
+    }
+
+    // --- Product Manipulation in Admin Table (using Firebase) ---
+    async function addNewProductRow() {
+        const newProduct = { nome: 'Novo Produto', valor: 0.00 };
+        await addProductToFirestore(newProduct);
+    }
+
+    async function editProductFirebase(id, field, newValue) {
+        if (field === 'valor') {
+            const parsedValue = parseBrazilianCurrencyToFloat(newValue);
+            if (!isNaN(parsedValue)) {
+                await updateProductInFirestore(id, field, parsedValue);
+            } else {
+                console.error('Invalid value entered for the price field:', newValue);
+                displayStatusAdmin('Erro: Valor inválido para o produto. Por favor, insira um número válido (ex: 399,00 ou 1.749,50).', 'danger');
+            }
+        } else {
+            await updateProductInFirestore(id, field, newValue);
+        }
+    }
+
+    async function deleteProductFirebase(id) {
+        showCustomConfirm('Tem certeza que deseja excluir este produto?', 
+            async () => {
+                await deleteProductFromFirestore(id);
+            },
+            () => {
+                displayStatusAdmin('Exclusão cancelada.', 'info');
+            }
+        );
+    }
+
+    // --- ROBUST PARSING FUNCTION FOR BRAZILIAN CURRENCY ---
+    /**
+     * Parses a Brazilian currency string into a float.
+     * Handles various formats like "R$ 3.399,00", "3399,00", "3.399", "3399".
+     * A comma or dot is treated as a decimal separator ONLY if it's the last separator
+     * and is followed by exactly two digits (cents). Otherwise, it's removed (thousands separator).
+     * @param {string} valueString - The string representing the currency value.
+     * @returns {number} The parsed float value.
+     */
+    function parseBrazilianCurrencyToFloat(valueString) {
+        if (typeof valueString !== 'string') {
+            valueString = String(valueString);
+        }
+        // Remove currency symbols, spaces
+        let cleaned = valueString.replace(/R\$?|RS?|\$|\s/g, '').trim();
+
+        // Check if the string ends with a comma or dot followed by exactly two digits (cents)
+        const potentialDecimalMatch = cleaned.match(/([.,])(\d{2})$/);
+
+        if (potentialDecimalMatch) {
+            let integerPart = cleaned.substring(0, cleaned.length - 3); 
+            integerPart = integerPart.replace(/[,.]/g, ''); 
+            
+            let centsPart = potentialDecimalMatch[2];       
+
+            cleaned = integerPart + '.' + centsPart;
+        } else {
+            cleaned = cleaned.replace(/[,.]/g, '');
+        }
+        
+        let parsed = parseFloat(cleaned);
+        return isNaN(parsed) ? 0 : parsed; 
+    }
+
+
+    /**
+     * Filters products in the admin table based on keywords (case and accent insensitive).
+     */
+    function filterAdminProducts() {
+        const searchTerm = document.getElementById('adminSearchInput').value;
+        const normalizedSearchTerm = normalizeString(searchTerm);
+        // Split by space and filter out empty strings in case of multiple spaces
+        const keywords = normalizedSearchTerm.split(' ').filter(word => word.length > 0);
+
+        const filtered = products.filter(product => {
+            const normalizedProductName = normalizeString(product.nome || ''); 
+            return keywords.every(keyword => normalizedProductName.includes(keyword));
+        });
+        renderAdminTable(filtered); 
+    }
+
+    // --- Import Functions in Administration ---
+    async function importFromPaste() {
+        const pasteInput = document.getElementById('pasteInput');
+        const lines = pasteInput.value.split('\n').filter(line => line.trim() !== '');
+        let importedCount = 0;
+        let productsToImport = [];
+
+        console.log('ImportFromPaste: Raw lines count:', lines.length);
+
+        lines.forEach(line => {
+            const regex = /^(.*?)\s*[- ]*(?:R\$?|RS?|\$)?\s*([\d.,]+)$/i;
+            const match = line.match(regex);
+            
+            console.log(`ImportFromPaste: Processing line: "${line}", Match:`, match);
+
+            if (match) {
+                const nome = match[1].trim();
+                const valor = parseBrazilianCurrencyToFloat(match[2]);
+
+                if (nome && !isNaN(valor) && valor >= 0) {
+                    productsToImport.push({ nome, valor });
+                    importedCount++;
+                } else {
+                    console.warn(`ImportFromPaste: Invalid product data in line (empty name or invalid value): "${line}"`);
+                }
+            } else {
+                console.warn(`ImportFromPaste: Could not parse line (invalid format or no recognizable value): "${line}"`);
+                }
+            });
+
+        console.log('ImportFromPaste: Products identified for import:', productsToImport.length, productsToImport);
+
+        if (productsToImport.length > 0) {
+            displayMessage('importStatus', 'Importando produtos...', 'info');
+            const addPromises = productsToImport.map(product => push(getProductsRef(), product));
+            try {
+                await Promise.all(addPromises);
+                displayMessage('importStatus', `Importados ${importedCount} produtos do texto colado.`, 'success');
+                pasteInput.value = ''; 
+            } catch (error) {
+                console.error('ImportFromPaste: Error importing products to Realtime Database:', error);
+                displayMessage('importStatus', `Erro ao importar produtos: ${e.message}`, 'danger');
+            }
+        } else {
+            displayMessage('importStatus', 'Nenhum produto válido para importar.', 'warning');
+        }
+    }
+
+    async function importFromFile() {
+        const fileInput = document.getElementById('fileInput');
+        const file = fileInput.files[0];
+        if (!file) {
+            displayMessage('importStatus', 'Nenhum arquivo selecionado.', 'warning');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const content = e.target.result;
+            const lines = content.split('\n').filter(line => line.trim() !== '');
+            let importedCount = 0;
+            let productsToImport = [];
+
+            console.log(`ImportFromFile: Raw lines count: ${lines.length}`);
+
+            lines.forEach(line => {
+                const regex = /^(.*?)\s*[- ]*(?:R\$?|RS?|\$)?\s*([\d.,]+)$/i;
+                const match = line.match(regex);
+
+                console.log(`ImportFromFile: Processing line: "${line}", Match:`, match);
+
+                if (match) {
+                    const nome = match[1].trim();
+                    const valor = parseBrazilianCurrencyToFloat(match[2]);
+
+                    if (nome && !isNaN(valor) && valor >= 0) {
+                        productsToImport.push({ nome, valor });
+                        importedCount++;
+                    } else {
+                        console.warn(`ImportFromFile: Invalid product data in line (empty name or invalid value): "${line}"`);
+                    }
+                } else {
+                    console.warn(`ImportFromFile: Could not parse line (invalid format or no recognizable value): "${line}"`);
+                }
+            });
+
+            console.log(`ImportFromFile: Products identified for import: ${productsToImport.length}`, productsToImport);
+
+            if (productsToImport.length > 0) {
+                displayMessage('importStatus', `Importando ${importedCount} produtos do arquivo "${file.name}"...`, 'info');
+                const addPromises = productsToImport.map(product => push(getProductsRef(), product));
+                try {
+                    await Promise.all(addPromises);
+                    displayMessage('importStatus', `Importados ${importedCount} produtos do arquivo "${file.name}".`, 'success');
+                    fileInput.value = ''; 
+                } catch (error) {
+                    console.error('ImportFromFile: Error importing products from file to Realtime Database:', error);
+                    displayMessage('importStatus', `Erro ao importar produtos do arquivo: ${error.message}`, 'danger');
+                }
+            } else {
+                displayMessage('importStatus', 'Nenhum produto válido para importar do arquivo.', 'warning');
+            }
+        };
+        reader.onerror = (e) => {
+            console.error('Error reading file:', e);
+            displayMessage('importStatus', 'Erro ao ler o arquivo.', 'danger');
+        };
+        reader.readAsText(file);
+    }
+
+    // --- Export Functions in Administration ---
+    function exportProducts(format) {
+        let dataStr;
+        let filename;
+        let mimeType;
+
+        if (format === 'txt') {
+            dataStr = products.map(p => `${p.nome || 'Produto Sem Nome'} - R$ ${(p.valor || 0).toFixed(2).replace('.', ',')}`).join('\n');
+            filename = 'products.txt';
+            mimeType = 'text/plain';
+        } else if (format === 'json') {
+            dataStr = JSON.stringify(products, null, 2); 
+            filename = 'products.json';
+            mimeType = 'application/json';
+        } else {
+            console.error('Invalid export format.');
+            return;
+        }
+
+        const blob = new Blob([dataStr], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a); 
+        a.click();
+        document.body.removeChild(a); 
+        URL.revokeObjectURL(url);
+        displayStatusAdmin(`Products exported as ${format.toUpperCase()}.`, 'success');
+    }
+
+    // --- Status/Message Functions for Administration ---
+    function displayStatusAdmin(message, type) {
+        const statusDiv = document.getElementById('importStatus');
+        statusDiv.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+        statusDiv.style.display = 'block'; 
+        setTimeout(() => {
+            statusDiv.style.display = 'none'; 
+        }, 5000); 
+    }
+
+    // --- NEW FUNCTION: Display status for natural language command input
+    function displayCommandStatus(message, type) {
+        const statusDiv = document.getElementById('commandStatus');
+        statusDiv.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+        statusDiv.style.display = 'block'; 
+        setTimeout(() => {
+            statusDiv.style.display = 'none'; 
+        }, 5000); 
+    }
+
+    // --- Custom Modal Functions ---
+    const customModalOverlay = document.getElementById('customModalOverlay');
+    const customModalMessage = document.getElementById('customModalMessage');
+    const customModalPasswordInput = document.getElementById('customModalPasswordInput');
+    const customModalOkBtn = customModalOverlay.querySelector('.btn-ok');
+    const customModalCancelBtn = customModalOverlay.querySelector('.btn-cancel');
+
+    function hideCustomModal() {
+        console.log("Hiding custom modal by setting display: none.");
+        customModalOverlay.style.display = 'none'; 
+        customModalPasswordInput.style.display = 'none'; 
+        customModalPasswordInput.value = ''; 
+        customModalOkBtn.onclick = null;
+        customModalCancelBtn.onclick = null;
+    }
+
+    function showCustomConfirm(message, onConfirm, onCancel, showPassword = false) {
+        console.log("Attempting to show custom confirm modal by setting display: flex.");
+        customModalOverlay.style.display = 'flex'; 
+        customModalMessage.textContent = message;
+        if (showPassword) {
+            customModalPasswordInput.style.display = 'block'; 
+            customModalPasswordInput.focus();
+        } else {
+            customModalPasswordInput.style.display = 'none'; 
+        }
+        customModalOkBtn.style.display = 'inline-block'; 
+        customModalCancelBtn.style.display = 'inline-block'; 
+        
+        customModalOkBtn.onclick = () => {
+            hideCustomModal();
+            if (onConfirm) onConfirm();
+        };
+        customModalCancelBtn.onclick = () => {
+            hideCustomModal();
+            if (onCancel) onCancel();
+        };
+    }
+
+    function showCustomAlert(message, onOk) {
+        console.log("Attempting to show custom alert modal by setting display: flex.");
+        customModalOverlay.style.display = 'flex'; 
+        customModalMessage.textContent = message;
+        customModalPasswordInput.style.display = 'none'; 
+        customModalPasswordInput.value = ''; 
+        customModalOkBtn.style.display = 'inline-block'; 
+        customModalCancelBtn.style.display = 'none'; 
+        
+        customModalOkBtn.onclick = () => {
+            hideCustomModal();
+            if (onOk) onOk();
+        };
+    }
+
+
+    // --- Function to process natural language command
+    async function processNaturalLanguageCommand() {
+      console.log("processNaturalLanguageCommand called.");
+      const comando = document.getElementById('naturalCommandInput').value.trim().toLowerCase();
+
+      const valorRegexComPreposicaoOuFinal = /(?:pra|para|por|de|=|valendo|no valor de)\s*([RrSs\$]?\s*[\d.,]+)$|([RrSs\$]?\s*[\d.,]+)$/i;
+      let valorMatch = comando.match(valorRegexComPreposicaoOuFinal);
+
+      let valorStrFromCommand = null;
+      let commandWithoutValue = comando;
+
+      if (valorMatch) {
+          valorStrFromCommand = valorMatch[1] || valorMatch[2]; 
+          commandWithoutValue = comando.replace(valorMatch[0], '').trim();
+      }
+
+      const valor = valorStrFromCommand ? parseBrazilianCurrencyToFloat(valorStrFromCommand) : null;
+
+      if (valor === null || isNaN(valor)) {
+        displayCommandStatus(`Não foi possível identificar um valor válido no comando. Por favor, inclua um número (ex: 199,90).`, 'danger');
+        return;
+      }
+
+      const palavrasChaveRemover = [
+        'mudar', 'trocar', 'alterar', 'modificar', 'ajustar', 'definir', 
+        'aumentar', 'subir', 'elevar', 
+        'baixar', 'diminuir', 'reduzir', 
+        'valor', 'do', 'da', 'produto', 'de', 'para', 'por', 'no', 'a', 'o', 'pra', 
+        'preço', 'precos', 'custo', 'custos', 'nome', 'com', 'sem', 'novo', 'usado', 'antigo', 
+        'em', 'um', 'uma', 'os', 'as', 'e', 'ou', 'que', 'se', 'no valor de', 'valendo' 
+      ];
+
+      const palavrasOrdenadas = palavrasChaveRemover.sort((a, b) => b.length - a.length);
+      const regexRemoverPalavras = new RegExp(`\\b(?:${palavrasOrdenadas.join('|')})\\b`, 'gi');
+      
+      let nomeLimpo = commandWithoutValue.replace(regexRemoverPalavras, '').replace(/\s+/g, ' ').trim();
+
+      const nomeFormatadoParaBusca = normalizeString(nomeLimpo);
+
+      if (!nomeFormatadoParaBusca) {
+          displayCommandStatus('Não foi possível identificar o nome do produto no comando. Tente ser mais específico.', 'danger');
+          return;
+      }
+
+      let produtoEncontrado = null; 
+      let produtosCorrespondentes = [];
+
+      products.forEach(produto => {
+        const nomeProdutoNormalizado = normalizeString(produto.nome || '');
+        if (nomeProdutoNormalizado.includes(nomeFormatadoParaBusca)) {
+          produtosCorrespondentes.push(produto);
+        }
+      });
+
+      produtoEncontrado = produtosCorrespondentes.find(p => normalizeString(p.nome) === nomeFormatadoParaBusca);
+      
+      if (!produtoEncontrado && produtosCorrespondentes.length > 0) {
+          produtoEncontrado = produtosCorrespondentes[0];
+      }
+
+      if (produtoEncontrado) {
+        const oldPriceFormatted = (produtoEncontrado.valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        const newPriceFormatted = valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+        console.log("Calling showCustomConfirm from processNaturalLanguageCommand.");
+        showCustomConfirm(
+            `Deseja atualizar o valor de "${produtoEncontrado.nome}" de ${oldPriceFormatted} para ${newPriceFormatted}?`,
+            async () => {
+                await updateProductInFirestore(produtoEncontrado.id, 'valor', valor); 
+                displayCommandStatus(`Valor de "${produtoEncontrado.nome}" atualizado para ${newPriceFormatted}.`, 'success');
+                document.getElementById('naturalCommandInput').value = ''; 
+            },
+            () => {
+                displayCommandStatus('Atualização cancelada.', 'info');
+            }
+        );
+      } else {
+        displayCommandStatus(`Nenhum produto encontrado com os termos "${nomeLimpo}". Por favor, verifique o nome do produto.`, 'warning');
+      }
+    }
+
+    // --- NEW FUNCTION: Delete all products from Realtime Database ---
+    async function deleteAllProducts() {
+        console.log("deleteAllProducts called.");
+        const masterPassword = "excluir"; 
+        
+        console.log("Calling showCustomConfirm (password prompt) from deleteAllProducts.");
+        showCustomConfirm(
+            "ATENÇÃO: Para excluir TODOS os produtos, digite a senha 'excluir'.",
+            () => { /* onConfirm */ },
+            () => { /* onCancel */ },
+            true // showPassword = true
+        );
+
+        const okButtonHandler = async () => { 
+            const enteredPassword = customModalPasswordInput.value;
+            hideCustomModal(); 
+
+            if (enteredPassword === masterPassword) {
+                console.log("Password correct. Calling showCustomConfirm (final confirmation).");
+                showCustomConfirm(
+                    "Esta ação é irreversível. Tem certeza que deseja excluir TODOS os produtos do banco de dados?",
+                    async () => {
+                        if (!db || !isAuthReady) {
+                            console.log("Calling showCustomAlert from deleteAllProducts (db not ready).");
+                            showCustomAlert("Erro: Banco de dados não inicializado ou autenticação pendente.");
+                            return;
+                        }
+                        displayMessage('importStatus', 'Excluindo todos os produtos...', 'info');
+                        try {
+                            await remove(ref(db, `products/${id}`)); 
+                            displayMessage('importStatus', 'Todos os produtos foram excluídos com sucesso!', 'success');
+                        } catch (error) {
+                            console.error('Error deleting all products:', error);
+                            displayMessage('importStatus', `Erro ao excluir todos os produtos: ${error.message}`, 'danger');
+                        }
+                    },
+                    () => {
+                        displayMessage('importStatus', 'Exclusão de todos os produtos cancelada.', 'info');
+                    }
+                );
+            } else {
+                console.log("Calling showCustomAlert from deleteAllProducts (incorrect password).");
+                showCustomAlert("Senha incorreta. Os produtos não foram excluídos.");
+            }
+        };
+
+        const cancelButtonHandler = () => { 
+            hideCustomModal();
+            displayMessage('importStatus', 'Operação de exclusão cancelada.', 'info');
+        };
+
+        customModalOkBtn.onclick = okButtonHandler;
+        customModalCancelBtn.onclick = cancelButtonHandler;
+
+    }
+
+    /**
+     * Populates the device dropdown (in the "Calcular por Aparelho" tab) with the product list.
+     * @param {Array<Object>} filteredProducts - The list of products to display (now includes `id`).
+     */
+    function populateAparelhoSelect(filteredProducts = products) { 
+        const aparelhoSelect = document.getElementById('aparelhoSelect');
+        aparelhoSelect.innerHTML = '<option value="">Selecione um aparelho</option>'; 
+
+        if (filteredProducts.length === 0) {
+            const noProductsOption = document.createElement('option');
+            noProductsOption.value = "";
+            noProductsOption.textContent = "Nenhum produto cadastrado. Adicione na aba 'Administração'.";
+            aparelhoSelect.appendChild(noProductsOption);
+            selectedAparelhoValue = 0;
+            document.getElementById('resultCalcularPorAparelho').style.display = 'block'; 
+            document.getElementById('resultCalcularPorAparelho').innerHTML = '<div class="alert alert-warning mt-3 w-100" style="max-width: 400px;">Nenhum produto cadastrado. Acesse a aba "Administração" para adicionar.</div>';
+            return;
+        }
+
+        filteredProducts.forEach(p => {
+            const option = document.createElement('option');
+            option.value = parseFloat(p.valor || 0); 
+            option.textContent = `${p.nome || 'Produto Desconhecido'} - R$ ${(p.valor || 0).toFixed(2)}`;
+            aparelhoSelect.appendChild(option);
+        });
+
+        if (filteredProducts.length > 0) {
+            aparelhoSelect.value = parseFloat(filteredProducts[0].valor || 0);
+            selectedAparelhoValue = parseFloat(filteredProducts[0].valor || 0);
+            calculateAparelho();
+        } else {
+            selectedAparelhoValue = 0;
+            document.getElementById('resultCalcularPorAparelho').style.display = 'block'; 
+            document.getElementById('resultCalcularPorAparelho').innerHTML = '<div class="alert alert-warning mt-3 w-100" style="max-width: 400px;">Nenhum produto encontrado com o termo de busca.</div>';
+        }
+    }
+
+    /**
+     * Filters products in the "Calcular por Aparelho" tab based on keywords (case and accent insensitive).
+     */
+    function filterAparelhos() {
+        const searchTerm = document.getElementById('aparelhoSearch').value;
+        const normalizedSearchTerm = normalizeString(searchTerm);
+        const keywords = normalizedSearchTerm.split(' ').filter(word => word.length > 0);
+
+        const filtered = products.filter(product => {
+            const normalizedProductName = normalizeString(product.nome || ''); 
+            return keywords.every(keyword => normalizedProductName.includes(keyword));
+        });
+        populateAparelhoSelect(filtered); 
+    }
+
+    function selectAparelhoAndCalculate() {
+        const aparelhoSelect = document.getElementById('aparelhoSelect');
+        selectedAparelhoValue = parseFloat(aparelhoSelect.value);
+        calculateAparelho();
+    }
+
+    function calculateAparelho() {
+        const machine = document.getElementById("machine3").value;
+        const brand = document.getElementById("brand3").value || "visa";
+        const resultDiv = document.getElementById('resultCalcularPorAparelho');
+
+        if (isNaN(selectedAparelhoValue) || selectedAparelhoValue <= 0) {
+            resultDiv.innerHTML = '<div class="alert alert-warning mt-3 w-100" style="max-width: 400px;">Selecione um aparelho para calcular.</div>';
+            resultDiv.style.display = 'block'; 
+            return;
+        }
+
+        let maxInstallments = 0;
+        if (machine === "pagbank") maxInstallments = 18;
+        else if (machine === "infinity") maxInstallments = 12;
+        else if (machine === "valorante") maxInstallments = 21;
+
+        let resultHtml = `<h4 class="mt-4">Resultados para R$ ${selectedAparelhoValue.toFixed(2)}</h4>`;
+
+        let actualBrandForRates = brand.toLowerCase();
+        if (actualBrandForRates === 'hiper') {
+          actualBrandForRates = 'hipercard';
+        } else if (actualBrandForRates === 'master') { 
+          actualBrandForRates = 'mastercard';
+        } else if (actualBrandForRates === 'elo') { 
+          actualBrandForRates = 'elo';
+        } else if (actualBrandForRates === 'amex') { 
+          actualBrandForRates = 'amex';
+        }
+        
+        let debitTax = 0;
+        if (machine === "pagbank") {
+            debitTax = rates.pagbank.debito;
+        } else if (machine === "infinity") {
+            debitTax = rates.infinity[actualBrandForRates]?.debito || rates.infinity.visa.debito;
+        } else if (machine === "valorante") {
+            debitTax = rates.valorante[actualBrandForRates]?.debito || rates.valorante.visa.debito;
+        }
+        const valorBrutoDebit = selectedAparelhoValue / (1 - debitTax / 100);
+        resultHtml += `<div class="alert alert-dark single-line w-100" style="max-width: 400px;">Débito: R$ ${valorBrutoDebit.toFixed(2)} (${debitTax.toFixed(2)}%)</div>`;
+
+        for (let i = 1; i <= maxInstallments; i++) {
+            let creditTax = 0;
+            if (machine === "pagbank") {
+                creditTax = rates.pagbank.credito[i - 1];
+            } else if (machine === "infinity") {
+                creditTax = rates.infinity[actualBrandForRates]?.credito[i - 1] || rates.infinity.visa.credito[i - 1];
+            } else if (machine === "valorante") {
+                creditTax = rates.valorante[actualBrandForRates]?.credito[i - 1] || rates.valorante.visa.credito[i - 1];
+            }
+
+            const valorBrutoCredit = selectedAparelhoValue / (1 - creditTax / 100);
+            const valorParcela = valorBrutoCredit / i;
+            resultHtml += `<div class="alert alert-dark single-line w-100" style="max-width: 400px;">${i}x de R$ ${valorParcela.toFixed(2)} (Total: R$ ${valorBrutoCredit.toFixed(2)} )</div>`;
+        }
+        resultDiv.innerHTML = resultHtml;
+        resultDiv.style.display = 'block'; 
+    }
+
+    // Inicializa Firebase e as seções quando a página carrega
+    document.addEventListener('DOMContentLoaded', async () => {
+        console.log("DOMContentLoaded event fired. Setting initial display states.");
+
+        // Ocultar todos os containers e elementos de status por padrão
+        // Estes já têm style="display: none;" no HTML, mas reconfirma no JS
+        document.getElementById("mainMenu").style.display = 'none'; 
+        document.getElementById("fecharVenda").style.display = 'none';
+        document.getElementById("repassarValores").style.display = 'none';
+        document.getElementById("calcularPorAparelho").style.display = 'none';
+        document.getElementById("administracao").style.display = 'none';
+
+        document.getElementById("brand1Container").style.display = 'none';
+        document.getElementById("brand2Container").style.display = 'none';
+        document.getElementById("brand3Container").style.display = 'none';
+
+        document.getElementById("loadingMessage").style.display = 'none';
+        document.getElementById("errorMessage").style.display = 'none';
+        document.getElementById("userIdDisplay").style.display = 'none';
+        document.getElementById("importStatus").style.display = 'none'; 
+        document.getElementById("commandStatus").style.display = 'none'; 
+        document.getElementById('resultCalcularPorAparelho').style.display = 'none'; 
+
+        hideCustomModal(); 
+
+        await initFirebase(); 
+
+        document.getElementById("mainMenu").style.display = 'flex'; 
+
+        if (history.state === null || history.state.sectionId !== 'mainMenu') {
+            history.replaceState({ sectionId: 'mainMenu' }, '', '#mainMenu');
+        }
+
+        // Adicionar event listeners para botões de navegação
+        document.getElementById('openFecharVenda').addEventListener('click', () => openSection('fecharVenda'));
+        document.getElementById('openRepassarValores').addEventListener('click', () => openSection('repassarValores'));
+        document.getElementById('openCalcularPorAparelho').addEventListener('click', () => openSection('calcularPorAparelho'));
+        document.getElementById('openAdministracao').addEventListener('click', () => openSection('administracao'));
+
+        // Adicionar event listeners para os botões "Voltar"
+        document.getElementById('backFromFecharVenda').addEventListener('click', () => openSection('mainMenu', true));
+        document.getElementById('backFromRepassarValores').addEventListener('click', () => openSection('mainMenu', true));
+        document.getElementById('backFromCalcularPorAparelho').addEventListener('click', () => openSection('mainMenu', true));
+        document.getElementById('backFromAdministracao').addEventListener('click', () => openSection('mainMenu', true));
+
+        // Adicionar event listeners para os selects e inputs que disparam cálculos/visibilidade
+        document.getElementById('machine1').addEventListener('change', () => { updateInstallmentsOptions(); updateTheme(document.getElementById('machine1').value); updateBrandVisibility(); autoCalculateFecharVenda(); });
+        document.getElementById('brand1').addEventListener('change', autoCalculateFecharVenda);
+        document.getElementById('installments1').addEventListener('change', autoCalculateFecharVenda);
+        document.getElementById('modeFecharTotal').addEventListener('change', toggleFecharVendaMode);
+        document.getElementById('modeFecharParcela').addEventListener('change', toggleFecharVendaMode);
+        // Os inputs de valor são criados dinamicamente, seus listeners são anexados em toggleFecharVendaMode()
+        // document.getElementById('fecharVendaValue')?.addEventListener('input', autoCalculateFecharVenda); // Removido, anexado em toggleFecharVendaMode
+        // document.getElementById('fecharVendaValueParcela')?.addEventListener('input', autoCalculateFecharVenda); // Removido, anexado em toggleFecharVendaMode
+
+
+        document.getElementById('machine2').addEventListener('change', () => { updateTheme(document.getElementById('machine2').value); updateBrandVisibility(); calculateRepassarValores(); });
+        document.getElementById('brand2').addEventListener('change', calculateRepassarValores);
+        document.getElementById('repassarValue').addEventListener('input', calculateRepassarValores);
+
+        document.getElementById('aparelhoSearch').addEventListener('input', filterAparelhos);
+        document.getElementById('aparelhoSelect').addEventListener('change', selectAparelhoAndCalculate);
+        document.getElementById('machine3').addEventListener('change', () => { updateBrandVisibilityAparelho(); calculateAparelho(); });
+        document.getElementById('brand3').addEventListener('change', calculateAparelho);
+
+        // Adicionar event listeners para a aba de administração
+        document.getElementById('importFromPasteBtn').addEventListener('click', importFromPaste);
+        document.getElementById('uploadFileBtn').addEventListener('click', () => document.getElementById('fileInput').click());
+        document.getElementById('fileInput').addEventListener('change', importFromFile);
+        document.getElementById('adminSearchInput').addEventListener('input', filterAdminProducts);
+        document.getElementById('applyNaturalCommand').addEventListener('click', processNaturalLanguageCommand);
+        document.getElementById('addNewProduct').addEventListener('click', addNewProductRow);
+        document.getElementById('deleteAllProductsBtn').addEventListener('click', deleteAllProducts);
+        document.getElementById('exportTxt').addEventListener('click', () => exportProducts('txt'));
+        document.getElementById('exportJson').addEventListener('click', () => exportProducts('json'));
+
+        updateInstallmentsOptions();
+        updateBrandVisibility(); 
+        updateBrandVisibilityAparelho(); 
+        toggleFecharVendaMode(); 
+        console.log("Initial setup complete.");
+    });
+
+    // Handle browser back/forward buttons (Android back button uses this)
+    window.addEventListener('popstate', (event) => {
+        console.log("Popstate event fired.");
+        const targetSectionId = event.state ? event.state.sectionId : 'mainMenu';
+        openSection(targetSectionId, true); 
+    });
+
+// Não é mais necessário exportar funções para o window globalmente com addEventListener
+console.log("All event listeners attached.");
