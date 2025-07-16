@@ -523,6 +523,7 @@
             <div class="lucro-display" id="emprestimoLucroDisplay"></div>
             <button id="openLucroModalBtn" class="btn btn-sm btn-back" aria-label="Configurar Lucro" style="font-size: 1.4rem;"><i class="bi bi-gear-fill"></i></button>
         </div>
+        <div id="valorLiquidoDisplay" class="mb-3"></div>
         <div class="mb-3" style="max-width: 400px; margin: 0 auto 1rem;">
             <label class="form-label" for="emprestimoValue"><i class="bi bi-cash-coin"></i> Valor Base do Empréstimo</label>
             <input class="form-control form-control-lg" id="emprestimoValue" min="0" placeholder="Ex: 10000" step="0.01" type="number"/>
@@ -922,21 +923,37 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         const valorDesejado = valorBase + lucro;
         
         const lucroDisplay = document.getElementById("emprestimoLucroDisplay");
+        const valorLiquidoDisplay = document.getElementById("valorLiquidoDisplay");
+
         lucroDisplay.innerHTML = `🟢 Lucro ${emprestimoLucroPercentual}% = <span>${lucro.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>`;
 
         if (valorBase <= 0) { 
+            valorLiquidoDisplay.innerHTML = "";
             document.getElementById("resultCalcularEmprestimo").innerHTML = ""; 
             return; 
         }
+        
+        valorLiquidoDisplay.innerHTML = `<div class="alert alert-info w-100" style="max-width: 400px; margin: 0 auto;">Valor líquido a receber: <strong>${valorDesejado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></div>`;
         
         const machine = document.getElementById("machine4").value;
         const brand = document.getElementById("brand4").value;
         let maxInstallments = 0;
         if (rates[machine]) { switch (machine) { case "pagbank": maxInstallments = 18; break; case "infinity": maxInstallments = 12; break; case "valorante": maxInstallments = 21; break; } }
-        let resultHtml = `<div class="alert alert-info w-100" style="max-width: 400px;">Valor líquido a receber: <strong>${valorDesejado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></div>`;
+        
+        let resultHtml = "";
         const debitTax = getRate(machine, brand, 0);
-        if (debitTax !== null && debitTax !== undefined) { const valorBrutoDebito = valorDesejado / (1 - debitTax / 100); resultHtml += `<div class="alert alert-secondary w-100" style="max-width: 400px;">Débito: ${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>`; }
-        for (let i = 1; i <= maxInstallments; i++) { const creditTax = getRate(machine, brand, i); if (creditTax !== undefined) { const valorBrutoCredit = valorDesejado / (1 - creditTax / 100); const valorParcela = valorBrutoCredit / i; resultHtml += `<div class="alert alert-secondary w-100" style="max-width: 400px;">${i}x de ${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (Total: ${valorBrutoCredit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})</div>`; } }
+        if (debitTax !== null && debitTax !== undefined) { 
+            const valorBrutoDebito = valorDesejado / (1 - debitTax / 100); 
+            resultHtml += `<div class="alert alert-secondary w-100" style="max-width: 400px;">Débito: ${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>`; 
+        }
+        for (let i = 1; i <= maxInstallments; i++) { 
+            const creditTax = getRate(machine, brand, i); 
+            if (creditTax !== undefined) { 
+                const valorBrutoCredit = valorDesejado / (1 - creditTax / 100); 
+                const valorParcela = valorBrutoCredit / i; 
+                resultHtml += `<div class="alert alert-secondary w-100" style="max-width: 400px;">${i}x de ${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (Total: ${valorBrutoCredit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})</div>`; 
+            } 
+        }
         document.getElementById("resultCalcularEmprestimo").innerHTML = resultHtml;
     }
     function calculateAparelho() {
@@ -1354,4 +1371,4 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
 </body>
 </html>
 
-By Brendon 3.5.0 - Beta Final
+Beta Final 3.5.0
