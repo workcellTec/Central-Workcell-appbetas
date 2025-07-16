@@ -62,7 +62,6 @@
         html { box-sizing: border-box; }
         *, *:before, *:after { box-sizing: inherit; }
 
-        /* MODIFICAÇÃO PWA SCROLL: Garante que o Android reconheça a rolagem vertical completa */
         html, body {
             height: auto !important;
             min-height: 100% !important;
@@ -77,7 +76,7 @@
             font-family: 'Poppins', sans-serif;
             background-color: var(--tertiary-color);
             color: var(--text-color);
-            margin: 0; padding: 0; /* A propriedade 'height' foi removida para permitir o scroll natural */
+            margin: 0; padding: 0; 
             width: 100%; overflow-x: hidden;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
@@ -317,11 +316,10 @@
         
         /* 12. ESTILOS PARA ABA EMPRÉSTIMO */
         .lucro-display {
-            text-align: center;
             font-size: 1.1rem;
             font-weight: 500;
             color: var(--text-success);
-            margin-bottom: 1rem;
+            margin-bottom: 0;
         }
         .lucro-display span {
             font-weight: 700;
@@ -364,6 +362,30 @@
         .extra-value-container.is-active {
             max-height: 100px; /* Altura suficiente para o input */
             margin-top: 1rem;
+        }
+
+        /* 14. ESTILOS PARA SUGESTÕES DE PRODUTOS */
+        .sugestoes-rapidas {
+            padding: 5px 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: center;
+        }
+        .atalho-produto {
+            background-color: var(--input-bg);
+            color: var(--text-secondary);
+            padding: 4px 12px;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 1px solid var(--input-border);
+        }
+        .atalho-produto:hover {
+            background-color: var(--primary-color);
+            color: #FFF;
+            border-color: var(--primary-color);
         }
 
 
@@ -420,7 +442,12 @@
         </div>
 
         <div class="w-100 hidden" id="vendaPorProdutoContainer" style="max-width: 400px; margin: 0 auto;">
-            <div class="mb-3 search-wrapper"><label class="form-label" for="vendaProdutoSearch"><i class="bi bi-search"></i> Pesquisar Produto</label><input autocomplete="off" class="form-control" id="vendaProdutoSearch" placeholder="Carregando..." type="text"/><div class="search-results-container list-group" id="vendaSearchResultsContainer"></div></div>
+            <div class="mb-3 search-wrapper">
+                <label class="form-label" for="vendaProdutoSearch"><i class="bi bi-search"></i> Pesquisar Produto</label>
+                <input autocomplete="off" class="form-control" id="vendaProdutoSearch" placeholder="Carregando..." type="text"/>
+                <div class="search-results-container list-group" id="vendaSearchResultsContainer"></div>
+            </div>
+            <div class="sugestoes-rapidas" id="sugestoesRapidas"></div>
             <div class="mb-3"><label class="form-label" for="fecharVendaPrecoBase"><i class="bi bi-tag"></i> Preço Base (R$)</label><input class="form-control" id="fecharVendaPrecoBase" readonly="" type="text"/></div>
             
             <div class="form-check form-switch my-3 hidden" id="entradaAVistaToggleContainer">
@@ -473,7 +500,10 @@
         <button aria-label="Voltar" class="btn-back" id="backFromCalcularEmprestimo"><i class="bi bi-arrow-left"></i></button>
     </div>
     <div class="content-card w-100">
-        <div class="lucro-display" id="emprestimoLucroDisplay">🟢 Lucro 10% = <span>R$ 0,00</span></div>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div class="lucro-display" id="emprestimoLucroDisplay"></div>
+            <button id="openLucroModalBtn" class="btn btn-sm btn-back" aria-label="Configurar Lucro" style="font-size: 1.4rem;"><i class="bi bi-gear-fill"></i></button>
+        </div>
         <div class="mb-3" style="max-width: 400px; margin: 0 auto 1rem;">
             <label class="form-label" for="emprestimoValue"><i class="bi bi-cash-coin"></i> Valor Base do Empréstimo</label>
             <input class="form-control form-control-lg" id="emprestimoValue" min="0" placeholder="Ex: 10000" step="0.01" type="number"/>
@@ -600,6 +630,17 @@
     </div>
 </div>
 
+<div class="custom-modal-overlay" id="lucroModalOverlay">
+    <div class="custom-modal-content">
+        <h4>Alterar Lucro (%)</h4>
+        <input class="form-control mt-3" id="lucroPercentInput" type="number" step="1" min="0" placeholder="Ex: 15"/>
+        <div class="mt-3">
+            <button class="btn btn-primary" id="saveLucroBtn">Salvar</button>
+            <button class="btn btn-secondary" id="cancelLucroBtn">Cancelar</button>
+        </div>
+    </div>
+</div>
+
 <div class="custom-modal-overlay" id="flagSelectorModalOverlay">
     <div class="custom-modal-content" id="flagSelectorModalContent">
         <div class="d-flex justify-content-between align-items-center mb-3">
@@ -656,6 +697,9 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
     let app, db, auth, userId = null, isAuthReady = false, areRatesLoaded = false;
     let products = [], fuse, selectedAparelhoValue = 0, fecharVendaPrecoBase = 0;
     let currentSectionId = 'mainMenu', productsListener = null, rates = {};
+    let emprestimoLucroPercentual = 15;
+    const RECENT_PRODUCTS_KEY = 'ctwRecentProducts';
+    const MAX_RECENT_PRODUCTS = 10;
     
     // --- UTILITÁRIO DE ARMAZENAMENTO SEGURO ---
     const safeStorage = {
@@ -685,7 +729,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
                 const navTabs = brands.map((brand, i) => `<li class="nav-item"><a class="nav-link ${i === 0 ? 'active' : ''}" id="tab-${machine}-${brand}" data-bs-toggle="tab" href="#content-${machine}-${brand}" role="tab">${brand.charAt(0).toUpperCase() + brand.slice(1)}</a></li>`).join('');
                 const tabContent = brands.map((brand, i) => {
                     const brandData = machineData[brand];
-                    const creditInputs = (brandData.credito || []).map((idx, rate) => `<div class="col-md-4 col-6"><label class="form-label small">${rate + 1}x</label><div class="input-group mb-2"><input type="number" step="0.01" class="form-control form-control-sm" value="${idx}" data-machine="${machine}" data-brand="${brand}" data-type="credito" data-installments="${rate + 1}"><span class="input-group-text">%</span></div></div>`).join('');
+                    const creditInputs = (brandData.credito || []).map((rate, idx) => `<div class="col-md-4 col-6"><label class="form-label small">${idx + 1}x</label><div class="input-group mb-2"><input type="number" step="0.01" class="form-control form-control-sm" value="${rate}" data-machine="${machine}" data-brand="${brand}" data-type="credito" data-installments="${idx + 1}"><span class="input-group-text">%</span></div></div>`).join('');
                     return `<div class="tab-pane fade ${i === 0 ? 'show active' : ''}" id="content-${machine}-${brand}" role="tabpanel"><div class="row mt-3"><div class="col-md-4 col-6"><label class="form-label fw-bold">Débito</label><div class="input-group mb-3"><input type="number" step="0.01" class="form-control" value="${brandData.debito || 0}" data-machine="${machine}" data-brand="${brand}" data-type="debito"><span class="input-group-text">%</span></div></div></div><h5>Crédito</h5><div class="row">${creditInputs}</div></div>`;
                 }).join('');
                 machineContent = `<ul class="nav nav-tabs" role="tablist">${navTabs}</ul><div class="tab-content">${tabContent}</div>`;
@@ -704,9 +748,9 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             if (brand) { if (type === 'debito') updatedRates[machine][brand].debito = value; else if (type === 'credito') updatedRates[machine][brand].credito[parseInt(installments) - 1] = value; } 
             else { if (type === 'debito') updatedRates[machine].debito = value; else if (type === 'credito') updatedRates[machine].credito[parseInt(installments) - 1] = value; }
         });
-        if (hasError) { showCustomModal({ message: "Corrija campos inválidos.", confirmText: 'OK' }); return; }
-        try { await update(ref(db, 'rates'), updatedRates); showCustomModal({ message: "Taxas atualizadas!", confirmText: 'OK' }); } 
-        catch (error) { console.error("Erro ao salvar taxas:", error); showCustomModal({ message: `Erro ao salvar: ${error.message}`, confirmText: 'OK' }); }
+        if (hasError) { showCustomModal({ message: "Corrija campos inválidos." }); return; }
+        try { await update(ref(db, 'rates'), updatedRates); showCustomModal({ message: "Taxas atualizadas!" }); } 
+        catch (error) { console.error("Erro ao salvar taxas:", error); showCustomModal({ message: `Erro ao salvar: ${error.message}` }); }
     }
 
     // --- FUNÇÕES DO MODAL DE BANDEIRAS ---
@@ -741,7 +785,6 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
     function openSection(sectionId, fromHistory = false) { 
         if (!sectionId || !document.getElementById(sectionId)) sectionId = 'mainMenu'; 
         
-        // MODIFICAÇÃO: Controla a visibilidade do botão de tema
         const themeToggleBtn = document.getElementById('theme-toggle');
         themeToggleBtn.style.display = (sectionId === 'mainMenu') ? 'flex' : 'none';
 
@@ -771,8 +814,20 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         const produtoContainer = document.getElementById('vendaPorProdutoContainer'), manualContainer = document.getElementById('manualModeContainer'), flagDisplayContainer = document.getElementById("flagDisplayContainer1");
         const valueLabel = document.getElementById('fecharVendaValueLabel'), valueInput = document.getElementById('fecharVendaValue');
         const isProdutoMode = document.getElementById('vendaModeToggle').checked, installments = parseInt(document.getElementById('installments1').value, 10), manualMode = document.querySelector('input[name="manualMode"]:checked').value, machine = document.getElementById("machine1").value;
-        if (isProdutoMode) { manualContainer.classList.add('hidden'); produtoContainer.classList.remove('hidden'); } 
-        else { manualContainer.classList.remove('hidden'); produtoContainer.classList.add('hidden'); document.getElementById('vendaProdutoSearch').value = ''; document.getElementById('vendaSearchResultsContainer').innerHTML = ''; document.getElementById('fecharVendaPrecoBase').value = ''; fecharVendaPrecoBase = 0; document.getElementById('entradaAVistaCheckbox').checked = false; }
+        if (isProdutoMode) { 
+            manualContainer.classList.add('hidden'); 
+            produtoContainer.classList.remove('hidden'); 
+            renderRecentProductSuggestions();
+        } 
+        else { 
+            manualContainer.classList.remove('hidden'); 
+            produtoContainer.classList.add('hidden'); 
+            document.getElementById('vendaProdutoSearch').value = ''; 
+            document.getElementById('vendaSearchResultsContainer').innerHTML = ''; 
+            document.getElementById('fecharVendaPrecoBase').value = ''; 
+            fecharVendaPrecoBase = 0; 
+            document.getElementById('entradaAVistaCheckbox').checked = false; 
+        }
         toggleEntradaAVistaUI();
         if (!isProdutoMode) { valueLabel.innerHTML = (installments > 0 && manualMode === 'parcela') ? '<i class="bi bi-currency-dollar"></i> Valor da Parcela (R$)' : '<i class="bi bi-currency-dollar"></i> Valor Total da Venda (R$)'; valueInput.placeholder = (installments > 0 && manualMode === 'parcela') ? "Digite o valor da parcela" : "Digite o valor total"; }
         flagDisplayContainer.style.display = (machine !== "pagbank") ? 'block' : 'none';
@@ -820,10 +875,17 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
     function calculateEmprestimo() {
         if (!areRatesLoaded) return;
         const valorBase = parseFloat(document.getElementById("emprestimoValue").value) || 0;
-        const lucro = valorBase * 0.10;
+        const lucro = valorBase * (emprestimoLucroPercentual / 100);
         const valorDesejado = valorBase + lucro;
-        document.getElementById("emprestimoLucroDisplay").querySelector('span').textContent = lucro.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-        if (valorBase <= 0) { document.getElementById("resultCalcularEmprestimo").innerHTML = ""; return; }
+        
+        const lucroDisplay = document.getElementById("emprestimoLucroDisplay");
+        lucroDisplay.innerHTML = `🟢 Lucro ${emprestimoLucroPercentual}% = <span>${lucro.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>`;
+
+        if (valorBase <= 0) { 
+            document.getElementById("resultCalcularEmprestimo").innerHTML = ""; 
+            return; 
+        }
+        
         const machine = document.getElementById("machine4").value;
         const brand = document.getElementById("brand4").value;
         let maxInstallments = 0;
@@ -868,7 +930,18 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         resultDiv.innerHTML = resultHtml;
     }
     function handleProductSelectionForAparelho(product) { selectedAparelhoValue = parseFloat(product.valor); document.getElementById('aparelhoSearch').value = `${product.nome} - ${selectedAparelhoValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`; document.getElementById('aparelhoResultsContainer').innerHTML = ''; document.getElementById('entradaAparelho').value = ''; document.getElementById('valorExtraAparelho').value = ''; calculateAparelho(); }
-    function handleProductSelectionForVenda(product) { fecharVendaPrecoBase = parseFloat(product.valor); document.getElementById('fecharVendaPrecoBase').value = fecharVendaPrecoBase.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); document.getElementById('vendaProdutoSearch').value = product.nome; document.getElementById('vendaSearchResultsContainer').innerHTML = ''; if (!document.getElementById('entradaAVistaCheckbox').checked) { const tax = getRate(document.getElementById("machine1").value, document.getElementById("brand1").value, parseInt(document.getElementById("installments1").value, 10)); document.getElementById('fecharVendaValue').value = (tax !== undefined) ? (fecharVendaPrecoBase / (1 - tax / 100)).toFixed(2) : fecharVendaPrecoBase.toFixed(2); } updateFecharVendaUI(); }
+    function handleProductSelectionForVenda(product) { 
+        addRecentProduct(product.nome);
+        fecharVendaPrecoBase = parseFloat(product.valor); 
+        document.getElementById('fecharVendaPrecoBase').value = fecharVendaPrecoBase.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); 
+        document.getElementById('vendaProdutoSearch').value = product.nome; 
+        document.getElementById('vendaSearchResultsContainer').innerHTML = ''; 
+        if (!document.getElementById('entradaAVistaCheckbox').checked) { 
+            const tax = getRate(document.getElementById("machine1").value, document.getElementById("brand1").value, parseInt(document.getElementById("installments1").value, 10)); 
+            document.getElementById('fecharVendaValue').value = (tax !== undefined) ? (fecharVendaPrecoBase / (1 - tax / 100)).toFixed(2) : fecharVendaPrecoBase.toFixed(2); 
+        } 
+        updateFecharVendaUI(); 
+    }
     
     // --- LÓGICA DO FIREBASE ---
     function loadRatesFromDB() { const ratesRef = ref(db, 'rates'); onValue(ratesRef, (snapshot) => { if (snapshot.exists()) { rates = snapshot.val(); areRatesLoaded = true; updateInstallmentsOptions(); console.log("Taxas carregadas."); if (currentSectionId === 'administracao' && document.getElementById('adminModeToggle').checked) renderRatesEditor(); } else { console.error("ERRO: As taxas não foram encontradas."); showCustomModal({ message: "Erro crítico: Não foi possível carregar as taxas." }); } }, (error) => { console.error("Erro ao carregar taxas:", error); showCustomModal({ message: `Erro ao carregar taxas: ${error.message}` }); }); }
@@ -905,14 +978,100 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             ]).join('');
     }
     function filterAdminProducts() { const searchTerm = document.getElementById('adminSearchInput').value; renderAdminTable(!fuse || !searchTerm ? products : fuse.search(searchTerm).map(r => r.item)); }
-    async function importFromPasteOrFile(content) { const lines = content.split('\n').filter(line => line.trim()); const productsToImport = lines.map(line => { const match = line.match(/^(.*?)\s*[- ]*(?:R\$?\s*)?([\d.,]+)$/i); if (match) { const nome = match[1].trim(); const valor = parseBrazilianCurrencyToFloat(match[2]); if (nome && !isNaN(valor)) return { nome, valor }; } return null; }).filter(Boolean); if (productsToImport.length > 0) { try { const updates = {}; productsToImport.forEach(p => { const newKey = push(getProductsRef()).key; updates[newKey] = p; }); await update(getProductsRef(), updates); showCustomModal({ message: `${productsToImport.length} produtos importados!`, confirmText: 'OK' }); } catch (error) { showCustomModal({ message: `Erro ao importar: ${error.message}`, confirmText: 'OK' }); } } else { showCustomModal({ message: 'Nenhum produto válido encontrado.', confirmText: 'OK' }); } }
+    async function importFromPasteOrFile(content) { const lines = content.split('\n').filter(line => line.trim()); const productsToImport = lines.map(line => { const match = line.match(/^(.*?)\s*[- ]*(?:R\$?\s*)?([\d.,]+)$/i); if (match) { const nome = match[1].trim(); const valor = parseBrazilianCurrencyToFloat(match[2]); if (nome && !isNaN(valor)) return { nome, valor }; } return null; }).filter(Boolean); if (productsToImport.length > 0) { try { const updates = {}; productsToImport.forEach(p => { const newKey = push(getProductsRef()).key; updates[newKey] = p; }); await update(getProductsRef(), updates); showCustomModal({ message: `${productsToImport.length} produtos importados!` }); } catch (error) { showCustomModal({ message: `Erro ao importar: ${error.message}` }); } } else { showCustomModal({ message: 'Nenhum produto válido encontrado.' }); } }
     function exportProducts(format) { const dataStr = format === 'txt' ? products.map(p => `${p.nome} - ${(p.valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`).join('\n') : JSON.stringify(products.map(({id, ...rest}) => rest), null, 2); const blob = new Blob([dataStr], { type: `text/${format === 'txt' ? 'plain' : 'json'}` }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `products.${format}`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href); }
-    function showCustomModal({ message, onConfirm, onCancel, showPassword = false, confirmText = 'OK', cancelText = 'Cancelar' }) { const overlay = document.getElementById('customModalOverlay'); document.getElementById('customModalMessage').textContent = message; const passInput = document.getElementById('customModalPasswordInput'); passInput.value = ''; passInput.classList.toggle('hidden', !showPassword); const okBtn = overlay.querySelector('.btn-ok'); okBtn.textContent = confirmText; okBtn.style.display = onConfirm ? 'inline-flex' : 'none'; if(onConfirm) okBtn.onclick = () => { overlay.classList.remove('active'); onConfirm(passInput.value); }; const cancelBtn = overlay.querySelector('.btn-cancel'); cancelBtn.textContent = cancelText; cancelBtn.style.display = onCancel ? 'inline-flex' : 'none'; if (onCancel) cancelBtn.onclick = () => { overlay.classList.remove('active'); onCancel(); }; overlay.classList.add('active'); if (showPassword) passInput.focus(); }
-    async function deleteAllProducts() { showCustomModal({ message: "Para excluir TODOS os produtos, digite 'excluir'.", showPassword: true, confirmText: "Excluir", onConfirm: async (password) => { if (password === "excluir") { showCustomModal({ message: "Ação IRREVERSÍVEL. Apagar TUDO?", confirmText: 'SIM, EXCLUIR', onConfirm: async () => { try { await remove(getProductsRef()); showCustomModal({message: 'Todos os produtos foram excluídos.'}); } catch (error) { alert(`Erro: ${error.message}`); } }, onCancel: () => {} }); } else showCustomModal({ message: "Senha incorreta.", confirmText: 'OK' }); }, onCancel: () => {} }); }
+    
+    function showCustomModal({ message, onConfirm, onCancel, showPassword = false, confirmText = 'OK', cancelText = 'Cancelar' }) {
+        const overlay = document.getElementById('customModalOverlay');
+        const messageEl = document.getElementById('customModalMessage');
+        const passInput = document.getElementById('customModalPasswordInput');
+        const okBtn = overlay.querySelector('.btn-ok');
+        const cancelBtn = overlay.querySelector('.btn-cancel');
+        const buttonsContainer = document.getElementById('customModalButtons');
+
+        if (overlay.dataset.timerId) {
+            clearTimeout(parseInt(overlay.dataset.timerId));
+            delete overlay.dataset.timerId;
+        }
+
+        const closeModal = () => {
+            overlay.classList.remove('active');
+        };
+        
+        messageEl.textContent = message;
+        passInput.value = '';
+        passInput.classList.toggle('hidden', !showPassword);
+
+        const isInformational = typeof onConfirm !== 'function' && typeof onCancel !== 'function';
+
+        if (isInformational) {
+            buttonsContainer.classList.add('hidden');
+            const timerId = setTimeout(closeModal, 3000);
+            overlay.dataset.timerId = timerId;
+        } else {
+            buttonsContainer.classList.remove('hidden');
+            
+            if (typeof onConfirm === 'function') {
+                okBtn.textContent = confirmText;
+                okBtn.style.display = 'inline-flex';
+                okBtn.onclick = () => {
+                    closeModal();
+                    onConfirm(passInput.value);
+                };
+            } else {
+                okBtn.style.display = 'none';
+            }
+
+            if (typeof onCancel === 'function') {
+                cancelBtn.textContent = cancelText;
+                cancelBtn.style.display = 'inline-flex';
+                cancelBtn.onclick = () => {
+                    closeModal();
+                    onCancel();
+                };
+            } else {
+                cancelBtn.style.display = 'none';
+            }
+        }
+
+        overlay.classList.add('active');
+        if (showPassword) {
+            passInput.focus();
+        }
+    }
+
+    async function deleteAllProducts() { showCustomModal({ message: "Para excluir TODOS os produtos, digite 'excluir'.", showPassword: true, confirmText: "Excluir", onConfirm: async (password) => { if (password === "excluir") { showCustomModal({ message: "Ação IRREVERSÍVEL. Apagar TUDO?", confirmText: 'SIM, EXCLUIR', onConfirm: async () => { try { await remove(getProductsRef()); showCustomModal({message: 'Todos os produtos foram excluídos.'}); } catch (error) { showCustomModal({ message: `Erro: ${error.message}` }); } }, onCancel: () => {} }); } else showCustomModal({ message: "Senha incorreta." }); }, onCancel: () => {} }); }
     function displayDynamicSearchResults(searchTerm, resultsContainerId, onItemClick) { const resultsContainer = document.getElementById(resultsContainerId); resultsContainer.innerHTML = ''; if (!fuse || !searchTerm || searchTerm.length < 2) return; const results = fuse.search(searchTerm); results.slice(0, 10).forEach(result => { const product = result.item; const a = document.createElement('a'); a.href = '#'; a.className = 'list-group-item list-group-item-action'; a.textContent = `${product.nome} - ${(product.valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`; a.onclick = (e) => { e.preventDefault(); onItemClick(product); }; resultsContainer.appendChild(a); }); }
     function setupFuse() { fuse = new Fuse(products, { keys: ['nome'], includeScore: true, threshold: 0.3, minMatchCharLength: 2 }); }
-    async function processNaturalLanguageCommand() { if (!areRatesLoaded) { showCustomModal({message:"Aguarde as taxas carregarem."}); return; } const command = document.getElementById('naturalCommandInput').value; if (!command.trim()) return; const priceMatches = command.match(/(?:R\$|💰|\$|€|£)?\s*[\d.,]+/g); if (!priceMatches) { showCustomModal({ message: 'Comando inválido. Valor numérico não encontrado.', confirmText: 'OK' }); return; } const valueStr = priceMatches.pop(), newValue = parseBrazilianCurrencyToFloat(valueStr); if (isNaN(newValue)) { showCustomModal({ message: `O valor "${valueStr}" não é válido.`, confirmText: 'OK' }); return; } const stopWordsAndSymbols = /mudar|baixar|subir|trocar|alterar|preço|valor|do|da|o|a|de|para|pra|[-→💰]|R\$|\$/gi; const productNameQuery = command.substring(0, command.lastIndexOf(valueStr)).replace(stopWordsAndSymbols, '').trim(); if (!productNameQuery) { showCustomModal({ message: 'Não foi possível identificar o nome do produto.', confirmText: 'OK' }); return; } if (!fuse) { showCustomModal({ message: 'Busca de produtos não pronta.', confirmText: 'OK' }); return; } const results = fuse.search(productNameQuery); if (results.length === 0) { let suggestionMessage = `Produto "${productNameQuery}" não encontrado.`; if (products.length > 0) suggestionMessage += `\n\nQue tal um destes?\n${products.slice(0, 5).map(p => `• ${p.nome}`).join('\n')}`; showCustomModal({ message: suggestionMessage, confirmText: 'OK' }); return; } const foundProduct = results[0].item; showCustomModal({ message: `Atualizar "${foundProduct.nome}" para ${newValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}?`, onConfirm: () => { updateProductInDB(foundProduct.id, { valor: newValue }); document.getElementById('naturalCommandInput').value = ''; }, onCancel: () => {} }); }
+    async function processNaturalLanguageCommand() { if (!areRatesLoaded) { showCustomModal({message:"Aguarde as taxas carregarem."}); return; } const command = document.getElementById('naturalCommandInput').value; if (!command.trim()) return; const priceMatches = command.match(/(?:R\$|💰|\$|€|£)?\s*[\d.,]+/g); if (!priceMatches) { showCustomModal({ message: 'Comando inválido. Valor numérico não encontrado.' }); return; } const valueStr = priceMatches.pop(), newValue = parseBrazilianCurrencyToFloat(valueStr); if (isNaN(newValue)) { showCustomModal({ message: `O valor "${valueStr}" não é válido.` }); return; } const stopWordsAndSymbols = /mudar|baixar|subir|trocar|alterar|preço|valor|do|da|o|a|de|para|pra|[-→💰]|R\$|\$/gi; const productNameQuery = command.substring(0, command.lastIndexOf(valueStr)).replace(stopWordsAndSymbols, '').trim(); if (!productNameQuery) { showCustomModal({ message: 'Não foi possível identificar o nome do produto.' }); return; } if (!fuse) { showCustomModal({ message: 'Busca de produtos não pronta.' }); return; } const results = fuse.search(productNameQuery); if (results.length === 0) { let suggestionMessage = `Produto "${productNameQuery}" não encontrado.`; if (products.length > 0) suggestionMessage += `\n\nQue tal um destes?\n${products.slice(0, 5).map(p => `• ${p.nome}`).join('\n')}`; showCustomModal({ message: suggestionMessage }); return; } const foundProduct = results[0].item; showCustomModal({ message: `Atualizar "${foundProduct.nome}" para ${newValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}?`, onConfirm: () => { updateProductInDB(foundProduct.id, { valor: newValue }); document.getElementById('naturalCommandInput').value = ''; }, onCancel: () => {} }); }
     
+    // --- SUGESTÕES DE PRODUTOS RECENTES ---
+    function addRecentProduct(productName) {
+        if (!productName) return;
+        let recent = JSON.parse(safeStorage.getItem(RECENT_PRODUCTS_KEY) || '[]');
+        recent = recent.filter(p => p !== productName);
+        recent.unshift(productName);
+        if (recent.length > MAX_RECENT_PRODUCTS) {
+            recent.pop();
+        }
+        safeStorage.setItem(RECENT_PRODUCTS_KEY, JSON.stringify(recent));
+    }
+
+    function renderRecentProductSuggestions() {
+        const container = document.getElementById('sugestoesRapidas');
+        if (!container) return;
+        const recent = JSON.parse(safeStorage.getItem(RECENT_PRODUCTS_KEY) || '[]');
+        if (recent.length === 0) {
+            container.innerHTML = '';
+            container.style.display = 'none';
+            return;
+        }
+        container.style.display = 'flex';
+        container.innerHTML = recent.slice(0, 3).map(name =>
+            `<span class="atalho-produto">${escapeHtml(name)}</span>`
+        ).join('');
+    }
+
     // --- LÓGICA DE REGISTRO PWA ---
     function setupPWA() {
         const manifestData = document.getElementById('manifest-data').textContent, manifestBlob = new Blob([manifestData], {type: 'application/json'}), manifestURL = URL.createObjectURL(manifestBlob);
@@ -953,6 +1112,16 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         document.getElementById('valorEntradaAVista').addEventListener('input', calculateFecharVenda);
         document.getElementById('valorPassadoNoCartao').addEventListener('input', calculateFecharVenda);
         
+        document.getElementById('sugestoesRapidas').addEventListener('click', e => {
+            if (e.target.classList.contains('atalho-produto')) {
+                const productName = e.target.textContent;
+                const product = products.find(p => p.nome === productName);
+                if (product) {
+                    handleProductSelectionForVenda(product);
+                }
+            }
+        });
+
         document.getElementById('aparelhoSearch').addEventListener('input', () => displayDynamicSearchResults(document.getElementById('aparelhoSearch').value, 'aparelhoResultsContainer', handleProductSelectionForAparelho));
         document.getElementById('entradaAparelho').addEventListener('input', calculateAparelho);
         document.getElementById('valorExtraAparelho').addEventListener('input', calculateAparelho);
@@ -973,6 +1142,31 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         document.getElementById('machine4').addEventListener('change', () => { updateCalcularEmprestimoUI(); if(document.getElementById('machine4').value !== 'pagbank') openFlagModal(document.getElementById('machine4')); });
         document.getElementById('brand4').addEventListener('change', updateCalcularEmprestimoUI);
         
+        const lucroModalOverlay = document.getElementById('lucroModalOverlay');
+        const lucroPercentInput = document.getElementById('lucroPercentInput');
+        const closeLucroModal = () => lucroModalOverlay.classList.remove('active');
+
+        document.getElementById('openLucroModalBtn').addEventListener('click', () => {
+            lucroPercentInput.value = emprestimoLucroPercentual;
+            lucroModalOverlay.classList.add('active');
+            lucroPercentInput.focus();
+        });
+        
+        document.getElementById('saveLucroBtn').addEventListener('click', () => {
+            const newPercent = parseFloat(lucroPercentInput.value);
+            if (!isNaN(newPercent) && newPercent >= 0) {
+                emprestimoLucroPercentual = newPercent;
+                calculateEmprestimo();
+                closeLucroModal();
+            } else {
+                showCustomModal({ message: 'Por favor, insira um valor de lucro válido.' });
+            }
+        });
+
+        document.getElementById('cancelLucroBtn').addEventListener('click', closeLucroModal);
+        lucroModalOverlay.addEventListener('click', (e) => { if (e.target === lucroModalOverlay) closeLucroModal(); });
+
+
         document.getElementById('adminSearchInput').addEventListener('input', filterAdminProducts);
         document.getElementById('applyNaturalCommand').addEventListener('click', processNaturalLanguageCommand);
         document.getElementById('addNewProduct').addEventListener('click', () => push(getProductsRef(), { nome: 'Novo Produto', valor: 0 }));
@@ -1050,4 +1244,4 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
 </body>
 </html>
 
-beta
+Beta 2
