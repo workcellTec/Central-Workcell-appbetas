@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<meta name='viewport' content='width=device-width, initial-scale=1'/><meta name='viewport' content='width=device-width, initial-scale=1'/><!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="utf-8"/>
@@ -20,8 +20,6 @@
     <script src="https://cdn.jsdelivr.net/npm/fuse.js/dist/fuse.min.js"></script>
     <!-- Library for exporting to image -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <!-- Library for exporting to PDF -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
         /* ============================================== */
         /* DESIGN & UX (V5.13) - FAVORITOS APARELHO       */
@@ -196,7 +194,7 @@
             line-height: 1.5;
             color: #000;
             background: #FFF;
-            padding: 1cm; /* Reduzir padding para caber melhor */
+            padding: 1cm;
             width: 21cm; /* A4 width */
             box-sizing: border-box;
         }
@@ -489,17 +487,25 @@
         .user-id-display { position: fixed; bottom: 15px; left: 15px; background-color: var(--glass-bg); color: var(--text-secondary); padding: 8px 12px; border-radius: 8px; font-size: 0.8rem; z-index: 1000; backdrop-filter: blur(5px); border: 1px solid var(--glass-border); }
         .spinner-border.text-primary { color: var(--primary-color) !important; }
 
-        /* CSS DE IMPRESSÃO */
+        /* CSS DE IMPRESSÃO (CORRIGIDO) */
         @media print {
-          body > *:not(#contractPreview) { display: none !important; }
+          html, body {
+            background: #FFF !important; /* Garante fundo branco na impressão */
+            margin: 0;
+            padding: 0;
+          }
+
+          body > *:not(#contractPreview) { 
+            display: none !important; 
+          }
+
           #contractPreview {
             display: block !important;
-            position: static !important; /* Garante que não fique fora da tela */
-            left: 0;
-            top: 0;
+            position: static !important;
+            margin: 0 auto; /* Centraliza na página de impressão */
+            padding: 20mm;
             width: 210mm;
             min-height: 297mm;
-            padding: 20mm;
             box-sizing: border-box;
             box-shadow: none;
             border: none;
@@ -816,9 +822,6 @@
             </div>
             
             <div class="text-center mt-4 d-flex justify-content-center gap-2 flex-wrap">
-                <button type="button" class="btn btn-info" id="generatePdfBtn">
-                    <i class="bi bi-file-pdf-fill"></i> Gerar PDF
-                </button>
                 <button type="button" id="btnImprimir" class="btn btn-primary"><i class='bi bi-printer'></i> Imprimir contrato</button>
             </div>
         </form>
@@ -1627,60 +1630,6 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         const today = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
         document.getElementById('previewLocalData').textContent = `Goiânia, ${today}`;
     }
-    
-    async function generateContractPDF() {
-        if (!document.getElementById('contractForm').checkValidity()) {
-            showCustomModal({ message: "Por favor, preencha todos os campos obrigatórios." });
-            document.getElementById('contractForm').reportValidity();
-            return;
-        }
-
-        const btn = document.getElementById('generatePdfBtn');
-        btn.disabled = true;
-        btn.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Gerando...`;
-
-        populatePreview();
-        
-        const contractElement = document.getElementById('contractPreview');
-        
-        try {
-            const canvas = await html2canvas(contractElement, { scale: 2, useCORS: true });
-            const imgData = canvas.toDataURL('image/png');
-            
-            const { jsPDF } = window.jspdf;
-            const pdf = new jsPDF('p', 'mm', 'a4'); 
-            
-            const imgProps = pdf.getImageProperties(imgData);
-            const pdfWidth = pdf.internal.pageSize.getWidth();
-            const pdfHeight = pdf.internal.pageSize.getHeight();
-            
-            const ratio = imgProps.width / pdfWidth;
-            const canvasHeight = imgProps.height / ratio;
-
-            let heightLeft = canvasHeight;
-            let position = 0;
-            
-            pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, canvasHeight);
-            heightLeft -= pdfHeight;
-
-            while (heightLeft > 0) {
-                position = -heightLeft;
-                pdf.addPage();
-                pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, canvasHeight);
-                heightLeft -= pdfHeight;
-            }
-            
-            pdf.save(`Contrato_${document.getElementById('compradorNome').value.trim().replace(/\s+/g, '_')}.pdf`);
-
-        } catch (error) {
-            console.error("Erro ao gerar PDF:", error);
-            showCustomModal({ message: "Ocorreu um erro ao gerar o PDF." });
-        } finally {
-             btn.disabled = false;
-             btn.innerHTML = `<i class="bi bi-file-pdf-fill"></i> Gerar PDF`;
-        }
-    }
-
 
     // --- FUNÇÃO PRINCIPAL E INICIALIZAÇÃO ---
     async function main() {
@@ -1887,9 +1836,8 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         document.getElementById('valorTotal').addEventListener('input', calculateContractPayments);
         document.getElementById('valorEntrada').addEventListener('input', calculateContractPayments);
         document.getElementById('numeroParcelas').addEventListener('input', calculateContractPayments);
-        document.getElementById('generatePdfBtn').addEventListener('click', generateContractPDF);
-
-        // --- NOVO LISTENER DE IMPRESSÃO ---
+        
+        // --- Listener de Impressão ---
         document.getElementById('btnImprimir').addEventListener('click', () => {
             if (!document.getElementById('contractForm').checkValidity()) {
                 showCustomModal({ message: "Por favor, preencha todos os campos obrigatórios." });
@@ -1900,7 +1848,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             window.print();
         });
 
-        // --- Event Listeners for Export Buttons (UPDATED) ---
+        // --- Event Listeners for Export Buttons ---
         document.getElementById('exportRepassarBtn').addEventListener('click', () => {
             exportResultsToImage('resultRepassarValores', 'repassar-valores.png');
         });
@@ -1927,6 +1875,45 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         });
 
         main();
+        
+        // Intercepta botão voltar do Android
+        document.addEventListener('backbutton', function (e) {
+          e.preventDefault();
+          const currentSection = document.querySelector('.container:not(.hidden):not([style*="display: none"])');
+          if (currentSection && currentSection.id !== 'mainMenu' && currentSection.id !== 'calculatorHome') {
+             // Se estiver em uma sub-seção da calculadora, volta para o início da calculadora
+            if(calculatorContainer.contains(currentSection)) {
+                openCalculatorSection('calculatorHome');
+            } else { // se não, volta para o menu principal
+                showMainSection('main');
+            }
+          } else if (currentSection && currentSection.id === 'calculatorHome') {
+            showMainSection('main');
+          }
+          else {
+            // se já está no menu principal, fecha o app normalmente
+            if(navigator.app){
+                navigator.app.exitApp();
+            }
+          }
+        }, false);
+
+        // Suporte para navegadores (popstate do histórico)
+        window.addEventListener('popstate', function () {
+            const currentSection = document.querySelector('.container:not(.hidden):not([style*="display: none"])');
+            if (currentSection && currentSection.id !== 'mainMenu') {
+                if(calculatorContainer.contains(currentSection) && currentSection.id !== 'calculatorHome'){
+                    openCalculatorSection('calculatorHome');
+                } else {
+                     showMainSection('main');
+                }
+                history.pushState(null, null, location.href);
+            }
+        });
+
+        // Garante que sempre tenha um histórico inicial
+        history.pushState(null, null, location.href);
+
     });
 </script>
 
@@ -1934,5 +1921,3 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
 
 </body>
 </html>
-
-dext test
