@@ -188,7 +188,10 @@
         }
 
         #contractPreview {
-            display: none;
+            /* CORREÇÃO: Movido para fora da tela em vez de display:none */
+            position: absolute;
+            left: -9999px;
+            top: auto;
             font-family: 'Times New Roman', Times, serif;
             font-size: 12pt;
             line-height: 1.5;
@@ -806,7 +809,7 @@
     </div>
 </div>
 
-<!-- Div escondida para renderizar o contrato para o PDF -->
+<!-- Div de preview do contrato para renderização do PDF -->
 <div id="contractPreview">
     <h4>CONTRATO DE COMPRA E VENDA DE SMARTPHONE</h4>
     
@@ -1583,10 +1586,11 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         }
     }
     
+    // CORREÇÃO: Função de gerar PDF refatorada para usar html2canvas
     async function generateContractPDF() {
-        // Validar formulário
         if (!document.getElementById('contractForm').checkValidity()) {
             showCustomModal({ message: "Por favor, preencha todos os campos obrigatórios." });
+            document.getElementById('contractForm').reportValidity(); // Mostra qual campo falta
             return;
         }
 
@@ -1594,7 +1598,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         btn.disabled = true;
         btn.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Gerando...`;
 
-        // Preencher o template
+        // Preenche o template de preview
         document.getElementById('previewNome').textContent = document.getElementById('compradorNome').value;
         document.getElementById('previewCpf').textContent = document.getElementById('compradorCpf').value;
         document.getElementById('previewRg').textContent = document.getElementById('compradorRg').value;
@@ -1610,36 +1614,33 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         
         document.getElementById('previewValorTotal').textContent = formatCurrency(total);
         document.getElementById('previewValorTotal2').textContent = formatCurrency(total);
+        // document.getElementById('previewValorExtenso').textContent = "VALOR_POR_EXTENSO"; // Implementação futura se necessário
         document.getElementById('previewEntrada').textContent = formatCurrency(entrada);
         document.getElementById('previewSaldo').textContent = formatCurrency(saldo);
         document.getElementById('previewNumParcelas').textContent = `${numParcelas}`;
         document.getElementById('previewValorParcela').textContent = formatCurrency(valorParcela);
         
-        // Data
         const today = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
         document.getElementById('previewLocalData').textContent = `Goiânia, ${today}`;
         
-        // Usar a biblioteca jsPDF
-        try {
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF({
-                orientation: 'p',
-                unit: 'mm',
-                format: 'a4'
-            });
-            const contractElement = document.getElementById('contractPreview');
+        const contractElement = document.getElementById('contractPreview');
 
-            await doc.html(contractElement, {
-                callback: function (doc) {
-                    doc.save(`contrato-${document.getElementById('compradorNome').value.trim()}.pdf`);
-                },
-                margin: [15, 15, 15, 15],
-                autoPaging: 'text',
-                x: 0,
-                y: 0,
-                width: 180, // Largura do conteúdo no PDF (A4 é 210mm)
-                windowWidth: 800 // Largura da div de preview para renderização
-            });
+        try {
+            const canvas = await html2canvas(contractElement, { scale: 3, useCORS: true }); // Aumentar a escala melhora a qualidade
+            const imgData = canvas.toDataURL('image/png');
+            const { jsPDF } = window.jspdf;
+
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = pdf.internal.pageSize.getHeight();
+            const imgWidth = canvas.width;
+            const imgHeight = canvas.height;
+            const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+            const imgX = (pdfWidth - imgWidth * ratio) / 2;
+            const imgY = 0;
+
+            pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
+            pdf.save(`contrato-${document.getElementById('compradorNome').value.trim().replace(/\s/g, '_')}.pdf`);
         } catch (error) {
             console.error("Erro ao gerar PDF:", error);
             showCustomModal({ message: "Ocorreu um erro ao gerar o PDF." });
