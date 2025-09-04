@@ -188,18 +188,16 @@
         }
 
         #contractPreview {
-            /* CORREÇÃO: Movido para fora da tela em vez de display:none */
             position: absolute;
-            left: -9999px;
+            left: -9999px; /* Mantém fora da tela para não atrapalhar o layout */
             top: auto;
             font-family: 'Times New Roman', Times, serif;
             font-size: 12pt;
             line-height: 1.5;
             color: #000;
             background: #FFF;
-            padding: 2cm;
+            padding: 1cm; /* Reduzir padding para caber melhor */
             width: 21cm; /* A4 width */
-            min-height: 29.7cm; /* A4 height */
             box-sizing: border-box;
         }
         #contractPreview h4 { font-size: 14pt; text-align: center; margin-bottom: 24pt; font-weight: bold; color: #000; }
@@ -490,6 +488,23 @@
         .hidden { display: none !important; }
         .user-id-display { position: fixed; bottom: 15px; left: 15px; background-color: var(--glass-bg); color: var(--text-secondary); padding: 8px 12px; border-radius: 8px; font-size: 0.8rem; z-index: 1000; backdrop-filter: blur(5px); border: 1px solid var(--glass-border); }
         .spinner-border.text-primary { color: var(--primary-color) !important; }
+
+        /* CSS DE IMPRESSÃO */
+        @media print {
+          body > *:not(#contractPreview) { display: none !important; }
+          #contractPreview {
+            display: block !important;
+            position: static !important; /* Garante que não fique fora da tela */
+            left: 0;
+            top: 0;
+            width: 210mm;
+            min-height: 297mm;
+            padding: 20mm;
+            box-sizing: border-box;
+            box-shadow: none;
+            border: none;
+          }
+        }
     </style>
 </head>
 <body>
@@ -800,16 +815,17 @@
                 </div>
             </div>
             
-            <div class="text-center mt-4">
-                <button type="button" class="btn btn-primary w-100" id="generatePdfBtn" style="max-width: 300px;">
+            <div class="text-center mt-4 d-flex justify-content-center gap-2 flex-wrap">
+                <button type="button" class="btn btn-info" id="generatePdfBtn">
                     <i class="bi bi-file-pdf-fill"></i> Gerar PDF
                 </button>
+                <button type="button" id="btnImprimir" class="btn btn-primary"><i class='bi bi-printer'></i> Imprimir contrato</button>
             </div>
         </form>
     </div>
 </div>
 
-<!-- Div de preview do contrato para renderização do PDF -->
+<!-- Div de preview do contrato para renderização do PDF e Impressão -->
 <div id="contractPreview">
     <h4>CONTRATO DE COMPRA E VENDA DE SMARTPHONE</h4>
     
@@ -1585,20 +1601,8 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             document.getElementById('valorParcela').value = '0,00';
         }
     }
-    
-    // CORREÇÃO: Função de gerar PDF refatorada para usar html2canvas
-    async function generateContractPDF() {
-        if (!document.getElementById('contractForm').checkValidity()) {
-            showCustomModal({ message: "Por favor, preencha todos os campos obrigatórios." });
-            document.getElementById('contractForm').reportValidity(); // Mostra qual campo falta
-            return;
-        }
 
-        const btn = document.getElementById('generatePdfBtn');
-        btn.disabled = true;
-        btn.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Gerando...`;
-
-        // Preenche o template de preview
+    function populatePreview() {
         document.getElementById('previewNome').textContent = document.getElementById('compradorNome').value;
         document.getElementById('previewCpf').textContent = document.getElementById('compradorCpf').value;
         document.getElementById('previewRg').textContent = document.getElementById('compradorRg').value;
@@ -1614,7 +1618,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         
         document.getElementById('previewValorTotal').textContent = formatCurrency(total);
         document.getElementById('previewValorTotal2').textContent = formatCurrency(total);
-        // document.getElementById('previewValorExtenso').textContent = "VALOR_POR_EXTENSO"; // Implementação futura se necessário
+        document.getElementById('previewValorExtenso').textContent = ""; // Placeholder
         document.getElementById('previewEntrada').textContent = formatCurrency(entrada);
         document.getElementById('previewSaldo').textContent = formatCurrency(saldo);
         document.getElementById('previewNumParcelas').textContent = `${numParcelas}`;
@@ -1622,31 +1626,58 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         
         const today = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
         document.getElementById('previewLocalData').textContent = `Goiânia, ${today}`;
+    }
+    
+    async function generateContractPDF() {
+        if (!document.getElementById('contractForm').checkValidity()) {
+            showCustomModal({ message: "Por favor, preencha todos os campos obrigatórios." });
+            document.getElementById('contractForm').reportValidity();
+            return;
+        }
+
+        const btn = document.getElementById('generatePdfBtn');
+        btn.disabled = true;
+        btn.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Gerando...`;
+
+        populatePreview();
         
         const contractElement = document.getElementById('contractPreview');
-
+        
         try {
-            const canvas = await html2canvas(contractElement, { scale: 3, useCORS: true }); // Aumentar a escala melhora a qualidade
+            const canvas = await html2canvas(contractElement, { scale: 2, useCORS: true });
             const imgData = canvas.toDataURL('image/png');
+            
             const { jsPDF } = window.jspdf;
-
-            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pdf = new jsPDF('p', 'mm', 'a4'); 
+            
+            const imgProps = pdf.getImageProperties(imgData);
             const pdfWidth = pdf.internal.pageSize.getWidth();
             const pdfHeight = pdf.internal.pageSize.getHeight();
-            const imgWidth = canvas.width;
-            const imgHeight = canvas.height;
-            const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
-            const imgX = (pdfWidth - imgWidth * ratio) / 2;
-            const imgY = 0;
+            
+            const ratio = imgProps.width / pdfWidth;
+            const canvasHeight = imgProps.height / ratio;
 
-            pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
-            pdf.save(`contrato-${document.getElementById('compradorNome').value.trim().replace(/\s/g, '_')}.pdf`);
+            let heightLeft = canvasHeight;
+            let position = 0;
+            
+            pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, canvasHeight);
+            heightLeft -= pdfHeight;
+
+            while (heightLeft > 0) {
+                position = -heightLeft;
+                pdf.addPage();
+                pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, canvasHeight);
+                heightLeft -= pdfHeight;
+            }
+            
+            pdf.save(`Contrato_${document.getElementById('compradorNome').value.trim().replace(/\s+/g, '_')}.pdf`);
+
         } catch (error) {
             console.error("Erro ao gerar PDF:", error);
             showCustomModal({ message: "Ocorreu um erro ao gerar o PDF." });
         } finally {
-            btn.disabled = false;
-            btn.innerHTML = `<i class="bi bi-file-pdf-fill"></i> Gerar PDF`;
+             btn.disabled = false;
+             btn.innerHTML = `<i class="bi bi-file-pdf-fill"></i> Gerar PDF`;
         }
     }
 
@@ -1858,6 +1889,17 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         document.getElementById('numeroParcelas').addEventListener('input', calculateContractPayments);
         document.getElementById('generatePdfBtn').addEventListener('click', generateContractPDF);
 
+        // --- NOVO LISTENER DE IMPRESSÃO ---
+        document.getElementById('btnImprimir').addEventListener('click', () => {
+            if (!document.getElementById('contractForm').checkValidity()) {
+                showCustomModal({ message: "Por favor, preencha todos os campos obrigatórios." });
+                document.getElementById('contractForm').reportValidity();
+                return;
+            }
+            populatePreview();
+            window.print();
+        });
+
         // --- Event Listeners for Export Buttons (UPDATED) ---
         document.getElementById('exportRepassarBtn').addEventListener('click', () => {
             exportResultsToImage('resultRepassarValores', 'repassar-valores.png');
@@ -1892,3 +1934,4 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
 
 </body>
 </html>
+
