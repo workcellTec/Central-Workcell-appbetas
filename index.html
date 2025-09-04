@@ -3,13 +3,13 @@
 <head>
     <meta charset="utf-8"/>
     <meta content="width=device-width, initial-scale=1" name="viewport"/>
-    <title>Calcule Taxas By Brendon</title>
+    <title>Centrar Workcell</title>
     
     <!-- PWA Meta Tags -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#185a9d"/>
-    <link rel="apple-touch-icon" href="https://placehold.co/192x192/185a9d/ffffff?text=CTW">
+    <link rel="apple-touch-icon" href="https://placehold.co/192x192/185a9d/ffffff?text=CW">
     <link rel="manifest" href="manifest.json">
     
     <link href="https://fonts.googleapis.com" rel="preconnect"/>
@@ -20,6 +20,8 @@
     <script src="https://cdn.jsdelivr.net/npm/fuse.js/dist/fuse.min.js"></script>
     <!-- Library for exporting to image -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- Library for exporting to PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
         /* ============================================== */
         /* DESIGN & UX (V5.13) - FAVORITOS APARELHO       */
@@ -111,12 +113,12 @@
         .section-header h3 { margin-bottom: 0; font-size: 1.5rem; }
 
         /* 3. MENU PRINCIPAL */
-        #mainMenu {
+        #mainMenu, #calculatorHome {
             background: var(--gradient-primary); color: #FFF;
             padding-top: 80px; justify-content: flex-start;
         }
-        #mainMenu h2 { text-shadow: 1px 1px 4px rgba(0,0,0,0.2); margin-bottom: 30px; color: #FFF; }
-        #mainMenu .btn-menu {
+        #mainMenu h2, #calculatorHome h2 { text-shadow: 1px 1px 4px rgba(0,0,0,0.2); margin-bottom: 30px; color: #FFF; }
+        .btn-menu {
             display: flex; align-items: center; justify-content: center; gap: 10px;
             font-weight: 500; border-radius: var(--border-radius); padding: 14px 24px;
             margin-bottom: 15px !important; border: none;
@@ -124,9 +126,9 @@
             transition: background-color var(--transition-duration) ease, transform var(--transition-duration) ease, box-shadow var(--transition-duration) ease;
             width: 100%; max-width: 320px; box-shadow: 0 4px 12px var(--shadow-color);
         }
-        [data-theme="dark"] #mainMenu .btn-menu:hover { background-color: rgba(45, 45, 45, 0.9); transform: translateY(-2px); box-shadow: 0 6px 16px var(--shadow-color); }
-        [data-theme="light"] #mainMenu .btn-menu { color: var(--text-color); }
-        [data-theme="light"] #mainMenu .btn-menu:hover { background-color: rgba(255, 255, 255, 0.9); transform: translateY(-2px); }
+        [data-theme="dark"] .btn-menu:hover { background-color: rgba(45, 45, 45, 0.9); transform: translateY(-2px); box-shadow: 0 6px 16px var(--shadow-color); }
+        [data-theme="light"] .btn-menu { color: var(--text-color); }
+        [data-theme="light"] .btn-menu:hover { background-color: rgba(255, 255, 255, 0.9); transform: translateY(-2px); }
 
 
         /* 4. CARDS E SEÇÕES INTERNAS */
@@ -137,7 +139,7 @@
             backdrop-filter: blur(10px);
             transition: background-color var(--transition-duration) ease, border-color var(--transition-duration) ease;
         }
-        .container:not(#mainMenu) { 
+        .container:not(#mainMenu):not(#calculatorHome) { 
             background-color: var(--tertiary-color) !important; 
             padding-top: 20px; align-items: stretch;
         }
@@ -173,6 +175,39 @@
         .btn-back { background: none; color: var(--text-secondary); border: none; font-size: 1.2rem; padding: 5px; }
         .btn-back:hover { color: var(--text-color); }
         
+        /* ESTILOS PARA FORMULÁRIO DE CONTRATO */
+        #contractContainer .content-card { max-width: 800px; margin: 0 auto; }
+        .form-section-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: var(--primary-color);
+            margin-top: 1.5rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        #contractPreview {
+            display: none;
+            font-family: 'Times New Roman', Times, serif;
+            font-size: 12pt;
+            line-height: 1.5;
+            color: #000;
+            background: #FFF;
+            padding: 2cm;
+            width: 21cm; /* A4 width */
+            min-height: 29.7cm; /* A4 height */
+            box-sizing: border-box;
+        }
+        #contractPreview h4 { font-size: 14pt; text-align: center; margin-bottom: 24pt; font-weight: bold; color: #000; }
+        #contractPreview p, #contractPreview div { margin-bottom: 12pt; text-align: justify; color: #000;}
+        #contractPreview .section-title { font-weight: bold; margin-bottom: 6pt; text-transform: uppercase; color: #000;}
+        #contractPreview .signature-line {
+            border-bottom: 1px solid #000;
+            width: 80%;
+            margin: 40px auto 5px auto;
+        }
+
         /* 6. SEÇÃO ADMINISTRAÇÃO E TAXAS */
         #administracao { max-width: 900px; }
         #administracao .admin-section {
@@ -459,234 +494,381 @@
     <i class="bi bi-sun-fill"></i>
 </div>
 
+<!-- MENU PRINCIPAL NOVO -->
 <div class="container text-center" id="mainMenu">
-    <h2 class="mb-4">Bem vindo(a) a C.T.W ,<br/>O que você quer fazer?</h2>
+    <h2 class="mb-4">Bem-vindo(a) à Centrar Workcell,<br/>O que você quer fazer?</h2>
     <div class="d-grid gap-2">
-        <button class="btn-menu" id="openFecharVenda"><i class="bi bi-cash-coin"></i> Fechar uma venda</button>
-        <button class="btn-menu" id="openRepassarValores"><i class="bi bi-arrow-left-right"></i> Repassar valores</button>
-        <button class="btn-menu" id="openCalcularEmprestimo"><i class="bi bi-bank"></i> Calcular Empréstimo</button>
-        <button class="btn-menu" id="openCalcularPorAparelho"><i class="bi bi-phone"></i> Calcular por aparelho</button>
-        <button class="btn-menu" id="openAdministracao"><i class="bi bi-gear"></i> Administração</button>
+        <button class="btn-menu" id="goToCalculator"><i class="bi bi-calculator-fill"></i> Calculadora de Taxa</button>
+        <button class="btn-menu" id="goToContract"><i class="bi bi-file-earmark-text-fill"></i> Formulário Boleto</button>
     </div>
 </div>
 
-<div class="container" id="fecharVenda" style="display: none;">
-    <div class="section-header">
-        <h3>Fechar Venda</h3>
-        <button aria-label="Voltar" class="btn-back" id="backFromFecharVenda"><i class="bi bi-arrow-left"></i></button>
+<!-- CONTAINER PARA A APLICAÇÃO DE CALCULADORA ORIGINAL -->
+<div id="calculatorContainer" class="hidden">
+    <div class="container text-center" id="calculatorHome">
+        <h2 class="mb-4">Calculadora de Taxas,<br/>O que você quer fazer?</h2>
+        <div class="d-grid gap-2">
+            <button class="btn-menu" id="openFecharVenda"><i class="bi bi-cash-coin"></i> Fechar uma venda</button>
+            <button class="btn-menu" id="openRepassarValores"><i class="bi bi-arrow-left-right"></i> Repassar valores</button>
+            <button class="btn-menu" id="openCalcularEmprestimo"><i class="bi bi-bank"></i> Calcular Empréstimo</button>
+            <button class="btn-menu" id="openCalcularPorAparelho"><i class="bi bi-phone"></i> Calcular por aparelho</button>
+            <button class="btn-menu" id="openAdministracao"><i class="bi bi-gear"></i> Administração</button>
+        </div>
     </div>
-    <div class="content-card w-100">
-        <div class="row mb-3 w-100 justify-content-center">
-            <div class="col-12 col-md-4 mb-3"><label class="form-label">Maquininha</label><select class="form-select" id="machine1"><option value="pagbank">PagBank</option><option value="infinity" selected>InfinityPay</option><option value="valorante">Valorante</option></select></div>
-            <div class="col-12 col-md-4 mb-3" id="flagDisplayContainer1" style="display: none;"><label class="form-label">Bandeira</label><button class="btn-flag-display" id="flagDisplayButton1"></button></div>
-            <div class="col-12 col-md-4 mb-3"><label class="form-label">Parcelas</label><select class="form-select" id="installments1"></select></div>
-        </div>
-        <div id="brand1Container" class="hidden"><select id="brand1"><option value="visa">Visa</option><option value="mastercard">Mastercard</option><option value="hiper">Hiper</option><option value="hipercard">Hipercard</option><option value="elo">Elo</option><option value="amex">Amex</option></select></div>
 
-        <div class="toggle-switch">
-            <input type="checkbox" id="vendaModeToggle" checked>
-            <label for="vendaModeToggle">
-                <span><i class="bi bi-pencil-alt"></i> Entrada Manual</span>
-                <span><i class="bi bi-box-seam"></i> Venda por Produto</span>
-            </label>
+    <div class="container" id="fecharVenda" style="display: none;">
+        <div class="section-header">
+            <h3>Fechar Venda</h3>
+            <button aria-label="Voltar" class="btn-back" id="backFromFecharVenda"><i class="bi bi-arrow-left"></i></button>
         </div>
-
-        <div class="mb-3 d-flex justify-content-center flex-wrap" id="manualModeContainer">
-            <label class="me-3"><input checked="" name="manualMode" type="radio" value="total"/> Valor Total</label>
-            <label><input name="manualMode" type="radio" value="parcela"/> Valor da Parcela</label>
-        </div>
-
-        <div class="w-100 hidden" id="vendaPorProdutoContainer" style="max-width: 400px; margin: 0 auto;">
-            <div class="mb-3 search-wrapper">
-                <label class="form-label" for="vendaProdutoSearch"><i class="bi bi-search"></i> Pesquisar Produto</label>
-                <input autocomplete="off" class="form-control" id="vendaProdutoSearch" placeholder="Carregando..." type="text"/>
-                <div class="search-results-container list-group" id="vendaSearchResultsContainer"></div>
+        <div class="content-card w-100">
+            <div class="row mb-3 w-100 justify-content-center">
+                <div class="col-12 col-md-4 mb-3"><label class="form-label">Maquininha</label><select class="form-select" id="machine1"><option value="pagbank">PagBank</option><option value="infinity" selected>InfinityPay</option><option value="valorante">Valorante</option></select></div>
+                <div class="col-12 col-md-4 mb-3" id="flagDisplayContainer1" style="display: none;"><label class="form-label">Bandeira</label><button class="btn-flag-display" id="flagDisplayButton1"></button></div>
+                <div class="col-12 col-md-4 mb-3"><label class="form-label">Parcelas</label><select class="form-select" id="installments1"></select></div>
             </div>
-            <div class="mb-3"><label class="form-label" for="fecharVendaPrecoBase"><i class="bi bi-tag"></i> Preço Base (R$)</label><input class="form-control" id="fecharVendaPrecoBase" readonly="" type="text"/></div>
-            
-            <div class="form-check form-switch my-3 hidden" id="entradaAVistaToggleContainer">
-                <input class="form-check-input" type="checkbox" role="switch" id="entradaAVistaCheckbox">
-                <label class="form-check-label" for="entradaAVistaCheckbox">Entrada à vista?</label>
+            <div id="brand1Container" class="hidden"><select id="brand1"><option value="visa">Visa</option><option value="mastercard">Mastercard</option><option value="hiper">Hiper</option><option value="hipercard">Hipercard</option><option value="elo">Elo</option><option value="amex">Amex</option></select></div>
+
+            <div class="toggle-switch">
+                <input type="checkbox" id="vendaModeToggle" checked>
+                <label for="vendaModeToggle">
+                    <span><i class="bi bi-pencil-alt"></i> Entrada Manual</span>
+                    <span><i class="bi bi-box-seam"></i> Venda por Produto</span>
+                </label>
             </div>
-            
-            <div id="entradaAVistaContainer" class="hidden">
-                <div class="mb-3">
-                    <label class="form-label" for="valorEntradaAVista"><i class="bi bi-cash"></i> Valor da entrada (à vista, sem taxa)</label>
-                    <input class="form-control" id="valorEntradaAVista" type="number" step="0.01" min="0" placeholder="Ex: 500,00">
+
+            <div class="mb-3 d-flex justify-content-center flex-wrap" id="manualModeContainer">
+                <label class="me-3"><input checked="" name="manualMode" type="radio" value="total"/> Valor Total</label>
+                <label><input name="manualMode" type="radio" value="parcela"/> Valor da Parcela</label>
+            </div>
+
+            <div class="w-100 hidden" id="vendaPorProdutoContainer" style="max-width: 400px; margin: 0 auto;">
+                <div class="mb-3 search-wrapper">
+                    <label class="form-label" for="vendaProdutoSearch"><i class="bi bi-search"></i> Pesquisar Produto</label>
+                    <input autocomplete="off" class="form-control" id="vendaProdutoSearch" placeholder="Carregando..." type="text"/>
+                    <div class="search-results-container list-group" id="vendaSearchResultsContainer"></div>
                 </div>
-                <div class="mb-3">
-                    <label class="form-label" for="valorPassadoNoCartao"><i class="bi bi-credit-card"></i> Valor passado no cartão (com taxa)</label>
-                    <input class="form-control" id="valorPassadoNoCartao" type="number" step="0.01" min="0" placeholder="Ex: 1849,00">
+                <div class="mb-3"><label class="form-label" for="fecharVendaPrecoBase"><i class="bi bi-tag"></i> Preço Base (R$)</label><input class="form-control" id="fecharVendaPrecoBase" readonly="" type="text"/></div>
+                
+                <div class="form-check form-switch my-3 hidden" id="entradaAVistaToggleContainer">
+                    <input class="form-check-input" type="checkbox" role="switch" id="entradaAVistaCheckbox">
+                    <label class="form-check-label" for="entradaAVistaCheckbox">Entrada à vista?</label>
                 </div>
-            </div>
-        </div>
-        
-        <div class="w-100 d-flex justify-content-center" id="fecharVendaInputs">
-            <div class="mb-3" style="width: 100%; max-width: 400px;"><label class="form-label" for="fecharVendaValue" id="fecharVendaValueLabel"><i class="bi bi-currency-dollar"></i> Valor Total da Venda (R$)</label><input class="form-control form-control-lg" id="fecharVendaValue" min="0" placeholder="Digite o valor" step="0.01" type="number"/></div>
-        </div>
-        <div class="w-100 d-flex flex-column justify-content-center mt-3" id="resultFecharVenda"></div>
-    </div>
-</div>
-
-<div class="container" id="repassarValores" style="display: none;">
-    <div class="section-header">
-        <h3>Repassar Valores</h3>
-        <button aria-label="Voltar" class="btn-back" id="backFromRepassarValores"><i class="bi bi-arrow-left"></i></button>
-    </div>
-    <div class="content-card w-100">
-        <div class="row mb-3 w-100 justify-content-center">
-            <div class="col-12 col-md-6 mb-3"><label class="form-label">Maquininha</label><select class="form-select" id="machine2"><option value="pagbank">PagBank</option><option value="infinity">InfinityPay</option><option value="valorante">Valorante</option></select></div>
-            <div class="col-12 col-md-6 mb-3" id="flagDisplayContainer2" style="display: none;"><label class="form-label">Bandeira</label><button class="btn-flag-display" id="flagDisplayButton2"></button></div>
-        </div>
-        <div id="brand2Container" class="hidden"><select id="brand2"><option value="visa">Visa</option><option value="mastercard">Mastercard</option><option value="hiper">Hiper</option><option value="hipercard">Hipercard</option><option value="elo">Elo</option><option value="amex">Amex</option></select></div>
-
-        <div class="mb-3" style="max-width: 400px; margin: 0 auto 1rem;">
-            <label class="form-label" for="repassarValue"><i class="bi bi-calculator"></i> Valor Desejado (líquido)</label>
-            <input class="form-control form-control-lg" id="repassarValue" min="0" placeholder="Digite o valor desejado" step="0.01" type="number"/>
-        </div>
-        <div class="w-100 d-flex flex-column align-items-center" id="resultRepassarValores"></div>
-        <div class="text-center mt-3 w-100" id="exportRepassarContainer" style="display: none;">
-            <button class="btn btn-info" id="exportRepassarBtn"><i class="bi bi-camera-fill"></i> Exportar Imagem</button>
-        </div>
-    </div>
-</div>
-
-<div class="container" id="calcularEmprestimo" style="display: none;">
-    <div class="section-header">
-        <h3>Calcular Empréstimo</h3>
-        <button aria-label="Voltar" class="btn-back" id="backFromCalcularEmprestimo"><i class="bi bi-arrow-left"></i></button>
-    </div>
-    <div class="content-card w-100">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <div class="lucro-display" id="emprestimoLucroDisplay"></div>
-            <button id="openLucroModalBtn" class="btn btn-sm btn-back" aria-label="Configurar Lucro" style="font-size: 1.4rem;"><i class="bi bi-gear-fill"></i></button>
-        </div>
-        <div id="valorLiquidoDisplay" class="mb-3"></div>
-        <div class="mb-3" style="max-width: 400px; margin: 0 auto 1rem;">
-            <label class="form-label" for="emprestimoValue"><i class="bi bi-cash-coin"></i> Valor Base do Empréstimo</label>
-            <input class="form-control form-control-lg" id="emprestimoValue" min="0" placeholder="Ex: 10000" step="0.01" type="number"/>
-        </div>
-        <div class="row mb-3 w-100 justify-content-center">
-            <div class="col-12 col-md-6 mb-3"><label class="form-label">Maquininha</label><select class="form-select" id="machine4"><option value="pagbank">PagBank</option><option value="infinity">InfinityPay</option><option value="valorante" selected>Valorante</option></select></div>
-            <div class="col-12 col-md-6 mb-3" id="flagDisplayContainer4" style="display: none;"><label class="form-label">Bandeira</label><button class="btn-flag-display" id="flagDisplayButton4"></button></div>
-        </div>
-        <div id="brand4Container" class="hidden"><select id="brand4"><option value="visa">Visa</option><option value="mastercard">Mastercard</option><option value="hiper">Hiper</option><option value="hipercard">Hipercard</option><option value="elo">Elo</option><option value="amex">Amex</option></select></div>
-        <div class="w-100 d-flex flex-column align-items-center" id="resultCalcularEmprestimo"></div>
-        <div class="text-center mt-3 w-100" id="exportEmprestimoContainer" style="display: none;">
-            <button class="btn btn-info" id="exportEmprestimoBtn"><i class="bi bi-camera-fill"></i> Exportar Imagem</button>
-        </div>
-    </div>
-</div>
-
-<div class="container" id="calcularPorAparelho" style="display: none;">
-    <div class="section-header">
-        <h3>Calcular por Aparelho</h3>
-        <button aria-label="Voltar" class="btn-back" id="backFromCalcularPorAparelho"><i class="bi bi-arrow-left"></i></button>
-    </div>
-    <div class="content-card w-100">
-        <div class="favoritos" id="aparelhoFavoritosContainer"></div>
-        <div class="mb-3 search-wrapper mx-auto"><label class="form-label" for="aparelhoSearch"><i class="bi bi-search"></i> Pesquisar Aparelho</label><input autocomplete="off" class="form-control" id="aparelhoSearch" placeholder="Carregando..." type="text"/><div class="search-results-container list-group" id="aparelhoResultsContainer"></div></div>
-        <div class="mb-3 mx-auto" style="max-width: 400px;">
-            <label class="form-label" for="entradaAparelho"><i class="bi bi-wallet2"></i> Valor de entrada (opcional)</label>
-            <input class="form-control" id="entradaAparelho" min="0" placeholder="Digite o valor da entrada" step="0.01" type="number"/>
-        </div>
-
-        <div class="extra-value-toggle mx-auto">
-            <button class="btn-toggle-extra" id="toggleValorExtraBtn" aria-label="Adicionar valor extra">
-                <i class="bi bi-chevron-down"></i>
-            </button>
-        </div>
-        <div class="extra-value-container mx-auto" id="valorExtraContainer" style="max-width: 400px;">
-            <div class="mb-3">
-                <label class="form-label" for="valorExtraAparelho"><i class="bi bi-plus-circle"></i> Valor adicional</label>
-                <input class="form-control" id="valorExtraAparelho" min="0" placeholder="Ex: 40,00" step="0.01" type="number"/>
-            </div>
-        </div>
-        
-        <div class="text-center mt-3">
-            <button class="btn btn-sm hidden" id="saveAparelhoFavoriteBtn" style="background-color: rgba(var(--primary-color-rgb), 0.15); color: var(--primary-color);">
-                <i class="bi bi-star-fill"></i> Salvar como favorito
-            </button>
-        </div>
-
-        <div class="row my-3 w-100 justify-content-center">
-            <div class="col-12 col-md-6 mb-3"><label class="form-label">Maquininha</label><select class="form-select" id="machine3"><option value="pagbank">PagBank</option><option value="infinity">InfinityPay</option><option value="valorante">Valorante</option></select></div>
-            <div class="col-12 col-md-6 mb-3" id="flagDisplayContainer3" style="display: none;"><label class="form-label">Bandeira</label><button class="btn-flag-display" id="flagDisplayButton3"></button></div>
-        </div>
-        <div id="brand3Container" class="hidden"><select id="brand3"><option value="visa">Visa</option><option value="mastercard">Mastercard</option><option value="hiper">Hiper</option><option value="hipercard">Hipercard</option><option value="elo">Elo</option><option value="amex">Amex</option></select></div>
-
-        <div class="w-100 d-flex flex-column align-items-center" id="resultCalcularPorAparelho"></div>
-        <div class="text-center mt-3 w-100" id="exportAparelhoContainer" style="display: none;">
-            <button class="btn btn-info" id="exportAparelhoBtn"><i class="bi bi-camera-fill"></i> Exportar Imagem</button>
-        </div>
-    </div>
-</div>
-
-<div class="container" id="administracao" style="display: none;">
-    <div class="section-header">
-        <h3>Administração</h3>
-        <button aria-label="Voltar" class="btn-back" id="backFromAdministracao"><i class="bi bi-arrow-left"></i></button>
-    </div>
-
-    <div class="admin-section w-100">
-        <h5 class="text-center mb-3">Selecione o que deseja gerenciar</h5>
-        <div class="toggle-switch">
-            <input type="checkbox" id="adminModeToggle">
-            <label for="adminModeToggle">
-                <span><i class="bi bi-box-seam-fill me-2"></i>Produtos</span>
-                <span><i class="bi bi-percent me-2"></i>Taxas</span>
-            </label>
-        </div>
-    </div>
-
-    <div id="adminProductsContent">
-        <div class="admin-section text-start w-100">
-            <h4 class="mb-3"><i class="bi bi-upload"></i> Importar/Exportar Produtos</h4>
-            <div class="mb-3"><label class="form-label" for="pasteInput"><i class="bi bi-clipboard"></i> Colar Lista (Ex: iPhone 14 - 3999.00):</label><textarea class="form-control" id="pasteInput" placeholder="Cole sua lista de produtos aqui..." rows="5"></textarea></div>
-            <button class="btn btn-primary mb-2 me-2" id="importFromPasteBtn"><i class="bi bi-clipboard-check"></i> Importar</button>
-            <button class="btn btn-secondary mb-2 me-2" id="uploadFileBtn"><i class="bi bi-file-earmark-arrow-up"></i> Upload</button>
-            <button class="btn btn-info mb-2 me-2" id="exportTxt"><i class="bi bi-file-text"></i> Exportar TXT</button>
-            <button class="btn btn-info mb-2" id="exportJson"><i class="bi bi-file-earmark-code"></i> Exportar JSON</button>
-            <input accept=".txt,.csv" class="d-none" id="fileInput" type="file">
-            <div class="mt-2" id="importStatus"></div>
-        </div>
-        <div class="admin-section text-start w-100">
-            <h4 class="mb-3"><i class="bi bi-magic"></i> Comando Rápido de Produto (I.A) </h4>
-            <div class="input-group"><input class="form-control" id="naturalCommandInput" placeholder="Ex: baixar redmi 10 para 899,90" type="text"/><button class="btn btn-primary" id="applyNaturalCommand"><i class="bi bi-send-fill"></i></button></div>
-            <div class="mt-2" id="commandStatus"></div>
-        </div>
-        <div class="admin-section text-start w-100">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h4 class="mb-0"><i class="bi bi-list-ul"></i> Produtos</h4>
-                <input class="form-control" id="adminSearchInput" placeholder="Filtrar..." style="width: 200px;" type="text">
-            </div>
-            <div class="table-responsive"><table class="table align-middle"><thead><tr><th style="width: 65%;">Nome do Produto</th><th style="width: 35%;">Valor</th></tr></thead><tbody id="productsTableBody"></tbody></table></div>
-            <button class="btn btn-success mt-3" id="addNewProduct"><i class="bi bi-plus-lg"></i> Adicionar Novo</button>
-        </div>
-        <div class="admin-section text-center w-100 pt-3">
-             <button class="btn btn-danger" id="deleteAllProductsBtn"><i class="bi bi-trash-fill"></i> Excluir todos os produtos</button>
-        </div>
-    </div>
-
-    <div id="adminRatesContent" class="w-100" style="display: none;">
-        <div class="admin-section">
-            <h4 class="text-start"><i class="bi bi-pencil-square"></i> Editar Taxas do Sistema</h4>
-            <p class="text-start text-secondary">Altere os valores e clique em salvar. As mudanças serão aplicadas para todos os usuários.</p>
-
-            <div class="accordion" id="ratesAccordion">
-                 <div class="text-center p-4">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Carregando...</span>
+                
+                <div id="entradaAVistaContainer" class="hidden">
+                    <div class="mb-3">
+                        <label class="form-label" for="valorEntradaAVista"><i class="bi bi-cash"></i> Valor da entrada (à vista, sem taxa)</label>
+                        <input class="form-control" id="valorEntradaAVista" type="number" step="0.01" min="0" placeholder="Ex: 500,00">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="valorPassadoNoCartao"><i class="bi bi-credit-card"></i> Valor passado no cartão (com taxa)</label>
+                        <input class="form-control" id="valorPassadoNoCartao" type="number" step="0.01" min="0" placeholder="Ex: 1849,00">
                     </div>
                 </div>
             </div>
+            
+            <div class="w-100 d-flex justify-content-center" id="fecharVendaInputs">
+                <div class="mb-3" style="width: 100%; max-width: 400px;"><label class="form-label" for="fecharVendaValue" id="fecharVendaValueLabel"><i class="bi bi-currency-dollar"></i> Valor Total da Venda (R$)</label><input class="form-control form-control-lg" id="fecharVendaValue" min="0" placeholder="Digite o valor" step="0.01" type="number"/></div>
+            </div>
+            <div class="w-100 d-flex flex-column justify-content-center mt-3" id="resultFecharVenda"></div>
+        </div>
+    </div>
 
-            <button class="btn btn-primary w-100 mt-4" id="saveRatesBtn">
-                <i class="bi bi-save-fill"></i> Salvar Alterações de Taxas
-            </button>
+    <div class="container" id="repassarValores" style="display: none;">
+        <div class="section-header">
+            <h3>Repassar Valores</h3>
+            <button aria-label="Voltar" class="btn-back" id="backFromRepassarValores"><i class="bi bi-arrow-left"></i></button>
+        </div>
+        <div class="content-card w-100">
+            <div class="row mb-3 w-100 justify-content-center">
+                <div class="col-12 col-md-6 mb-3"><label class="form-label">Maquininha</label><select class="form-select" id="machine2"><option value="pagbank">PagBank</option><option value="infinity">InfinityPay</option><option value="valorante">Valorante</option></select></div>
+                <div class="col-12 col-md-6 mb-3" id="flagDisplayContainer2" style="display: none;"><label class="form-label">Bandeira</label><button class="btn-flag-display" id="flagDisplayButton2"></button></div>
+            </div>
+            <div id="brand2Container" class="hidden"><select id="brand2"><option value="visa">Visa</option><option value="mastercard">Mastercard</option><option value="hiper">Hiper</option><option value="hipercard">Hipercard</option><option value="elo">Elo</option><option value="amex">Amex</option></select></div>
+
+            <div class="mb-3" style="max-width: 400px; margin: 0 auto 1rem;">
+                <label class="form-label" for="repassarValue"><i class="bi bi-calculator"></i> Valor Desejado (líquido)</label>
+                <input class="form-control form-control-lg" id="repassarValue" min="0" placeholder="Digite o valor desejado" step="0.01" type="number"/>
+            </div>
+            <div class="w-100 d-flex flex-column align-items-center" id="resultRepassarValores"></div>
+            <div class="text-center mt-3 w-100" id="exportRepassarContainer" style="display: none;">
+                <button class="btn btn-info" id="exportRepassarBtn"><i class="bi bi-camera-fill"></i> Exportar Imagem</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container" id="calcularEmprestimo" style="display: none;">
+        <div class="section-header">
+            <h3>Calcular Empréstimo</h3>
+            <button aria-label="Voltar" class="btn-back" id="backFromCalcularEmprestimo"><i class="bi bi-arrow-left"></i></button>
+        </div>
+        <div class="content-card w-100">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div class="lucro-display" id="emprestimoLucroDisplay"></div>
+                <button id="openLucroModalBtn" class="btn btn-sm btn-back" aria-label="Configurar Lucro" style="font-size: 1.4rem;"><i class="bi bi-gear-fill"></i></button>
+            </div>
+            <div id="valorLiquidoDisplay" class="mb-3"></div>
+            <div class="mb-3" style="max-width: 400px; margin: 0 auto 1rem;">
+                <label class="form-label" for="emprestimoValue"><i class="bi bi-cash-coin"></i> Valor Base do Empréstimo</label>
+                <input class="form-control form-control-lg" id="emprestimoValue" min="0" placeholder="Ex: 10000" step="0.01" type="number"/>
+            </div>
+            <div class="row mb-3 w-100 justify-content-center">
+                <div class="col-12 col-md-6 mb-3"><label class="form-label">Maquininha</label><select class="form-select" id="machine4"><option value="pagbank">PagBank</option><option value="infinity">InfinityPay</option><option value="valorante" selected>Valorante</option></select></div>
+                <div class="col-12 col-md-6 mb-3" id="flagDisplayContainer4" style="display: none;"><label class="form-label">Bandeira</label><button class="btn-flag-display" id="flagDisplayButton4"></button></div>
+            </div>
+            <div id="brand4Container" class="hidden"><select id="brand4"><option value="visa">Visa</option><option value="mastercard">Mastercard</option><option value="hiper">Hiper</option><option value="hipercard">Hipercard</option><option value="elo">Elo</option><option value="amex">Amex</option></select></div>
+            <div class="w-100 d-flex flex-column align-items-center" id="resultCalcularEmprestimo"></div>
+            <div class="text-center mt-3 w-100" id="exportEmprestimoContainer" style="display: none;">
+                <button class="btn btn-info" id="exportEmprestimoBtn"><i class="bi bi-camera-fill"></i> Exportar Imagem</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container" id="calcularPorAparelho" style="display: none;">
+        <div class="section-header">
+            <h3>Calcular por Aparelho</h3>
+            <button aria-label="Voltar" class="btn-back" id="backFromCalcularPorAparelho"><i class="bi bi-arrow-left"></i></button>
+        </div>
+        <div class="content-card w-100">
+            <div class="favoritos" id="aparelhoFavoritosContainer"></div>
+            <div class="mb-3 search-wrapper mx-auto"><label class="form-label" for="aparelhoSearch"><i class="bi bi-search"></i> Pesquisar Aparelho</label><input autocomplete="off" class="form-control" id="aparelhoSearch" placeholder="Carregando..." type="text"/><div class="search-results-container list-group" id="aparelhoResultsContainer"></div></div>
+            <div class="mb-3 mx-auto" style="max-width: 400px;">
+                <label class="form-label" for="entradaAparelho"><i class="bi bi-wallet2"></i> Valor de entrada (opcional)</label>
+                <input class="form-control" id="entradaAparelho" min="0" placeholder="Digite o valor da entrada" step="0.01" type="number"/>
+            </div>
+
+            <div class="extra-value-toggle mx-auto">
+                <button class="btn-toggle-extra" id="toggleValorExtraBtn" aria-label="Adicionar valor extra">
+                    <i class="bi bi-chevron-down"></i>
+                </button>
+            </div>
+            <div class="extra-value-container mx-auto" id="valorExtraContainer" style="max-width: 400px;">
+                <div class="mb-3">
+                    <label class="form-label" for="valorExtraAparelho"><i class="bi bi-plus-circle"></i> Valor adicional</label>
+                    <input class="form-control" id="valorExtraAparelho" min="0" placeholder="Ex: 40,00" step="0.01" type="number"/>
+                </div>
+            </div>
+            
+            <div class="text-center mt-3">
+                <button class="btn btn-sm hidden" id="saveAparelhoFavoriteBtn" style="background-color: rgba(var(--primary-color-rgb), 0.15); color: var(--primary-color);">
+                    <i class="bi bi-star-fill"></i> Salvar como favorito
+                </button>
+            </div>
+
+            <div class="row my-3 w-100 justify-content-center">
+                <div class="col-12 col-md-6 mb-3"><label class="form-label">Maquininha</label><select class="form-select" id="machine3"><option value="pagbank">PagBank</option><option value="infinity">InfinityPay</option><option value="valorante">Valorante</option></select></div>
+                <div class="col-12 col-md-6 mb-3" id="flagDisplayContainer3" style="display: none;"><label class="form-label">Bandeira</label><button class="btn-flag-display" id="flagDisplayButton3"></button></div>
+            </div>
+            <div id="brand3Container" class="hidden"><select id="brand3"><option value="visa">Visa</option><option value="mastercard">Mastercard</option><option value="hiper">Hiper</option><option value="hipercard">Hipercard</option><option value="elo">Elo</option><option value="amex">Amex</option></select></div>
+
+            <div class="w-100 d-flex flex-column align-items-center" id="resultCalcularPorAparelho"></div>
+            <div class="text-center mt-3 w-100" id="exportAparelhoContainer" style="display: none;">
+                <button class="btn btn-info" id="exportAparelhoBtn"><i class="bi bi-camera-fill"></i> Exportar Imagem</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container" id="administracao" style="display: none;">
+        <div class="section-header">
+            <h3>Administração</h3>
+            <button aria-label="Voltar" class="btn-back" id="backFromAdministracao"><i class="bi bi-arrow-left"></i></button>
+        </div>
+
+        <div class="admin-section w-100">
+            <h5 class="text-center mb-3">Selecione o que deseja gerenciar</h5>
+            <div class="toggle-switch">
+                <input type="checkbox" id="adminModeToggle">
+                <label for="adminModeToggle">
+                    <span><i class="bi bi-box-seam-fill me-2"></i>Produtos</span>
+                    <span><i class="bi bi-percent me-2"></i>Taxas</span>
+                </label>
+            </div>
+        </div>
+
+        <div id="adminProductsContent">
+            <div class="admin-section text-start w-100">
+                <h4 class="mb-3"><i class="bi bi-upload"></i> Importar/Exportar Produtos</h4>
+                <div class="mb-3"><label class="form-label" for="pasteInput"><i class="bi bi-clipboard"></i> Colar Lista (Ex: iPhone 14 - 3999.00):</label><textarea class="form-control" id="pasteInput" placeholder="Cole sua lista de produtos aqui..." rows="5"></textarea></div>
+                <button class="btn btn-primary mb-2 me-2" id="importFromPasteBtn"><i class="bi bi-clipboard-check"></i> Importar</button>
+                <button class="btn btn-secondary mb-2 me-2" id="uploadFileBtn"><i class="bi bi-file-earmark-arrow-up"></i> Upload</button>
+                <button class="btn btn-info mb-2 me-2" id="exportTxt"><i class="bi bi-file-text"></i> Exportar TXT</button>
+                <button class="btn btn-info mb-2" id="exportJson"><i class="bi bi-file-earmark-code"></i> Exportar JSON</button>
+                <input accept=".txt,.csv" class="d-none" id="fileInput" type="file">
+                <div class="mt-2" id="importStatus"></div>
+            </div>
+            <div class="admin-section text-start w-100">
+                <h4 class="mb-3"><i class="bi bi-magic"></i> Comando Rápido de Produto (I.A) </h4>
+                <div class="input-group"><input class="form-control" id="naturalCommandInput" placeholder="Ex: baixar redmi 10 para 899,90" type="text"/><button class="btn btn-primary" id="applyNaturalCommand"><i class="bi bi-send-fill"></i></button></div>
+                <div class="mt-2" id="commandStatus"></div>
+            </div>
+            <div class="admin-section text-start w-100">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="mb-0"><i class="bi bi-list-ul"></i> Produtos</h4>
+                    <input class="form-control" id="adminSearchInput" placeholder="Filtrar..." style="width: 200px;" type="text">
+                </div>
+                <div class="table-responsive"><table class="table align-middle"><thead><tr><th style="width: 65%;">Nome do Produto</th><th style="width: 35%;">Valor</th></tr></thead><tbody id="productsTableBody"></tbody></table></div>
+                <button class="btn btn-success mt-3" id="addNewProduct"><i class="bi bi-plus-lg"></i> Adicionar Novo</button>
+            </div>
+            <div class="admin-section text-center w-100 pt-3">
+                 <button class="btn btn-danger" id="deleteAllProductsBtn"><i class="bi bi-trash-fill"></i> Excluir todos os produtos</button>
+            </div>
+        </div>
+
+        <div id="adminRatesContent" class="w-100" style="display: none;">
+            <div class="admin-section">
+                <h4 class="text-start"><i class="bi bi-pencil-square"></i> Editar Taxas do Sistema</h4>
+                <p class="text-start text-secondary">Altere os valores e clique em salvar. As mudanças serão aplicadas para todos os usuários.</p>
+                <div class="accordion" id="ratesAccordion">
+                     <div class="text-center p-4">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Carregando...</span>
+                        </div>
+                    </div>
+                </div>
+                <button class="btn btn-primary w-100 mt-4" id="saveRatesBtn">
+                    <i class="bi bi-save-fill"></i> Salvar Alterações de Taxas
+                </button>
+            </div>
         </div>
     </div>
 </div>
+
+<!-- CONTAINER PARA O NOVO FORMULÁRIO DE CONTRATO -->
+<div id="contractContainer" class="container hidden">
+    <div class="section-header">
+        <h3>Contrato de Boleto</h3>
+        <button aria-label="Voltar" class="btn-back" id="backFromContract"><i class="bi bi-arrow-left"></i></button>
+    </div>
+    <div class="content-card w-100">
+        <form id="contractForm">
+            <h5 class="form-section-title">Dados do Comprador</h5>
+            <div class="row">
+                <div class="col-md-12 mb-3">
+                    <label for="compradorNome" class="form-label">Nome Completo</label>
+                    <input type="text" class="form-control" id="compradorNome" required>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="compradorCpf" class="form-label">CPF</label>
+                    <input type="text" class="form-control" id="compradorCpf" required>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="compradorRg" class="form-label">RG</label>
+                    <input type="text" class="form-control" id="compradorRg">
+                </div>
+                <div class="col-md-12 mb-3">
+                    <label for="compradorEndereco" class="form-label">Endereço Completo</label>
+                    <input type="text" class="form-control" id="compradorEndereco" required>
+                </div>
+            </div>
+
+            <h5 class="form-section-title">Dados do Produto</h5>
+            <div class="row">
+                <div class="col-md-12 mb-3">
+                    <label for="produtoModelo" class="form-label">Modelo(s) do Smartphone</label>
+                    <input type="text" class="form-control" id="produtoModelo" required>
+                </div>
+                <div class="col-md-12 mb-3">
+                    <label for="produtoImei" class="form-label">IMEI(s)</label>
+                    <input type="text" class="form-control" id="produtoImei" required>
+                </div>
+            </div>
+            
+            <h5 class="form-section-title">Condições de Pagamento</h5>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="valorTotal" class="form-label">Valor Total (R$)</label>
+                    <input type="number" step="0.01" class="form-control" id="valorTotal" required>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="valorEntrada" class="form-label">Valor da Entrada (R$)</label>
+                    <input type="number" step="0.01" class="form-control" id="valorEntrada" required>
+                </div>
+                <div class="col-md-4 mb-3">
+                     <label for="saldoRestante" class="form-label">Saldo Restante (R$)</label>
+                    <input type="text" class="form-control" id="saldoRestante" readonly>
+                </div>
+                 <div class="col-md-4 mb-3">
+                    <label for="numeroParcelas" class="form-label">Nº de Parcelas</label>
+                    <input type="number" step="1" class="form-control" id="numeroParcelas" required>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="valorParcela" class="form-label">Valor da Parcela (R$)</label>
+                    <input type="text" class="form-control" id="valorParcela" readonly>
+                </div>
+            </div>
+            
+            <div class="text-center mt-4">
+                <button type="button" class="btn btn-primary w-100" id="generatePdfBtn" style="max-width: 300px;">
+                    <i class="bi bi-file-pdf-fill"></i> Gerar PDF
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Div escondida para renderizar o contrato para o PDF -->
+<div id="contractPreview">
+    <h4>CONTRATO DE COMPRA E VENDA DE SMARTPHONE</h4>
+    
+    <div>
+        Pelo presente instrumento particular, as partes a seguir identificadas firmam o presente CONTRATO DE COMPRA E VENDA, mediante as cláusulas e condições abaixo:
+    </div>
+
+    <div class="section-title">VENDEDOR</div>
+    <p>Workcell Tecnologia LTDA – CNPJ nº 50.299.715/0001-65, com sede em Av. Goiás, n° 4118 - loja 05 posto - St. Crimeia Oeste, Goiânia - GO, 74563-220.</p>
+
+    <div class="section-title">COMPRADOR</div>
+    <p>
+        <strong>Nome:</strong> <span id="previewNome"></span><br>
+        <strong>CPF:</strong> <span id="previewCpf"></span> <strong>RG:</strong> <span id="previewRg"></span><br>
+        <strong>Endereço:</strong> <span id="previewEndereco"></span>
+    </p>
+
+    <div class="section-title">CLÁUSULA 1 – DO OBJETO</div>
+    <p>O presente contrato tem por objeto a venda do(s) smartphone(s) descrito(s) abaixo:</p>
+    <p>
+        <strong>Modelo:</strong> <span id="previewModelo"></span><br>
+        <strong>IMEI(s):</strong> <span id="previewImei"></span><br>
+        <strong>Valor total:</strong> R$ <span id="previewValorTotal"></span>
+    </p>
+
+    <div class="section-title">CLÁUSULA 2 – DO PAGAMENTO</div>
+    <p>
+        2.1 O valor total da compra é de R$ <span id="previewValorTotal2"></span> (<span id="previewValorExtenso"></span>), sendo pago da seguinte forma:<br>
+        a) Entrada no valor de R$ <span id="previewEntrada"></span>, paga no ato da assinatura deste contrato;<br>
+        b) O saldo restante de R$ <span id="previewSaldo"></span>, dividido em <span id="previewNumParcelas"></span> parcelas mensais de R$ <span id="previewValorParcela"></span>, a serem pagas através de boleto bancário emitido pelo VENDEDOR.
+    </p>
+    <p>
+        2.2 O não pagamento de qualquer parcela na data de vencimento acarretará:<br>
+        - Multa de 2% (dois por cento) sobre o valor da parcela em atraso;<br>
+        - Juros de mora de 1% (um por cento) ao mês;<br>
+        - Correção monetária conforme índice legal aplicável.
+    </p>
+
+    <div class="section-title">CLÁUSULA 3 – DA PROPRIEDADE</div>
+    <p>3.1 A propriedade do smartphone somente será transferida ao COMPRADOR após a quitação integral de todas as parcelas.</p>
+    <p>3.2 Em caso de inadimplência, o COMPRADOR será notificado pelo VENDEDOR e terá o prazo de 5 (cinco) dias corridos para regularizar o pagamento.</p>
+    <p>3.3 Caso não haja a regularização no prazo informado, o VENDEDOR poderá proceder ao bloqueio remoto do aparelho, impedindo seu uso até a quitação ou negociação da dívida, sem prejuízo da cobrança das parcelas vencidas e demais encargos previstos neste contrato.</p>
+
+    <div class="section-title">CLÁUSULA 4 – DAS GARANTIAS</div>
+    <p>4.1 O aparelho possui garantia legal de 1 (um) ano para qualquer defeito de fabricação pelo fabricante, contados a partir da entrega do produto.</p>
+    <p>4.2 A garantia não cobre mau uso, quedas, molhar, oxidação ou violação do aparelho.</p>
+
+    <div class="section-title">CLÁUSULA 5 – DA RESCISÃO</div>
+    <p>5.1 O não cumprimento de qualquer obrigação contratual poderá resultar na rescisão imediata deste contrato, com a cobrança das parcelas vencidas e vincendas, além das penalidades cabíveis.</p>
+
+    <div class="section-title">CLÁUSULA 6 – DO FORO</div>
+    <p>As partes elegem o foro da comarca de Goiânia para dirimir quaisquer dúvidas oriundas deste contrato.</p>
+    <p>E por estarem de acordo, firmam o presente contrato em 2 (duas) vias de igual teor.</p>
+
+    <p><strong>Local e data:</strong> <span id="previewLocalData"></span></p>
+
+    <div class="signature-line"></div>
+    <p style="text-align: center; margin-bottom: 20pt;">Assinatura VENDEDOR</p>
+    <div class="signature-line"></div>
+    <p style="text-align: center;">Assinatura COMPRADOR</p>
+</div>
+
 
 <div class="user-id-display" id="userIdDisplay" style="display: none;"></div>
 
@@ -736,23 +918,23 @@
 
 <script type="application/json" id="manifest-data">
 {
-  "name": "Calcule Taxas By Brendon",
-  "short_name": "CalculeTaxas",
-  "description": "Calculadora de taxas de maquininhas de cartão para facilitar suas vendas.",
+  "name": "Centrar Workcell",
+  "short_name": "CentrarWorkcell",
+  "description": "Calculadora de taxas e gerador de contratos para facilitar suas vendas.",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#18181b",
   "theme_color": "#185a9d",
   "orientation": "portrait-primary",
   "icons": [
-    { "src": "https://placehold.co/192x192/185a9d/ffffff?text=CTW", "type": "image/png", "sizes": "192x192" },
-    { "src": "https://placehold.co/512x512/185a9d/ffffff?text=CTW", "type": "image/png", "sizes": "512x512" }
+    { "src": "https://placehold.co/192x192/185a9d/ffffff?text=CW", "type": "image/png", "sizes": "192x192" },
+    { "src": "https://placehold.co/512x512/185a9d/ffffff?text=CW", "type": "image/png", "sizes": "512x512" }
   ]
 }
 </script>
 
 <script type="text/javascript" id="sw-script">
-const CACHE_NAME = 'calcule-taxas-cache-v1';
+const CACHE_NAME = 'centrar-workcell-cache-v1';
 const urlsToCache = [ '/', '/index.html', 'https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap', 'https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css', 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css', 'https://cdn.jsdelivr.net/npm/fuse.js/dist/fuse.min.js', 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js', 'https://www.gstatic.com/firebasejs/11.9.1/firebase-app.js', 'https://www.gstatic.com/firebasejs/11.9.1/firebase-auth.js', 'https://www.gstatic.com/firebasejs/11.9.1/firebase-database.js' ];
 self.addEventListener('install', event => { event.waitUntil( caches.open(CACHE_NAME).then(cache => { console.log('Cache aberto'); return cache.addAll(urlsToCache); }) ); });
 self.addEventListener('fetch', event => { event.respondWith( caches.match(event.request).then(response => { if (response) { return response; } return fetch(event.request).then( response => { if(!response || response.status !== 200 || response.type !== 'basic') { return response; } const responseToCache = response.clone(); caches.open(CACHE_NAME).then(cache => { cache.put(event.request, responseToCache); }); return response; } ); }) ); });
@@ -779,7 +961,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
     // --- VARIÁVEIS GLOBAIS ---
     let app, db, auth, userId = null, isAuthReady = false, areRatesLoaded = false;
     let products = [], fuse, selectedAparelhoValue = 0, fecharVendaPrecoBase = 0;
-    let currentSectionId = 'mainMenu', productsListener = null, rates = {};
+    let currentCalculatorSectionId = 'calculatorHome', productsListener = null, rates = {};
     let emprestimoLucroPercentual = 15;
     const APARELHO_FAVORITES_KEY = 'ctwAparelhoFavoritos';
     const MAX_FAVORITES = 5;
@@ -795,6 +977,35 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
     const sunIcon = 'bi-sun-fill', moonIcon = 'bi-moon-fill';
     function applyTheme(theme) { document.body.dataset.theme = theme; themeToggle.querySelector('i').className = theme === 'light' ? moonIcon : sunIcon; safeStorage.setItem('theme', theme); }
     function toggleTheme() { const currentTheme = document.body.dataset.theme || 'dark'; applyTheme(currentTheme === 'dark' ? 'light' : 'dark'); }
+
+    // --- NOVA NAVEGAÇÃO PRINCIPAL ---
+    const mainMenu = document.getElementById('mainMenu');
+    const calculatorContainer = document.getElementById('calculatorContainer');
+    const contractContainer = document.getElementById('contractContainer');
+
+    function showMainSection(sectionId) {
+        mainMenu.classList.add('hidden');
+        calculatorContainer.classList.add('hidden');
+        contractContainer.classList.add('hidden');
+        
+        mainMenu.style.display = 'none';
+        calculatorContainer.style.display = 'none';
+        contractContainer.style.display = 'none';
+
+        if (sectionId === 'main') {
+            mainMenu.classList.remove('hidden');
+            mainMenu.style.display = 'flex';
+            themeToggle.style.display = 'flex';
+        } else if (sectionId === 'calculator') {
+            calculatorContainer.classList.remove('hidden');
+            calculatorContainer.style.display = 'block';
+            openCalculatorSection('calculatorHome'); // Abre a tela inicial da calculadora
+        } else if (sectionId === 'contract') {
+            contractContainer.classList.remove('hidden');
+            contractContainer.style.display = 'flex';
+            themeToggle.style.display = 'none';
+        }
+    }
 
     // --- FUNÇÕES DE ADMINISTRAÇÃO (TAXAS) ---
     function renderRatesEditor() {
@@ -865,16 +1076,19 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
     // --- FUNÇÕES UTILITÁRIAS E DE UI ---
     function escapeHtml(text) { const map = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'}; return text ? text.replace(/[&<>"']/g, m => map[m]) : ''; }
     function parseBrazilianCurrencyToFloat(valueString) { let cleaned = String(valueString).replace(/R\$?\s?|💰|\$\s?/g, '').trim(); if (cleaned.includes(',')) { cleaned = cleaned.replace(/\./g, '').replace(',', '.'); } return parseFloat(cleaned); }
-    function openSection(sectionId, fromHistory = false) { 
-        if (!sectionId || !document.getElementById(sectionId)) sectionId = 'mainMenu'; 
+    function openCalculatorSection(sectionId) { 
+        if (!sectionId || !document.getElementById(sectionId)) sectionId = 'calculatorHome'; 
         
         const themeToggleBtn = document.getElementById('theme-toggle');
-        themeToggleBtn.style.display = (sectionId === 'mainMenu') ? 'flex' : 'none';
+        themeToggleBtn.style.display = (sectionId === 'calculatorHome') ? 'flex' : 'none';
 
-        ['mainMenu', 'fecharVenda', 'repassarValores', 'calcularEmprestimo', 'calcularPorAparelho', 'administracao'].forEach(id => { document.getElementById(id).style.display = 'none'; }); 
+        ['calculatorHome', 'fecharVenda', 'repassarValores', 'calcularEmprestimo', 'calcularPorAparelho', 'administracao'].forEach(id => { 
+            const el = document.getElementById(id);
+            if (el) el.style.display = 'none'; 
+        }); 
         document.getElementById(sectionId).style.display = 'flex'; 
-        currentSectionId = sectionId; 
-        if (!fromHistory) history.pushState({ sectionId }, '', `#${sectionId}`); 
+        currentCalculatorSectionId = sectionId; 
+        
         const sectionInitializers = { 
             fecharVenda: () => { updateInstallmentsOptions(); updateFecharVendaUI(); }, 
             repassarValores: () => { updateRepassarValoresUI(); }, 
@@ -1123,7 +1337,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         }
 
         const exportContainer = document.createElement('div');
-        exportContainer.className = 'export-container-temp'; // Add class for specific styling
+        exportContainer.className = 'export-container-temp'; 
         exportContainer.style.position = 'absolute';
         exportContainer.style.left = '-9999px';
         exportContainer.style.padding = '25px';
@@ -1192,9 +1406,9 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
     }
 
     // --- LÓGICA DO FIREBASE ---
-    function loadRatesFromDB() { const ratesRef = ref(db, 'rates'); onValue(ratesRef, (snapshot) => { if (snapshot.exists()) { rates = snapshot.val(); areRatesLoaded = true; updateInstallmentsOptions(); console.log("Taxas carregadas."); if (currentSectionId === 'administracao' && document.getElementById('adminModeToggle').checked) renderRatesEditor(); } else { console.error("ERRO: As taxas não foram encontradas."); showCustomModal({ message: "Erro crítico: Não foi possível carregar as taxas." }); } }, (error) => { console.error("Erro ao carregar taxas:", error); showCustomModal({ message: `Erro ao carregar taxas: ${error.message}` }); }); }
+    function loadRatesFromDB() { const ratesRef = ref(db, 'rates'); onValue(ratesRef, (snapshot) => { if (snapshot.exists()) { rates = snapshot.val(); areRatesLoaded = true; updateInstallmentsOptions(); console.log("Taxas carregadas."); if (currentCalculatorSectionId === 'administracao' && document.getElementById('adminModeToggle').checked) renderRatesEditor(); } else { console.error("ERRO: As taxas não foram encontradas."); showCustomModal({ message: "Erro crítico: Não foi possível carregar as taxas." }); } }, (error) => { console.error("Erro ao carregar taxas:", error); showCustomModal({ message: `Erro ao carregar taxas: ${error.message}` }); }); }
     const getProductsRef = () => ref(db, 'products');
-    function loadProductsFromDB() { if (!db || !isAuthReady) return; if (productsListener) off(getProductsRef(), 'value', productsListener); productsListener = onValue(getProductsRef(), (snapshot) => { const data = snapshot.val(); products = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : []; setupFuse(); const placeholderText = products.length > 0 ? `Pesquisar entre ${products.length} produtos...` : 'Nenhum produto cadastrado'; document.getElementById('vendaProdutoSearch').placeholder = placeholderText; document.getElementById('aparelhoSearch').placeholder = placeholderText; if(document.getElementById('adminSearchInput')) document.getElementById('adminSearchInput').placeholder = `Filtrar ${products.length} produtos...`; if (currentSectionId === 'administracao') filterAdminProducts(); }, (error) => console.error("Firebase Read Error:", error)); }
+    function loadProductsFromDB() { if (!db || !isAuthReady) return; if (productsListener) off(getProductsRef(), 'value', productsListener); productsListener = onValue(getProductsRef(), (snapshot) => { const data = snapshot.val(); products = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : []; setupFuse(); const placeholderText = products.length > 0 ? `Pesquisar entre ${products.length} produtos...` : 'Nenhum produto cadastrado'; document.getElementById('vendaProdutoSearch').placeholder = placeholderText; document.getElementById('aparelhoSearch').placeholder = placeholderText; if(document.getElementById('adminSearchInput')) document.getElementById('adminSearchInput').placeholder = `Filtrar ${products.length} produtos...`; if (currentCalculatorSectionId === 'administracao') filterAdminProducts(); }, (error) => console.error("Firebase Read Error:", error)); }
     async function updateProductInDB(id, data) { try { await update(ref(db, `products/${id}`), data); } catch (error) { console.error(`Erro ao atualizar: ${error.message}`); } }
     
     // --- FUNÇÕES DE ADMINISTRAÇÃO (PRODUTOS) ---
@@ -1348,6 +1562,94 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         }
     }
     
+    // --- LÓGICA DO FORMULÁRIO DE CONTRATO ---
+    function formatCurrency(value) {
+        return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function calculateContractPayments() {
+        const total = parseFloat(document.getElementById('valorTotal').value) || 0;
+        const entrada = parseFloat(document.getElementById('valorEntrada').value) || 0;
+        const parcelas = parseInt(document.getElementById('numeroParcelas').value, 10) || 0;
+        
+        const saldo = total - entrada;
+        document.getElementById('saldoRestante').value = saldo > 0 ? formatCurrency(saldo) : '0,00';
+        
+        if (parcelas > 0 && saldo > 0) {
+            const valorParcela = saldo / parcelas;
+            document.getElementById('valorParcela').value = formatCurrency(valorParcela);
+        } else {
+            document.getElementById('valorParcela').value = '0,00';
+        }
+    }
+    
+    async function generateContractPDF() {
+        // Validar formulário
+        if (!document.getElementById('contractForm').checkValidity()) {
+            showCustomModal({ message: "Por favor, preencha todos os campos obrigatórios." });
+            return;
+        }
+
+        const btn = document.getElementById('generatePdfBtn');
+        btn.disabled = true;
+        btn.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Gerando...`;
+
+        // Preencher o template
+        document.getElementById('previewNome').textContent = document.getElementById('compradorNome').value;
+        document.getElementById('previewCpf').textContent = document.getElementById('compradorCpf').value;
+        document.getElementById('previewRg').textContent = document.getElementById('compradorRg').value;
+        document.getElementById('previewEndereco').textContent = document.getElementById('compradorEndereco').value;
+        document.getElementById('previewModelo').textContent = document.getElementById('produtoModelo').value;
+        document.getElementById('previewImei').textContent = document.getElementById('produtoImei').value;
+
+        const total = parseFloat(document.getElementById('valorTotal').value) || 0;
+        const entrada = parseFloat(document.getElementById('valorEntrada').value) || 0;
+        const numParcelas = parseInt(document.getElementById('numeroParcelas').value, 10) || 0;
+        const saldo = total - entrada;
+        const valorParcela = numParcelas > 0 ? saldo / numParcelas : 0;
+        
+        document.getElementById('previewValorTotal').textContent = formatCurrency(total);
+        document.getElementById('previewValorTotal2').textContent = formatCurrency(total);
+        document.getElementById('previewEntrada').textContent = formatCurrency(entrada);
+        document.getElementById('previewSaldo').textContent = formatCurrency(saldo);
+        document.getElementById('previewNumParcelas').textContent = `${numParcelas}`;
+        document.getElementById('previewValorParcela').textContent = formatCurrency(valorParcela);
+        
+        // Data
+        const today = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+        document.getElementById('previewLocalData').textContent = `Goiânia, ${today}`;
+        
+        // Usar a biblioteca jsPDF
+        try {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({
+                orientation: 'p',
+                unit: 'mm',
+                format: 'a4'
+            });
+            const contractElement = document.getElementById('contractPreview');
+
+            await doc.html(contractElement, {
+                callback: function (doc) {
+                    doc.save(`contrato-${document.getElementById('compradorNome').value.trim()}.pdf`);
+                },
+                margin: [15, 15, 15, 15],
+                autoPaging: 'text',
+                x: 0,
+                y: 0,
+                width: 180, // Largura do conteúdo no PDF (A4 é 210mm)
+                windowWidth: 800 // Largura da div de preview para renderização
+            });
+        } catch (error) {
+            console.error("Erro ao gerar PDF:", error);
+            showCustomModal({ message: "Ocorreu um erro ao gerar o PDF." });
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = `<i class="bi bi-file-pdf-fill"></i> Gerar PDF`;
+        }
+    }
+
+
     // --- FUNÇÃO PRINCIPAL E INICIALIZAÇÃO ---
     async function main() {
         try {
@@ -1355,7 +1657,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             applyTheme(safeStorage.getItem('theme') || 'dark');
             app = initializeApp(firebaseConfig); auth = getAuth(app); db = getDatabase(app);
             onAuthStateChanged(auth, async (user) => {
-                if (user) { userId = user.uid; isAuthReady = true; loadRatesFromDB(); loadProductsFromDB(); openSection(location.hash.substring(1) || 'mainMenu', true); } 
+                if (user) { userId = user.uid; isAuthReady = true; loadRatesFromDB(); loadProductsFromDB(); showMainSection('main'); } 
                 else await signInAnonymously(auth);
             });
         } catch (error) { console.error("Firebase Init Error:", error); document.body.innerHTML = `<h1>Erro ao conectar.</h1><p>${error.message}</p>`; }
@@ -1363,9 +1665,16 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
     
     // --- EVENT LISTENERS ---
     document.addEventListener('DOMContentLoaded', () => {
-        ['openFecharVenda', 'openRepassarValores', 'openCalcularEmprestimo', 'openCalcularPorAparelho', 'openAdministracao'].forEach(id => { document.getElementById(id).addEventListener('click', () => openSection(id.replace('open', '').charAt(0).toLowerCase() + id.slice(5))); });
-        ['backFromFecharVenda', 'backFromRepassarValores', 'backFromCalcularEmprestimo', 'backFromCalcularPorAparelho', 'backFromAdministracao'].forEach(id => { document.getElementById(id).addEventListener('click', () => openSection('mainMenu')); });
+        // --- Nova Navegação ---
+        document.getElementById('goToCalculator').addEventListener('click', () => showMainSection('calculator'));
+        document.getElementById('goToContract').addEventListener('click', () => showMainSection('contract'));
+        document.getElementById('backFromContract').addEventListener('click', () => showMainSection('main'));
+
+        // --- Navegação da Calculadora ---
+        ['openFecharVenda', 'openRepassarValores', 'openCalcularEmprestimo', 'openCalcularPorAparelho', 'openAdministracao'].forEach(id => { document.getElementById(id).addEventListener('click', () => openCalculatorSection(id.replace('open', '').charAt(0).toLowerCase() + id.slice(5))); });
+        ['backFromFecharVenda', 'backFromRepassarValores', 'backFromCalcularEmprestimo', 'backFromCalcularPorAparelho', 'backFromAdministracao'].forEach(id => { document.getElementById(id).addEventListener('click', () => openCalculatorSection('calculatorHome')); });
         
+        // --- Listeners da Calculadora (existentes) ---
         document.getElementById('machine1').addEventListener('change', () => { updateInstallmentsOptions(); updateFecharVendaUI(); if(document.getElementById('machine1').value !== 'pagbank') openFlagModal(document.getElementById('machine1')); });
         document.getElementById('brand1').addEventListener('change', updateFecharVendaUI);
         document.getElementById('installments1').addEventListener('change', updateFecharVendaUI);
@@ -1541,7 +1850,12 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         flagModalOverlay.addEventListener('click', (e) => { if (e.target === flagModalOverlay) closeFlagModal(); });
         ['flagDisplayButton1', 'flagDisplayButton2', 'flagDisplayButton3', 'flagDisplayButton4'].forEach(id => { document.getElementById(id).addEventListener('click', (e) => { const sectionNumber = id.replace('flagDisplayButton', ''); openFlagModal(document.getElementById(`machine${sectionNumber}`)); }); });
         document.addEventListener('click', (e) => { document.querySelectorAll('.search-wrapper').forEach(wrapper => { if (!wrapper.contains(e.target)) { const resultsContainer = wrapper.querySelector('.search-results-container'); if (resultsContainer) resultsContainer.innerHTML = ''; } }); });
-        window.addEventListener('popstate', (event) => openSection(event.state ? event.state.sectionId : 'mainMenu', true));
+        
+        // --- Listeners do Formulário de Contrato ---
+        document.getElementById('valorTotal').addEventListener('input', calculateContractPayments);
+        document.getElementById('valorEntrada').addEventListener('input', calculateContractPayments);
+        document.getElementById('numeroParcelas').addEventListener('input', calculateContractPayments);
+        document.getElementById('generatePdfBtn').addEventListener('click', generateContractPDF);
 
         // --- Event Listeners for Export Buttons (UPDATED) ---
         document.getElementById('exportRepassarBtn').addEventListener('click', () => {
@@ -1554,7 +1868,6 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
                 showCustomModal({ message: "Insira um valor base para exportar." });
                 return;
             }
-            // MODIFICADO: Altera o texto do cabeçalho para a exportação da imagem.
             const header = `<h4 class="text-center mb-3" style="width: 100%; grid-column: 1 / -1;">Você Recebe na Hora: ${valorBase.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</h4>`;
             exportResultsToImage('resultCalcularEmprestimo', 'calculo-emprestimo.png', header);
         });
@@ -1578,5 +1891,3 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
 
 </body>
 </html>
-
-power By Brendon- 3.5.1 - Estavel
