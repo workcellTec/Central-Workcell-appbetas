@@ -8,8 +8,8 @@
     <!-- PWA Meta Tags -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="theme-color" content="#185a9d"/>
-    <link rel="apple-touch-icon" href="https://placehold.co/192x192/185a9d/ffffff?text=CW">
+    <meta name="theme-color" content="#000000"/>
+    <link rel="apple-touch-icon" href="https://placehold.co/192x192/B71C1C/ffffff?text=CW">
     <link rel="manifest" href="manifest.json">
     
     <link href="https://fonts.googleapis.com" rel="preconnect"/>
@@ -22,40 +22,40 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
         /* ============================================== */
-        /* DESIGN & UX (V5.13) - FAVORITOS APARELHO       */
+        /* DESIGN & UX (V6.3) - TEMA PRETO E VERMELHO     */
         /* ============================================== */
 
         /* 1. VARIÁVEIS DE COR E TEMA */
         :root {
-            --primary-color: #185a9d;
-            --primary-color-rgb: 24, 90, 157;
-            --secondary-color: #29292e;
-            --tertiary-color: #18181b;
-            --text-color: #e1e1e6;
-            --text-secondary: #a8a8b3;
-            --text-success: #43cea2;
-            --glass-bg: rgba(30, 30, 30, 0.75);
+            --primary-color: #B71C1C; /* Vermelho Vinho Principal */
+            --primary-color-rgb: 183, 28, 28;
+            --secondary-color: #1A1A1A; /* Cinza escuro para cards */
+            --tertiary-color: #000000; /* Preto AMOLED */
+            --text-color: #E1E1E6;
+            --text-secondary: #A8A8B3;
+            --text-success: #4FC3F7; /* Azul claro para contraste */
+            --glass-bg: rgba(26, 26, 26, 0.85); /* Fundo do card mais sólido */
             --glass-border: rgba(255, 255, 255, 0.1);
-            --shadow-color: rgba(0, 0, 0, 0.25);
-            --input-bg: rgba(40, 40, 40, 0.7);
-            --input-border: rgba(255, 255, 255, 0.05);
+            --shadow-color: rgba(0, 0, 0, 0.3);
+            --input-bg: #2C2C2E;
+            --input-border: rgba(255, 255, 255, 0.1);
             --border-radius: 20px;
             --transition-duration: 0.3s;
-            --gradient-primary: linear-gradient(135deg, #43cea2, #185a9d);
-            --gradient-primary-hover: linear-gradient(135deg, #3cb78c, #15497e);
+            --gradient-primary: linear-gradient(135deg, #D32F2F, #9A0007);
+            --gradient-primary-hover: linear-gradient(135deg, #B71C1C, #880E4F);
         }
 
         [data-theme="light"] {
-            --primary-color: #185a9d;
-            --primary-color-rgb: 24, 90, 157;
+            --primary-color: #B71C1C;
+            --primary-color-rgb: 183, 28, 28;
             --secondary-color: #f4f4f5;
             --tertiary-color: #ffffff;
             --text-color: #18181b;
             --text-secondary: #52525b;
-            --text-success: #185a9d;
+            --text-success: #B71C1C;
             --glass-bg: rgba(255, 255, 255, 0.85);
             --glass-border: rgba(0, 0, 0, 0.1);
-            --shadow-color: rgba(24, 90, 157, 0.15);
+            --shadow-color: rgba(183, 28, 28, 0.15);
             --input-bg: #f4f4f5;
             --input-border: #d4d4d8;
         }
@@ -112,29 +112,37 @@
 
         /* 3. MENU PRINCIPAL */
         #mainMenu, #calculatorHome {
-            background: var(--gradient-primary); color: #FFF;
+            background: var(--tertiary-color);
             padding-top: 80px; justify-content: flex-start;
         }
-        #mainMenu h2, #calculatorHome h2 { text-shadow: 1px 1px 4px rgba(0,0,0,0.2); margin-bottom: 30px; color: #FFF; }
+        #mainMenu h2, #calculatorHome h2 { 
+            text-shadow: none; 
+            margin-bottom: 30px; 
+            color: var(--text-color);
+        }
         .btn-menu {
             display: flex; align-items: center; justify-content: center; gap: 10px;
             font-weight: 500; border-radius: var(--border-radius); padding: 14px 24px;
             margin-bottom: 15px !important; border: none;
-            background-color: var(--glass-bg); color: #FFF; backdrop-filter: blur(10px);
-            transition: background-color var(--transition-duration) ease, transform var(--transition-duration) ease, box-shadow var(--transition-duration) ease;
+            background: var(--gradient-primary); /* Gradiente nos botões */
+            color: #FFF; 
+            transition: all var(--transition-duration) ease;
             width: 100%; max-width: 320px; box-shadow: 0 4px 12px var(--shadow-color);
         }
-        [data-theme="dark"] .btn-menu:hover { background-color: rgba(45, 45, 45, 0.9); transform: translateY(-2px); box-shadow: 0 6px 16px var(--shadow-color); }
-        [data-theme="light"] .btn-menu { color: var(--text-color); }
-        [data-theme="light"] .btn-menu:hover { background-color: rgba(255, 255, 255, 0.9); transform: translateY(-2px); }
-
-
+        .btn-menu:hover {
+             background: var(--gradient-primary-hover);
+             transform: translateY(-2px); 
+             box-shadow: 0 6px 16px var(--shadow-color);
+        }
+      
         /* 4. CARDS E SEÇÕES INTERNAS */
         .content-card {
-            background-color: var(--glass-bg); border-radius: var(--border-radius);
+            background-color: var(--secondary-color); /* Cinza escuro */
+            border-radius: var(--border-radius);
             padding: 25px; margin-bottom: 20px; width: 100%;
-            border: 1px solid var(--glass-border); box-shadow: 0 8px 32px var(--shadow-color);
-            backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border); 
+            box-shadow: 0 8px 32px var(--shadow-color);
+            backdrop-filter: none; /* Remove o blur para um look mais clean */
             transition: background-color var(--transition-duration) ease, border-color var(--transition-duration) ease;
         }
         .container:not(#mainMenu):not(#calculatorHome) { 
@@ -153,7 +161,7 @@
         .form-control:focus, .form-select:focus {
             background-color: var(--input-bg); color: var(--text-color);
             border-color: var(--primary-color);
-            box-shadow: 0 0 0 0.2rem rgba(var(--primary-color-rgb), 0.25);
+            box-shadow: 0 0 0 0.2rem rgba(var(--primary-color-rgb), 0.25), 0 0 10px rgba(var(--primary-color-rgb), 0.4); /* Efeito de brilho adicionado */
             outline: none;
         }
         .btn {
@@ -210,8 +218,11 @@
         /* 6. SEÇÃO ADMINISTRAÇÃO E TAXAS */
         #administracao { max-width: 900px; }
         #administracao .admin-section {
-            margin-bottom: 30px; padding: 25px; background-color: var(--glass-bg);
-            border-radius: var(--border-radius); border: 1px solid var(--glass-border); backdrop-filter: blur(10px);
+            margin-bottom: 30px; padding: 25px; 
+            background-color: var(--secondary-color);
+            border-radius: var(--border-radius); 
+            border: 1px solid var(--glass-border); 
+            backdrop-filter: none;
             box-shadow: 0 8px 32px var(--shadow-color);
         }
         #administracao h4, #administracao h5 { text-align: left; margin-bottom: 15px; color: var(--text-color); }
@@ -246,7 +257,7 @@
         
         #adminRatesContent .accordion, #adminRatesContent .accordion-item { background-color: transparent; border: none; }
         #adminRatesContent .accordion-item {
-            background-color: var(--secondary-color); border: 1px solid var(--glass-border);
+            background-color: var(--input-bg); border: 1px solid var(--glass-border);
             color: var(--text-color); margin-bottom: 10px; border-radius: 15px; overflow: hidden;
         }
         #adminRatesContent .accordion-header button {
@@ -257,7 +268,7 @@
              background-image: var(--gradient-primary); color: #FFF;
         }
         #adminRatesContent .accordion-button:focus { box-shadow: none; }
-        #adminRatesContent .accordion-body { padding: 1rem; background-color: var(--secondary-color); }
+        #adminRatesContent .accordion-body { padding: 1rem; background-color: var(--input-bg); }
         #adminRatesContent .nav-tabs { border-bottom-color: var(--glass-border); }
         #adminRatesContent .nav-link { 
             color: var(--text-secondary); background-color: transparent; 
@@ -481,11 +492,44 @@
         /* OUTROS ESTILOS... */
         .custom-modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(10px); display: flex; justify-content: center; align-items: center; z-index: 1056; opacity: 0; visibility: hidden; transition: opacity var(--transition-duration) ease, visibility var(--transition-duration) ease; }
         .custom-modal-overlay.active { opacity: 1; visibility: visible; }
-        .custom-modal-content { background: var(--glass-bg); color: var(--text-color); padding: 30px; border-radius: var(--border-radius); text-align: center; max-width: 400px; width: 90%; box-shadow: 0 10px 40px var(--shadow-color); transform: scale(0.9); transition: transform var(--transition-duration) ease; border: 1px solid var(--glass-border); }
+        .custom-modal-content { background-color: var(--secondary-color); color: var(--text-color); padding: 30px; border-radius: var(--border-radius); text-align: center; max-width: 400px; width: 90%; box-shadow: 0 10px 40px var(--shadow-color); transform: scale(0.9); transition: transform var(--transition-duration) ease; border: 1px solid var(--glass-border); }
         .custom-modal-overlay.active .custom-modal-content { transform: scale(1); }
         .hidden { display: none !important; }
         .user-id-display { position: fixed; bottom: 15px; left: 15px; background-color: var(--glass-bg); color: var(--text-secondary); padding: 8px 12px; border-radius: 8px; font-size: 0.8rem; z-index: 1000; backdrop-filter: blur(5px); border: 1px solid var(--glass-border); }
         .spinner-border.text-primary { color: var(--primary-color) !important; }
+
+        /* 16. ANIMAÇÕES E MICRO-INTERAÇÕES */
+        @keyframes fadeInAndUp {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        /* Aplica a animação aos cards principais quando eles aparecem */
+        .content-card, .admin-section {
+          animation: fadeInAndUp 0.5s ease-out forwards;
+        }
+
+        /* Animação para os resultados aparecerem */
+        #resultFecharVenda > .alert,
+        #resultRepassarValores > .alert,
+        #resultCalcularEmprestimo > .alert,
+        #resultCalcularPorAparelho > .alert,
+        #valorLiquidoDisplay > .alert {
+            animation: fadeInAndUp 0.4s ease-out forwards;
+        }
+
+        /* Pequena animação de escala nos botões ao clicar */
+        .btn:active, .btn-menu:active {
+            transform: scale(0.97);
+            transition: transform 0.1s ease;
+        }
+
 
         /* CSS DE IMPRESSÃO (CORRIGIDO) */
         @media print {
@@ -851,7 +895,7 @@
     <h4>CONTRATO DE COMPRA E VENDA DE SMARTPHONE</h4>
     
     <div>
-        Pelo presente instrumento particular, as partes a seguir identificadas firmam o presente CONTRATO DE COMPRA E VENDA, mediante as cláusulas e condições abaixo:
+        Pelo presente instrumento particular, as partes a seguir identificadas firmam o presente CONTRato DE COMPRA E VENDA, mediante as cláusulas e condições abaixo:
     </div>
 
     <div class="section-title">VENDEDOR</div>
@@ -963,12 +1007,12 @@
   "description": "Calculadora de taxas e gerador de contratos para facilitar suas vendas.",
   "start_url": ".",
   "display": "standalone",
-  "background_color": "#18181b",
-  "theme_color": "#185a9d",
+  "background_color": "#000000",
+  "theme_color": "#B71C1C",
   "orientation": "portrait-primary",
   "icons": [
-    { "src": "https://placehold.co/192x192/185a9d/ffffff?text=CW", "type": "image/png", "sizes": "192x192" },
-    { "src": "https://placehold.co/512x512/185a9d/ffffff?text=CW", "type": "image/png", "sizes": "512x512" }
+    { "src": "https://placehold.co/192x192/B71C1C/ffffff?text=CW", "type": "image/png", "sizes": "192x192" },
+    { "src": "https://placehold.co/512x512/B71C1C/ffffff?text=CW", "type": "image/png", "sizes": "512x512" }
   ]
 }
 </script>
@@ -1187,17 +1231,17 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         const installments = parseInt(document.getElementById("installments1").value, 10), tax = getRate(document.getElementById("machine1").value, document.getElementById("brand1").value, installments); 
         const foneDescontado = document.getElementById('descontarFoneCheckbox')?.checked || false, valorDesconto = 15;
         let checkboxHtml = '';
-        if (tax === undefined || tax === null) { resultDiv.innerHTML = `<div class="alert alert-warning">Taxa não disponível.</div>`; return; } 
+        if (tax === undefined || tax === null) { resultDiv.innerHTML = `<div class="alert alert-warning d-flex align-items-center"><i class="bi bi-exclamation-triangle-fill me-3"></i>Taxa não disponível.</div>`; return; } 
         if (isProdutoMode && fecharVendaPrecoBase > 0) checkboxHtml = `<div class="form-check form-check-inline mt-3 w-100" style="max-width: 400px; margin-left: auto; margin-right: auto; text-align: left; padding-left: 2.5em;"><input class="form-check-input" type="checkbox" id="descontarFoneCheckbox" ${foneDescontado ? 'checked' : ''}><label class="form-check-label" for="descontarFoneCheckbox">Descontar fone Bluetooth (${valorDesconto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})</label></div>`;
         if (isProdutoMode && isEntradaAVista) {
             const valorEntrada = parseFloat(document.getElementById('valorEntradaAVista').value) || 0, valorCartao = parseFloat(document.getElementById('valorPassadoNoCartao').value) || 0;
-            if (fecharVendaPrecoBase <= 0) { resultDiv.innerHTML = `<div class="alert alert-info">Selecione um produto.</div>`; return; }
+            if (fecharVendaPrecoBase <= 0) { resultDiv.innerHTML = `<div class="alert alert-info d-flex align-items-center"><i class="bi bi-info-circle-fill me-3"></i>Selecione um produto.</div>`; return; }
             if (valorCartao <= 0) { resultDiv.innerHTML = checkboxHtml || ""; return; }
             const liquidCartao = valorCartao * (1 - tax / 100);
             let totalRecebido = valorEntrada + liquidCartao;
             if (foneDescontado) totalRecebido -= valorDesconto;
             const lucroExtra = totalRecebido - fecharVendaPrecoBase;
-            resultDiv.innerHTML = `<div class="alert alert-success fs-5 w-100 text-start" style="max-width: 400px; margin: 0 auto;"><strong>Valor Total Recebido: ${totalRecebido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong><br/><small class="text-secondary">sendo ${valorEntrada.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} à vista + ${valorCartao.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (tax. ${tax.toFixed(2)}%)</small><br/><strong>Lucro Extra: <span class="lucro-extra-valor">${lucroExtra.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span></strong></div>` + checkboxHtml;
+            resultDiv.innerHTML = `<div class="alert alert-success fs-5 w-100 text-start" style="max-width: 400px; margin: 0 auto;"><div class="d-flex align-items-start"><i class="bi bi-check-circle-fill me-3 fs-4"></i><div><strong>Valor Total Recebido: ${totalRecebido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong><br/><small class="text-secondary">sendo ${valorEntrada.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} à vista + ${valorCartao.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (tax. ${tax.toFixed(2)}%)</small><br/><strong class="mt-2 d-block">Lucro Extra: <span class="lucro-extra-valor">${lucroExtra.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span></strong></div></div></div>` + checkboxHtml;
             return;
         }
         const inputValue = parseFloat(document.getElementById("fecharVendaValue").value);
@@ -1211,7 +1255,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             const lucroExtra = liquidExibido - fecharVendaPrecoBase;
             lucroExtraHtml = `<hr class="my-2" style="border-color: rgba(255,255,255,0.2);"><strong>Lucro Extra: <span class="${lucroExtra >= 0 ? 'text-success' : 'text-danger'}">${lucroExtra.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span></strong>`;
         } 
-        resultDiv.innerHTML = `<div class="alert alert-success fs-5 w-100 text-start" style="max-width: 400px; margin: 0 auto;"><strong>Valor Líquido: ${liquidExibido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong><br/><small class="text-secondary">Taxa: ${tax.toFixed(2)}% (${installments === 0 ? "Débito" : `${installments}x`})</small>${lucroExtraHtml}</div>` + checkboxHtml;
+        resultDiv.innerHTML = `<div class="alert alert-success fs-5 w-100 text-start d-flex align-items-start" style="max-width: 400px; margin: 0 auto;"><i class="bi bi-check-circle-fill me-3 fs-4"></i><div><strong>Valor Líquido: ${liquidExibido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong><br/><small class="text-secondary">Taxa: ${tax.toFixed(2)}% (${installments === 0 ? "Débito" : `${installments}x`})</small>${lucroExtraHtml}</div></div>` + checkboxHtml;
     }
     function calculateRepassarValores() { 
         const resultDiv = document.getElementById("resultRepassarValores");
@@ -1236,13 +1280,13 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         const debitTax = getRate(machine, brand, 0); 
         if(debitTax !== null && debitTax !== undefined) { 
             const valorBrutoDebito = valorDesejado / (1 - debitTax / 100); 
-            resultHtml += `<div class="alert alert-secondary w-100" style="max-width: 400px;">Débito: ${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>`; 
+            resultHtml += `<div class="alert alert-secondary d-flex align-items-center w-100" style="max-width: 400px;"><i class="bi bi-wallet-fill me-3"></i>Débito: ${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>`; 
         } 
         for (let i = 1; i <= maxInstallments; i++) { 
             const creditTax = getRate(machine, brand, i); 
             if (creditTax !== undefined) { 
                 const valorBrutoCredit = valorDesejado / (1 - creditTax / 100), valorParcela = valorBrutoCredit / i; 
-                resultHtml += `<div class="alert alert-secondary w-100" style="max-width: 400px;">${i}x de ${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (Total: ${valorBrutoCredit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})</div>`; 
+                resultHtml += `<div class="alert alert-secondary d-flex align-items-center w-100" style="max-width: 400px;"><i class="bi bi-credit-card me-3"></i>${i}x de ${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (Total: ${valorBrutoCredit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})</div>`; 
             } 
         } 
         resultDiv.innerHTML = resultHtml; 
@@ -1268,7 +1312,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             return; 
         }
         
-        valorLiquidoDisplay.innerHTML = `<div class="alert alert-info w-100" style="max-width: 400px; margin: 0 auto;">Valor líquido a receber: <strong>${valorDesejado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></div>`;
+        valorLiquidoDisplay.innerHTML = `<div class="alert alert-info d-flex align-items-center w-100" style="max-width: 400px; margin: 0 auto;"><i class="bi bi-info-circle-fill me-3"></i><div>Valor líquido a receber: <strong>${valorDesejado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></div></div>`;
         
         const machine = document.getElementById("machine4").value;
         const brand = document.getElementById("brand4").value;
@@ -1279,14 +1323,14 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         const debitTax = getRate(machine, brand, 0);
         if (debitTax !== null && debitTax !== undefined) { 
             const valorBrutoDebito = valorDesejado / (1 - debitTax / 100); 
-            resultHtml += `<div class="alert alert-secondary w-100" style="max-width: 400px;">Débito: ${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>`; 
+            resultHtml += `<div class="alert alert-secondary d-flex align-items-center w-100" style="max-width: 400px;"><i class="bi bi-wallet-fill me-3"></i>Débito: ${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>`; 
         }
         for (let i = 1; i <= maxInstallments; i++) { 
             const creditTax = getRate(machine, brand, i); 
             if (creditTax !== undefined) { 
                 const valorBrutoCredit = valorDesejado / (1 - creditTax / 100); 
                 const valorParcela = valorBrutoCredit / i; 
-                resultHtml += `<div class="alert alert-secondary w-100" style="max-width: 400px;">${i}x de ${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (Total: ${valorBrutoCredit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})</div>`; 
+                resultHtml += `<div class="alert alert-secondary d-flex align-items-center w-100" style="max-width: 400px;"><i class="bi bi-credit-card me-3"></i>${i}x de ${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (Total: ${valorBrutoCredit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})</div>`; 
             } 
         }
         resultDiv.innerHTML = resultHtml;
@@ -1300,7 +1344,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         const extraValue = parseFloat(document.getElementById('valorExtraAparelho').value) || 0;
 
         if (isNaN(selectedAparelhoValue) || selectedAparelhoValue <= 0) {
-            resultDiv.innerHTML = '<div class="alert alert-warning mt-3 w-100" style="max-width: 400px;">Selecione um aparelho.</div>';
+            resultDiv.innerHTML = '<div class="alert alert-warning d-flex align-items-center mt-3 w-100" style="max-width: 400px;"><i class="bi bi-exclamation-triangle-fill me-3"></i>Selecione um aparelho.</div>';
             exportContainer.style.display = 'none';
             return;
         }
@@ -1310,17 +1354,17 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         
         let headerHtml = `<h4 class="mt-4">Preço Total: ${valorTotalAparelho.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</h4>`;
         if (entradaValue > 0) {
-             headerHtml += `<div class="alert alert-info w-100" style="max-width: 400px;"><strong>Entrada:</strong> ${entradaValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}<br><strong>Valor a Parcelar:</strong> ${valorBaseParaCalculo.toLocaleString('pt-BR', { style: 'currency', 'currency': 'BRL' })}</div>`;
+             headerHtml += `<div class="alert alert-info d-flex align-items-center w-100" style="max-width: 400px;"><i class="bi bi-info-circle-fill me-3"></i><div><strong>Entrada:</strong> ${entradaValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}<br><strong>Valor a Parcelar:</strong> ${valorBaseParaCalculo.toLocaleString('pt-BR', { style: 'currency', 'currency': 'BRL' })}</div></div>`;
         }
 
         if (valorBaseParaCalculo < 0) {
-            resultDiv.innerHTML = headerHtml + '<div class="alert alert-danger mt-3 w-100" style="max-width: 400px;">O valor da entrada não pode ser maior que o valor do aparelho.</div>';
+            resultDiv.innerHTML = headerHtml + '<div class="alert alert-danger d-flex align-items-center mt-3 w-100" style="max-width: 400px;"><i class="bi bi-x-circle-fill me-3"></i>O valor da entrada não pode ser maior que o valor do aparelho.</div>';
             exportContainer.style.display = 'none';
             return;
         }
         
         if (valorBaseParaCalculo <= 0) {
-            resultDiv.innerHTML = headerHtml + '<div class="alert alert-success mt-3 w-100" style="max-width: 400px;">Aparelho quitado com a entrada.</div>';
+            resultDiv.innerHTML = headerHtml + '<div class="alert alert-success d-flex align-items-center mt-3 w-100" style="max-width: 400px;"><i class="bi bi-check-circle-fill me-3"></i>Aparelho quitado com a entrada.</div>';
             exportContainer.style.display = 'none';
             return;
         }
@@ -1334,13 +1378,13 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         const debitTax = getRate(machine, brand, 0);
         if (debitTax !== null && debitTax !== undefined) { 
             const valorBrutoDebito = valorBaseParaCalculo / (1 - debitTax / 100); 
-            installmentsHtml += `<div class="alert alert-secondary w-100" style="max-width: 400px;">Débito: ${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>`; 
+            installmentsHtml += `<div class="alert alert-secondary d-flex align-items-center w-100" style="max-width: 400px;"><i class="bi bi-wallet-fill me-3"></i>Débito: ${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>`; 
         }
         for (let i = 1; i <= maxInstallments; i++) { 
             const creditTax = getRate(machine, brand, i); 
             if (creditTax !== undefined) { 
                 const valorBrutoCredit = valorBaseParaCalculo / (1 - creditTax / 100), valorParcela = valorBrutoCredit / i; 
-                installmentsHtml += `<div class="alert alert-secondary w-100" style="max-width: 400px;">${i}x de ${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (Total: ${valorBrutoCredit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})</div>`; 
+                installmentsHtml += `<div class="alert alert-secondary d-flex align-items-center w-100" style="max-width: 400px;"><i class="bi bi-credit-card me-3"></i>${i}x de ${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (Total: ${valorBrutoCredit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})</div>`; 
             } 
         }
         
@@ -2027,3 +2071,4 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
 
 </body>
 </html>
+
