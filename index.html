@@ -22,7 +22,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
         /* ============================================== */
-        /* DESIGN & UX (V6.3) - TEMA PRETO E VERMELHO     */
+        /* DESIGN & UX (V6.5) - CORREÇÃO TEMA TABELA      */
         /* ============================================== */
 
         /* 1. VARIÁVEIS DE COR E TEMA */
@@ -517,19 +517,58 @@
 
         /* Animação para os resultados aparecerem */
         #resultFecharVenda > .alert,
-        #resultRepassarValores > .alert,
-        #resultCalcularEmprestimo > .alert,
-        #resultCalcularPorAparelho > .alert,
+        .results-table,
         #valorLiquidoDisplay > .alert {
             animation: fadeInAndUp 0.4s ease-out forwards;
         }
-
+        
         /* Pequena animação de escala nos botões ao clicar */
         .btn:active, .btn-menu:active {
             transform: scale(0.97);
             transition: transform 0.1s ease;
         }
+        
+        /* 17. TABELA DE RESULTADOS (COM TEMA) */
+        .results-table {
+            margin-top: 1rem;
+            width: 100%;
+            /* Sobrescreve variáveis do Bootstrap para theming */
+            --bs-table-color: var(--text-color);
+            --bs-table-bg: transparent;
+            --bs-table-border-color: var(--glass-border);
+            --bs-table-hover-bg: rgba(var(--primary-color-rgb), 0.1);
+            --bs-table-hover-color: var(--text-color);
+        }
+        .results-table thead th {
+            color: var(--text-secondary);
+        }
+        .results-table .debit-row {
+            font-weight: 500;
+        }
+        /* Ajuste específico para o tema claro */
+        [data-theme="light"] .results-table {
+             --bs-table-border-color: var(--input-border);
+        }
 
+        /* 18. SKELETON LOADER */
+        .skeleton {
+            animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+          50% {
+            opacity: .5;
+          }
+        }
+        .skeleton-item {
+            height: 50px;
+            width: 100%;
+            background-color: var(--input-bg);
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        .search-results-container.is-loading .list-group-item {
+            display: none;
+        }
 
         /* CSS DE IMPRESSÃO (CORRIGIDO) */
         @media print {
@@ -895,7 +934,7 @@
     <h4>CONTRATO DE COMPRA E VENDA DE SMARTPHONE</h4>
     
     <div>
-        Pelo presente instrumento particular, as partes a seguir identificadas firmam o presente CONTRato DE COMPRA E VENDA, mediante as cláusulas e condições abaixo:
+        Pelo presente instrumento particular, as partes a seguir identificadas firmam o presente CONTRATO DE COMPRA E VENDA, mediante as cláusulas e condições abaixo:
     </div>
 
     <div class="section-title">VENDEDOR</div>
@@ -1276,21 +1315,28 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
                 case "valorante": maxInstallments = 21; break; 
             } 
         } 
-        let resultHtml = ""; 
+        
+        let tableRows = "";
         const debitTax = getRate(machine, brand, 0); 
         if(debitTax !== null && debitTax !== undefined) { 
             const valorBrutoDebito = valorDesejado / (1 - debitTax / 100); 
-            resultHtml += `<div class="alert alert-secondary d-flex align-items-center w-100" style="max-width: 400px;"><i class="bi bi-wallet-fill me-3"></i>Débito: ${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>`; 
+            tableRows += `<tr class="debit-row"><td>Débito</td><td>-</td><td>${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`; 
         } 
         for (let i = 1; i <= maxInstallments; i++) { 
             const creditTax = getRate(machine, brand, i); 
             if (creditTax !== undefined) { 
                 const valorBrutoCredit = valorDesejado / (1 - creditTax / 100), valorParcela = valorBrutoCredit / i; 
-                resultHtml += `<div class="alert alert-secondary d-flex align-items-center w-100" style="max-width: 400px;"><i class="bi bi-credit-card me-3"></i>${i}x de ${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (Total: ${valorBrutoCredit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})</div>`; 
+                tableRows += `<tr><td>${i}x</td><td>${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td><td>${valorBrutoCredit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`; 
             } 
         } 
-        resultDiv.innerHTML = resultHtml; 
-        exportContainer.style.display = resultHtml.trim() !== "" ? 'block' : 'none';
+
+        if (tableRows) {
+            resultDiv.innerHTML = `<div class="table-responsive"><table class="table results-table"><thead><tr><th>Parcelas</th><th>Valor da Parcela</th><th>Total a Passar</th></tr></thead><tbody>${tableRows}</tbody></table></div>`;
+        } else {
+            resultDiv.innerHTML = "";
+        }
+        
+        exportContainer.style.display = tableRows.trim() !== "" ? 'block' : 'none';
     }
     function calculateEmprestimo() {
         const resultDiv = document.getElementById("resultCalcularEmprestimo");
@@ -1319,22 +1365,28 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         let maxInstallments = 0;
         if (rates[machine]) { switch (machine) { case "pagbank": maxInstallments = 18; break; case "infinity": maxInstallments = 12; break; case "valorante": maxInstallments = 21; break; } }
         
-        let resultHtml = "";
+        let tableRows = "";
         const debitTax = getRate(machine, brand, 0);
         if (debitTax !== null && debitTax !== undefined) { 
             const valorBrutoDebito = valorDesejado / (1 - debitTax / 100); 
-            resultHtml += `<div class="alert alert-secondary d-flex align-items-center w-100" style="max-width: 400px;"><i class="bi bi-wallet-fill me-3"></i>Débito: ${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>`; 
+            tableRows += `<tr class="debit-row"><td>Débito</td><td>-</td><td>${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`; 
         }
         for (let i = 1; i <= maxInstallments; i++) { 
             const creditTax = getRate(machine, brand, i); 
             if (creditTax !== undefined) { 
                 const valorBrutoCredit = valorDesejado / (1 - creditTax / 100); 
                 const valorParcela = valorBrutoCredit / i; 
-                resultHtml += `<div class="alert alert-secondary d-flex align-items-center w-100" style="max-width: 400px;"><i class="bi bi-credit-card me-3"></i>${i}x de ${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (Total: ${valorBrutoCredit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})</div>`; 
+                tableRows += `<tr><td>${i}x</td><td>${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td><td>${valorBrutoCredit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`; 
             } 
         }
-        resultDiv.innerHTML = resultHtml;
-        exportContainer.style.display = resultHtml.trim() !== "" ? 'block' : 'none';
+
+        if (tableRows) {
+            resultDiv.innerHTML = `<div class="table-responsive"><table class="table results-table"><thead><tr><th>Parcelas</th><th>Valor da Parcela</th><th>Total a Passar</th></tr></thead><tbody>${tableRows}</tbody></table></div>`;
+        } else {
+            resultDiv.innerHTML = "";
+        }
+        
+        exportContainer.style.display = tableRows.trim() !== "" ? 'block' : 'none';
     }
     function calculateAparelho() {
         if (!areRatesLoaded) return;
@@ -1374,22 +1426,26 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         let maxInstallments = 0;
         if (rates[machine]) { switch(machine) { case "pagbank": maxInstallments = 18; break; case "infinity": maxInstallments = 12; break; case "valorante": maxInstallments = 21; break; } }
         
-        let installmentsHtml = "";
+        let tableRows = "";
         const debitTax = getRate(machine, brand, 0);
         if (debitTax !== null && debitTax !== undefined) { 
             const valorBrutoDebito = valorBaseParaCalculo / (1 - debitTax / 100); 
-            installmentsHtml += `<div class="alert alert-secondary d-flex align-items-center w-100" style="max-width: 400px;"><i class="bi bi-wallet-fill me-3"></i>Débito: ${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>`; 
+            tableRows += `<tr class="debit-row"><td>Débito</td><td>-</td><td>${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`; 
         }
         for (let i = 1; i <= maxInstallments; i++) { 
             const creditTax = getRate(machine, brand, i); 
             if (creditTax !== undefined) { 
                 const valorBrutoCredit = valorBaseParaCalculo / (1 - creditTax / 100), valorParcela = valorBrutoCredit / i; 
-                installmentsHtml += `<div class="alert alert-secondary d-flex align-items-center w-100" style="max-width: 400px;"><i class="bi bi-credit-card me-3"></i>${i}x de ${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (Total: ${valorBrutoCredit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})</div>`; 
+                tableRows += `<tr><td>${i}x</td><td>${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td><td>${valorBrutoCredit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`; 
             } 
         }
         
-        resultDiv.innerHTML = headerHtml + `<div id="aparelhoInstallmentsResults">${installmentsHtml}</div>`;
-        exportContainer.style.display = installmentsHtml.trim() !== "" ? 'block' : 'none';
+        let finalHtml = headerHtml;
+        if(tableRows) {
+            finalHtml += `<div class="table-responsive"><table class="table results-table"><thead><tr><th>Parcelas</th><th>Valor da Parcela</th><th>Total a Passar</th></tr></thead><tbody>${tableRows}</tbody></table></div>`;
+        }
+        resultDiv.innerHTML = finalHtml;
+        exportContainer.style.display = tableRows.trim() !== "" ? 'block' : 'none';
     }
     function handleProductSelectionForAparelho(product) { 
         document.getElementById('saveAparelhoFavoriteBtn').classList.remove('hidden');
@@ -1412,10 +1468,10 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         updateFecharVendaUI(); 
     }
     
-    // --- FUNÇÃO DE EXPORTAÇÃO DE IMAGEM (ATUALIZADA PARA 2 COLUNAS) ---
+    // --- FUNÇÃO DE EXPORTAÇÃO DE IMAGEM (ATUALIZADA) ---
     async function exportResultsToImage(resultsContainerId, fileName = 'calculo-taxas.png', headerHtml = '') {
         const resultsEl = document.getElementById(resultsContainerId);
-        if (!resultsEl || !resultsEl.hasChildNodes()) {
+        if (!resultsEl || !resultsEl.innerHTML.trim()) {
             showCustomModal({ message: "Não há resultados para exportar." });
             return;
         }
@@ -1426,49 +1482,23 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         exportContainer.style.left = '-9999px';
         exportContainer.style.padding = '25px';
         exportContainer.style.borderRadius = 'var(--border-radius)';
+        exportContainer.style.width = 'auto';
+        exportContainer.style.maxWidth = '600px';
         
         const isLightTheme = document.body.dataset.theme === 'light';
         exportContainer.style.backgroundColor = isLightTheme ? '#ffffff' : '#18181b';
         exportContainer.style.color = isLightTheme ? '#18181b' : '#e1e1e6';
         exportContainer.dataset.theme = document.body.dataset.theme;
 
-        exportContainer.innerHTML = headerHtml;
-
-        const columnsWrapper = document.createElement('div');
-        columnsWrapper.style.display = 'flex';
-        columnsWrapper.style.gap = '15px';
-
-        const column1 = document.createElement('div');
-        column1.style.flex = '1';
-        column1.style.display = 'flex';
-        column1.style.flexDirection = 'column';
-        column1.style.gap = '10px';
-        
-        const column2 = document.createElement('div');
-        column2.style.flex = '1';
-        column2.style.display = 'flex';
-        column2.style.flexDirection = 'column';
-        column2.style.gap = '10px';
-
-        const items = resultsEl.querySelectorAll('.alert');
-        const midpoint = Math.ceil(items.length / 2);
-
-        items.forEach((item, index) => {
-            if (index < midpoint) {
-                column1.innerHTML += item.outerHTML;
-            } else {
-                column2.innerHTML += item.outerHTML;
-            }
-        });
-
-        columnsWrapper.appendChild(column1);
-        columnsWrapper.appendChild(column2);
-        exportContainer.appendChild(columnsWrapper);
+        exportContainer.innerHTML = headerHtml + resultsEl.innerHTML;
         
         document.body.appendChild(exportContainer);
         document.body.classList.add('exporting-image');
         
         try {
+            // Pequeno timeout para garantir que as imagens (se houver) e estilos sejam renderizados
+            await new Promise(resolve => setTimeout(resolve, 100));
+
             const canvas = await html2canvas(exportContainer, {
                 backgroundColor: null,
                 scale: 2,
@@ -1485,14 +1515,51 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             showCustomModal({ message: 'Ocorreu um erro ao gerar a imagem.' });
         } finally {
             document.body.classList.remove('exporting-image');
-            document.body.removeChild(exportContainer);
+            if(document.body.contains(exportContainer)){
+                 document.body.removeChild(exportContainer);
+            }
         }
     }
 
     // --- LÓGICA DO FIREBASE ---
+    function showSkeletonLoader(container) {
+        if(!container) return;
+        container.classList.add('is-loading');
+        let skeletonHTML = '';
+        for(let i=0; i<3; i++) {
+            skeletonHTML += '<div class="skeleton skeleton-item"></div>';
+        }
+        container.innerHTML = skeletonHTML;
+    }
+    function hideSkeletonLoader(container) {
+        if(!container) return;
+        container.classList.remove('is-loading');
+        container.innerHTML = '';
+    }
+
     function loadRatesFromDB() { const ratesRef = ref(db, 'rates'); onValue(ratesRef, (snapshot) => { if (snapshot.exists()) { rates = snapshot.val(); areRatesLoaded = true; updateInstallmentsOptions(); console.log("Taxas carregadas."); if (currentCalculatorSectionId === 'administracao' && document.getElementById('adminModeToggle').checked) renderRatesEditor(); } else { console.error("ERRO: As taxas não foram encontradas."); showCustomModal({ message: "Erro crítico: Não foi possível carregar as taxas." }); } }, (error) => { console.error("Erro ao carregar taxas:", error); showCustomModal({ message: `Erro ao carregar taxas: ${error.message}` }); }); }
     const getProductsRef = () => ref(db, 'products');
-    function loadProductsFromDB() { if (!db || !isAuthReady) return; if (productsListener) off(getProductsRef(), 'value', productsListener); productsListener = onValue(getProductsRef(), (snapshot) => { const data = snapshot.val(); products = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : []; setupFuse(); const placeholderText = products.length > 0 ? `Pesquisar entre ${products.length} produtos...` : 'Nenhum produto cadastrado'; document.getElementById('vendaProdutoSearch').placeholder = placeholderText; document.getElementById('aparelhoSearch').placeholder = placeholderText; if(document.getElementById('adminSearchInput')) document.getElementById('adminSearchInput').placeholder = `Filtrar ${products.length} produtos...`; if (currentCalculatorSectionId === 'administracao') filterAdminProducts(); }, (error) => console.error("Firebase Read Error:", error)); }
+    function loadProductsFromDB() { 
+        if (!db || !isAuthReady) return; 
+
+        const searchContainers = [document.getElementById('vendaSearchResultsContainer'), document.getElementById('aparelhoResultsContainer')];
+        searchContainers.forEach(c => showSkeletonLoader(c));
+
+        if (productsListener) off(getProductsRef(), 'value', productsListener); 
+        productsListener = onValue(getProductsRef(), (snapshot) => { 
+            searchContainers.forEach(c => hideSkeletonLoader(c));
+            const data = snapshot.val(); products = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : []; 
+            setupFuse(); 
+            const placeholderText = products.length > 0 ? `Pesquisar entre ${products.length} produtos...` : 'Nenhum produto cadastrado'; 
+            document.getElementById('vendaProdutoSearch').placeholder = placeholderText; 
+            document.getElementById('aparelhoSearch').placeholder = placeholderText; 
+            if(document.getElementById('adminSearchInput')) document.getElementById('adminSearchInput').placeholder = `Filtrar ${products.length} produtos...`; 
+            if (currentCalculatorSectionId === 'administracao') filterAdminProducts(); 
+        }, (error) => {
+            console.error("Firebase Read Error:", error);
+            searchContainers.forEach(c => hideSkeletonLoader(c));
+        }); 
+    }
     async function updateProductInDB(id, data) { try { await update(ref(db, `products/${id}`), data); } catch (error) { console.error(`Erro ao atualizar: ${error.message}`); } }
     
     // --- FUNÇÕES DE ADMINISTRAÇÃO (PRODUTOS) ---
@@ -1689,8 +1756,9 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         document.getElementById('previewNumParcelas').textContent = `${numParcelas}`;
         document.getElementById('previewValorParcela').textContent = formatCurrency(valorParcela);
         
-        const today = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
-        document.getElementById('previewLocalData').textContent = `Goiânia, ${today}`;
+        const today = new Date();
+        const dateOptions = { day: '2-digit', month: 'long', year: 'numeric' };
+        document.getElementById('previewLocalData').textContent = `Goiânia, ${today.toLocaleDateString('pt-BR', dateOptions)}`;
     }
 
     // --- FUNÇÃO PRINCIPAL E INICIALIZAÇÃO ---
@@ -1933,7 +2001,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             }
             const header = `<h4 class="text-center mb-3" style="width: 100%; grid-column: 1 / -1;">${escapeHtml(aparelhoNome)}</h4>`;
             const fileName = aparelhoNome.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'calculo-aparelho';
-            exportResultsToImage('aparelhoInstallmentsResults', `${fileName}.png`, header);
+            exportResultsToImage('resultCalcularPorAparelho', `${fileName}.png`, header);
         });
 
         main();
