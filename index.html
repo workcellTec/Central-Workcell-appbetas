@@ -1486,17 +1486,28 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         exportContainer.style.maxWidth = '600px';
         
         const isLightTheme = document.body.dataset.theme === 'light';
-        exportContainer.style.backgroundColor = isLightTheme ? '#ffffff' : '#18181b';
-        exportContainer.style.color = isLightTheme ? '#18181b' : '#e1e1e6';
+        exportContainer.style.backgroundColor = isLightTheme ? '#ffffff' : '#1A1A1A';
         exportContainer.dataset.theme = document.body.dataset.theme;
 
-        exportContainer.innerHTML = headerHtml + resultsEl.innerHTML;
+        const textColor = isLightTheme ? '#000000' : '#FFFFFF';
+        const headerColor = isLightTheme ? '#333333' : '#DDDDDD';
+        const exportStyles = `
+            <style>
+                .export-container-temp { color: ${textColor} !important; }
+                .results-table { --bs-table-color: ${textColor}; --bs-table-border-color: rgba(255,255,255,0.2); }
+                .results-table th, .results-table td { color: ${textColor} !important; font-weight: 500 !important; }
+                .results-table th { color: ${headerColor} !important; }
+                .results-table .debit-row td { font-weight: 600 !important; }
+                h4 { color: ${textColor} !important; }
+            </style>
+        `;
+
+        exportContainer.innerHTML = exportStyles + headerHtml + resultsEl.innerHTML;
         
         document.body.appendChild(exportContainer);
         document.body.classList.add('exporting-image');
         
         try {
-            // Pequeno timeout para garantir que as imagens (se houver) e estilos sejam renderizados
             await new Promise(resolve => setTimeout(resolve, 100));
 
             const canvas = await html2canvas(exportContainer, {
