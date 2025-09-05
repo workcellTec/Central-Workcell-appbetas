@@ -22,7 +22,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
         /* ============================================== */
-        /* DESIGN & UX (V6.5) - CORREÇÃO TEMA TABELA      */
+        /* DESIGN & UX (V6.7) - ESTADOS VAZIOS            */
         /* ============================================== */
 
         /* 1. VARIÁVEIS DE COR E TEMA */
@@ -458,7 +458,7 @@
 
         /* 15. ESTILOS PARA EXPORTAÇÃO DE IMAGEM */
         .export-container-temp {
-            width: 700px !important; /* Larger width for two columns */
+            width: 700px !important;
         }
         .export-container-temp .alert {
             font-size: 0.9rem;
@@ -466,17 +466,15 @@
         .export-container-temp h4 {
             font-size: 1.4rem;
         }
-        body.exporting-image [data-theme="dark"] .alert,
-        body.exporting-image [data-theme="dark"] .content-card {
-            background-color: var(--secondary-color) !important;
+        body.exporting-image [data-theme="dark"] .results-table th,
+        body.exporting-image [data-theme="dark"] .results-table td {
             color: var(--text-color) !important;
-            border: 1px solid var(--glass-border) !important;
+            font-weight: 600 !important;
         }
-        body.exporting-image [data-theme="light"] .alert,
-        body.exporting-image [data-theme="light"] .content-card {
-            background-color: #ffffff !important;
+        body.exporting-image [data-theme="light"] .results-table th,
+        body.exporting-image [data-theme="light"] .results-table td {
             color: var(--text-color) !important;
-            border: 1px solid #dee2e6 !important;
+            font-weight: 600 !important;
         }
         .btn-info {
             background-color: #0dcaf0;
@@ -569,6 +567,32 @@
         .search-results-container.is-loading .list-group-item {
             display: none;
         }
+        
+        /* 19. SLIDER DE PARCELAS */
+        .form-range {
+            padding: 0; /* Remove padding padrão para controle total */
+        }
+        .form-range::-webkit-slider-thumb {
+            background-color: var(--primary-color);
+            transition: background-color 0.2s ease;
+        }
+        .form-range::-moz-range-thumb {
+            background-color: var(--primary-color);
+            transition: background-color 0.2s ease;
+        }
+        .form-range::-ms-thumb {
+            background-color: var(--primary-color);
+            transition: background-color 0.2s ease;
+        }
+        .form-range:hover::-webkit-slider-thumb {
+            background-color: #D32F2F;
+        }
+        .form-range:hover::-moz-range-thumb {
+            background-color: #D32F2F;
+        }
+        .form-range:focus::-webkit-slider-thumb {
+          box-shadow: 0 0 0 1px var(--tertiary-color), 0 0 0 0.25rem rgba(var(--primary-color-rgb), 0.25);
+        }
 
         /* CSS DE IMPRESSÃO (CORRIGIDO) */
         @media print {
@@ -632,7 +656,13 @@
             <div class="row mb-3 w-100 justify-content-center">
                 <div class="col-12 col-md-4 mb-3"><label class="form-label">Maquininha</label><select class="form-select" id="machine1"><option value="pagbank">PagBank</option><option value="infinity" selected>InfinityPay</option><option value="valorante">Valorante</option></select></div>
                 <div class="col-12 col-md-4 mb-3" id="flagDisplayContainer1" style="display: none;"><label class="form-label">Bandeira</label><button class="btn-flag-display" id="flagDisplayButton1"></button></div>
-                <div class="col-12 col-md-4 mb-3"><label class="form-label">Parcelas</label><select class="form-select" id="installments1"></select></div>
+                <div class="col-12 col-md-4 mb-3">
+                    <label for="installments1" class="form-label d-flex justify-content-between">
+                        <span>Parcelas</span>
+                        <span id="installments1Value" class="fw-bold text-light">Débito</span>
+                    </label>
+                    <input type="range" class="form-range" id="installments1" min="0" max="18" step="1" value="0">
+                </div>
             </div>
             <div id="brand1Container" class="hidden"><select id="brand1"><option value="visa">Visa</option><option value="mastercard">Mastercard</option><option value="hiper">Hiper</option><option value="hipercard">Hipercard</option><option value="elo">Elo</option><option value="amex">Amex</option></select></div>
 
@@ -737,40 +767,52 @@
             <button aria-label="Voltar" class="btn-back" id="backFromCalcularPorAparelho"><i class="bi bi-arrow-left"></i></button>
         </div>
         <div class="content-card w-100">
-            <div class="favoritos" id="aparelhoFavoritosContainer"></div>
-            <div class="mb-3 search-wrapper mx-auto"><label class="form-label" for="aparelhoSearch"><i class="bi bi-search"></i> Pesquisar Aparelho</label><input autocomplete="off" class="form-control" id="aparelhoSearch" placeholder="Carregando..." type="text"/><div class="search-results-container list-group" id="aparelhoResultsContainer"></div></div>
-            <div class="mb-3 mx-auto" style="max-width: 400px;">
-                <label class="form-label" for="entradaAparelho"><i class="bi bi-wallet2"></i> Valor de entrada (opcional)</label>
-                <input class="form-control" id="entradaAparelho" min="0" placeholder="Digite o valor da entrada" step="0.01" type="number"/>
-            </div>
+            <div id="aparelhoContentWrapper">
+                <div class="favoritos" id="aparelhoFavoritosContainer"></div>
+                <div class="mb-3 search-wrapper mx-auto"><label class="form-label" for="aparelhoSearch"><i class="bi bi-search"></i> Pesquisar Aparelho</label><input autocomplete="off" class="form-control" id="aparelhoSearch" placeholder="Carregando..." type="text"/><div class="search-results-container list-group" id="aparelhoResultsContainer"></div></div>
+                <div class="mb-3 mx-auto" style="max-width: 400px;">
+                    <label class="form-label" for="entradaAparelho"><i class="bi bi-wallet2"></i> Valor de entrada (opcional)</label>
+                    <input class="form-control" id="entradaAparelho" min="0" placeholder="Digite o valor da entrada" step="0.01" type="number"/>
+                </div>
 
-            <div class="extra-value-toggle mx-auto">
-                <button class="btn-toggle-extra" id="toggleValorExtraBtn" aria-label="Adicionar valor extra">
-                    <i class="bi bi-chevron-down"></i>
-                </button>
-            </div>
-            <div class="extra-value-container mx-auto" id="valorExtraContainer" style="max-width: 400px;">
-                <div class="mb-3">
-                    <label class="form-label" for="valorExtraAparelho"><i class="bi bi-plus-circle"></i> Valor adicional</label>
-                    <input class="form-control" id="valorExtraAparelho" min="0" placeholder="Ex: 40,00" step="0.01" type="number"/>
+                <div class="extra-value-toggle mx-auto">
+                    <button class="btn-toggle-extra" id="toggleValorExtraBtn" aria-label="Adicionar valor extra">
+                        <i class="bi bi-chevron-down"></i>
+                    </button>
+                </div>
+                <div class="extra-value-container mx-auto" id="valorExtraContainer" style="max-width: 400px;">
+                    <div class="mb-3">
+                        <label class="form-label" for="valorExtraAparelho"><i class="bi bi-plus-circle"></i> Valor adicional</label>
+                        <input class="form-control" id="valorExtraAparelho" min="0" placeholder="Ex: 40,00" step="0.01" type="number"/>
+                    </div>
+                </div>
+                
+                <div class="text-center mt-3">
+                    <button class="btn btn-sm hidden" id="saveAparelhoFavoriteBtn" style="background-color: rgba(var(--primary-color-rgb), 0.15); color: var(--primary-color);">
+                        <i class="bi bi-star-fill"></i> Salvar como favorito
+                    </button>
+                </div>
+
+                <div class="row my-3 w-100 justify-content-center">
+                    <div class="col-12 col-md-6 mb-3"><label class="form-label">Maquininha</label><select class="form-select" id="machine3"><option value="pagbank">PagBank</option><option value="infinity">InfinityPay</option><option value="valorante">Valorante</option></select></div>
+                    <div class="col-12 col-md-6 mb-3" id="flagDisplayContainer3" style="display: none;"><label class="form-label">Bandeira</label><button class="btn-flag-display" id="flagDisplayButton3"></button></div>
+                </div>
+                <div id="brand3Container" class="hidden"><select id="brand3"><option value="visa">Visa</option><option value="mastercard">Mastercard</option><option value="hiper">Hiper</option><option value="hipercard">Hipercard</option><option value="elo">Elo</option><option value="amex">Amex</option></select></div>
+
+                <div class="w-100 d-flex flex-column align-items-center" id="resultCalcularPorAparelho"></div>
+                <div class="text-center mt-3 w-100" id="exportAparelhoContainer" style="display: none;">
+                    <button class="btn btn-info" id="exportAparelhoBtn"><i class="bi bi-camera-fill"></i> Exportar Imagem</button>
                 </div>
             </div>
-            
-            <div class="text-center mt-3">
-                <button class="btn btn-sm hidden" id="saveAparelhoFavoriteBtn" style="background-color: rgba(var(--primary-color-rgb), 0.15); color: var(--primary-color);">
-                    <i class="bi bi-star-fill"></i> Salvar como favorito
+            <div id="aparelhoEmptyStateWrapper" class="hidden text-center" style="padding: 2rem 0;">
+                <i class="bi bi-box2-heart" style="font-size: 4rem; color: var(--primary-color);"></i>
+                <h4 class="mt-4">A sua lista de produtos está vazia</h4>
+                <p class="text-secondary">
+                    Vá à secção de <strong style="color: var(--text-color);">Administração</strong> para adicionar os seus produtos.
+                </p>
+                <button class="btn btn-primary mt-3" id="goToAdminFromEmptyState">
+                    <i class="bi bi-gear"></i> Ir para Administração
                 </button>
-            </div>
-
-            <div class="row my-3 w-100 justify-content-center">
-                <div class="col-12 col-md-6 mb-3"><label class="form-label">Maquininha</label><select class="form-select" id="machine3"><option value="pagbank">PagBank</option><option value="infinity">InfinityPay</option><option value="valorante">Valorante</option></select></div>
-                <div class="col-12 col-md-6 mb-3" id="flagDisplayContainer3" style="display: none;"><label class="form-label">Bandeira</label><button class="btn-flag-display" id="flagDisplayButton3"></button></div>
-            </div>
-            <div id="brand3Container" class="hidden"><select id="brand3"><option value="visa">Visa</option><option value="mastercard">Mastercard</option><option value="hiper">Hiper</option><option value="hipercard">Hipercard</option><option value="elo">Elo</option><option value="amex">Amex</option></select></div>
-
-            <div class="w-100 d-flex flex-column align-items-center" id="resultCalcularPorAparelho"></div>
-            <div class="text-center mt-3 w-100" id="exportAparelhoContainer" style="display: none;">
-                <button class="btn btn-info" id="exportAparelhoBtn"><i class="bi bi-camera-fill"></i> Exportar Imagem</button>
             </div>
         </div>
     </div>
@@ -1221,7 +1263,31 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         }; 
         if (sectionInitializers[sectionId]) sectionInitializers[sectionId](); 
     }
-    function updateInstallmentsOptions() { const installments = document.getElementById("installments1"); const machine = document.getElementById("machine1").value; if (!areRatesLoaded) { installments.innerHTML = '<option>Carregando...</option>'; return; } installments.innerHTML = '<option value="0">Débito</option>'; let max = 0; if (rates[machine]) { switch(machine) { case "pagbank": max = 18; break; case "infinity": max = 12; break; case "valorante": max = 21; break; } } for (let i = 1; i <= max; i++) installments.innerHTML += `<option value="${i}">${i}x</option>`; }
+    function updateInstallmentsOptions() { 
+        const installmentsSlider = document.getElementById("installments1");
+        const machine = document.getElementById("machine1").value; 
+        if (!areRatesLoaded) { 
+            installmentsSlider.disabled = true;
+            return; 
+        } 
+        installmentsSlider.disabled = false;
+        
+        let max = 0; 
+        if (rates[machine]) { 
+            switch(machine) { 
+                case "pagbank": max = 18; break; 
+                case "infinity": max = 12; break; 
+                case "valorante": max = 21; break; 
+            } 
+        } 
+        installmentsSlider.max = max;
+        // If current value is higher than new max, reset it
+        if (parseInt(installmentsSlider.value) > max) {
+            installmentsSlider.value = 0;
+        }
+        // Trigger input event to update display and calculation
+        installmentsSlider.dispatchEvent(new Event('input'));
+    }
     function toggleEntradaAVistaUI() {
         const isProdutoMode = document.getElementById('vendaModeToggle').checked, isEntradaChecked = document.getElementById('entradaAVistaCheckbox').checked;
         const entradaContainer = document.getElementById('entradaAVistaContainer'), finalValueContainer = document.getElementById('fecharVendaInputs'), entradaToggleContainer = document.getElementById('entradaAVistaToggleContainer');
@@ -1561,6 +1627,18 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             searchContainers.forEach(c => hideSkeletonLoader(c));
             const data = snapshot.val(); products = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : []; 
             setupFuse(); 
+            
+            const aparelhoContent = document.getElementById('aparelhoContentWrapper');
+            const aparelhoEmptyState = document.getElementById('aparelhoEmptyStateWrapper');
+
+            if (products.length === 0) {
+                if (aparelhoContent) aparelhoContent.classList.add('hidden');
+                if (aparelhoEmptyState) aparelhoEmptyState.classList.remove('hidden');
+            } else {
+                if (aparelhoContent) aparelhoContent.classList.remove('hidden');
+                if (aparelhoEmptyState) aparelhoEmptyState.classList.add('hidden');
+            }
+            
             const placeholderText = products.length > 0 ? `Pesquisar entre ${products.length} produtos...` : 'Nenhum produto cadastrado'; 
             document.getElementById('vendaProdutoSearch').placeholder = placeholderText; 
             document.getElementById('aparelhoSearch').placeholder = placeholderText; 
@@ -1577,8 +1655,18 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
     function renderAdminTable(filteredList = products) {
         const tableBody = document.getElementById('productsTableBody');
         if (!tableBody) return;
-        tableBody.innerHTML = filteredList.length === 0 ? '<tr><td colspan="2" class="text-center p-4 text-secondary">Nenhum produto cadastrado.</td></tr>' :
-            filteredList.flatMap(product => [
+        if (filteredList.length === 0) {
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="2" class="text-center p-5">
+                        <i class="bi bi-journal-x" style="font-size: 4rem; color: var(--text-secondary);"></i>
+                        <h5 class="mt-3">Nenhum produto encontrado</h5>
+                        <p class="text-secondary">Adicione um novo produto abaixo para começar a gerir a sua lista.</p>
+                    </td>
+                </tr>
+            `;
+        } else {
+             tableBody.innerHTML = filteredList.flatMap(product => [
                 `<tr class="product-data-row" data-id="${product.id}">
                     <td><input type="text" class="form-control form-control-sm w-100" value="${escapeHtml(product.nome)}" data-field="nome"></td>
                     <td><input type="text" class="form-control form-control-sm w-100" value="${(product.valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}" data-field="valor"></td>
@@ -1600,6 +1688,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
                     </td>
                 </tr>`
             ]).join('');
+        }
     }
     function filterAdminProducts() { const searchTerm = document.getElementById('adminSearchInput').value; renderAdminTable(!fuse || !searchTerm ? products : fuse.search(searchTerm).map(r => r.item)); }
     async function importFromPasteOrFile(content) { const lines = content.split('\n').filter(line => line.trim()); const productsToImport = lines.map(line => { const match = line.match(/^(.*?)\s*[- ]*(?:R\$?\s*)?([\d.,]+)$/i); if (match) { const nome = match[1].trim(); const valor = parseBrazilianCurrencyToFloat(match[2]); if (nome && !isNaN(valor)) return { nome, valor }; } return null; }).filter(Boolean); if (productsToImport.length > 0) { try { const updates = {}; productsToImport.forEach(p => { const newKey = push(getProductsRef()).key; updates[newKey] = p; }); await update(getProductsRef(), updates); showCustomModal({ message: `${productsToImport.length} produtos importados!` }); } catch (error) { showCustomModal({ message: `Erro ao importar: ${error.message}` }); } } else { showCustomModal({ message: 'Nenhum produto válido encontrado.' }); } }
@@ -1791,15 +1880,24 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         document.getElementById('goToCalculator').addEventListener('click', () => showMainSection('calculator'));
         document.getElementById('goToContract').addEventListener('click', () => showMainSection('contract'));
         document.getElementById('backFromContract').addEventListener('click', () => showMainSection('main'));
+        document.getElementById('goToAdminFromEmptyState').addEventListener('click', () => openCalculatorSection('administracao'));
+
 
         // --- Navegação da Calculadora ---
         ['openFecharVenda', 'openRepassarValores', 'openCalcularEmprestimo', 'openCalcularPorAparelho', 'openAdministracao'].forEach(id => { document.getElementById(id).addEventListener('click', () => openCalculatorSection(id.replace('open', '').charAt(0).toLowerCase() + id.slice(5))); });
         ['backFromFecharVenda', 'backFromRepassarValores', 'backFromCalcularEmprestimo', 'backFromCalcularPorAparelho', 'backFromAdministracao'].forEach(id => { document.getElementById(id).addEventListener('click', () => openCalculatorSection('calculatorHome')); });
         
         // --- Listeners da Calculadora (existentes) ---
+        const installmentsSlider = document.getElementById('installments1');
+        const installmentsValueDisplay = document.getElementById('installments1Value');
+        installmentsSlider.addEventListener('input', () => {
+            const value = installmentsSlider.value;
+            installmentsValueDisplay.textContent = (value === '0') ? 'Débito' : `${value}x`;
+            updateFecharVendaUI();
+        });
+
         document.getElementById('machine1').addEventListener('change', () => { updateInstallmentsOptions(); updateFecharVendaUI(); if(document.getElementById('machine1').value !== 'pagbank') openFlagModal(document.getElementById('machine1')); });
         document.getElementById('brand1').addEventListener('change', updateFecharVendaUI);
-        document.getElementById('installments1').addEventListener('change', updateFecharVendaUI);
         document.getElementById('vendaModeToggle').addEventListener('change', updateFecharVendaUI); 
         document.querySelectorAll('input[name="manualMode"]').forEach(radio => radio.addEventListener('change', updateFecharVendaUI));
         document.getElementById('vendaProdutoSearch').addEventListener('input', () => displayDynamicSearchResults(document.getElementById('vendaProdutoSearch').value, 'vendaSearchResultsContainer', handleProductSelectionForVenda));
