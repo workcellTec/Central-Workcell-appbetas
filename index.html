@@ -1,4 +1,4 @@
-<meta name='viewport' content='width=device-width, initial-scale=1'/><meta name='viewport' content='width=device-width, initial-scale=1'/><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="utf-8"/>
@@ -739,6 +739,24 @@
         </div>
 
         <div id="adminRatesContent" class="w-100" style="display: none;">
+            <div class="admin-section">
+                <h4 class="text-start"><i class="bi bi-eye-fill"></i> Maquininhas Visíveis</h4>
+                <p class="text-start text-secondary">Desative as maquininhas que você não utiliza para simplificar as telas de cálculo.</p>
+                <div id="machineVisibilityToggles">
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input visibility-toggle" type="checkbox" role="switch" id="toggle-pagbank-visibility" data-machine="pagbank" checked>
+                        <label class="form-check-label" for="toggle-pagbank-visibility">PagBank</label>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input visibility-toggle" type="checkbox" role="switch" id="toggle-infinity-visibility" data-machine="infinity" checked>
+                        <label class="form-check-label" for="toggle-infinity-visibility">InfinityPay</label>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input visibility-toggle" type="checkbox" role="switch" id="toggle-valorante-visibility" data-machine="valorante" checked>
+                        <label class="form-check-label" for="toggle-valorante-visibility">Valorante</label>
+                    </div>
+                </div>
+            </div>
             <div class="admin-section">
                 <h4 class="text-start"><i class="bi bi-pencil-square"></i> Editar Taxas do Sistema</h4>
                 <p class="text-start text-secondary">Altere os valores e clique em salvar. As mudanças serão aplicadas para todos os usuários.</p>
@@ -1914,6 +1932,94 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         // Garante que sempre tenha um histórico inicial
         history.pushState(null, null, location.href);
 
+    });
+</script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const DISABLED_MACHINES_KEY = 'disabledMachines';
+
+        // Função para obter a lista de maquininhas desativadas do localStorage
+        function getDisabledMachines() {
+            try {
+                const disabled = localStorage.getItem(DISABLED_MACHINES_KEY);
+                return disabled ? JSON.parse(disabled) : [];
+            } catch (e) {
+                console.error('Erro ao ler as maquininhas desativadas do localStorage:', e);
+                return [];
+            }
+        }
+
+        // Função para salvar a lista de maquininhas desativadas
+        function saveDisabledMachines(disabled) {
+            try {
+                localStorage.setItem(DISABLED_MACHINES_KEY, JSON.stringify(disabled));
+            } catch (e) {
+                console.error('Erro ao salvar as maquininhas desativadas no localStorage:', e);
+            }
+        }
+
+        // Função para atualizar a visibilidade das opções nos selects
+        function updateMachineVisibility() {
+            const disabledMachines = getDisabledMachines();
+            const selects = document.querySelectorAll('#machine1, #machine2, #machine3, #machine4');
+
+            selects.forEach(select => {
+                let isSelectedOptionHidden = false;
+                for (const option of select.options) {
+                    const machineValue = option.value;
+                    const shouldBeHidden = disabledMachines.includes(machineValue);
+                    option.hidden = shouldBeHidden;
+
+                    if (option.selected && shouldBeHidden) {
+                        isSelectedOptionHidden = true;
+                    }
+                }
+                
+                // Se a opção selecionada foi ocultada, seleciona a primeira visível
+                if (isSelectedOptionHidden) {
+                    const firstVisibleOption = select.querySelector('option:not([hidden])');
+                    if (firstVisibleOption) {
+                        select.value = firstVisibleOption.value;
+                        // Dispara o evento change para que a UI se atualize conforme a nova seleção
+                        select.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                }
+            });
+        }
+
+        // Função para configurar os switches de visibilidade
+        function setupVisibilityToggles() {
+            const disabledMachines = getDisabledMachines();
+            const toggles = document.querySelectorAll('.visibility-toggle');
+
+            toggles.forEach(toggle => {
+                const machineName = toggle.dataset.machine;
+                // O switch está checado se a maquininha NÃO ESTIVER na lista de desativadas
+                toggle.checked = !disabledMachines.includes(machineName);
+
+                toggle.addEventListener('change', () => {
+                    const currentDisabled = getDisabledMachines();
+                    if (toggle.checked) {
+                        // Se checado, remove da lista de desativadas
+                        const newDisabled = currentDisabled.filter(m => m !== machineName);
+                        saveDisabledMachines(newDisabled);
+                    } else {
+                        // Se não checado, adiciona à lista de desativadas (se já não estiver)
+                        if (!currentDisabled.includes(machineName)) {
+                            currentDisabled.push(machineName);
+                            saveDisabledMachines(currentDisabled);
+                        }
+                    }
+                    // Aplica a mudança de visibilidade imediatamente
+                    updateMachineVisibility();
+                });
+            });
+        }
+
+        // Execução inicial
+        setupVisibilityToggles();
+        updateMachineVisibility();
     });
 </script>
 
