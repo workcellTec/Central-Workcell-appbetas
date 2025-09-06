@@ -1257,7 +1257,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
     // --- IMPORTAÇÕES DO FIREBASE ---
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-app.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-auth.js";
-    import { getDatabase, ref, push, update, remove, onValue } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-database.js";
+    import { getDatabase, ref, push, update, remove, onValue, off, get, query, orderByChild, startAt } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-database.js";
 
     // --- CONFIGURAÇÃO DO FIREBASE ---
     const firebaseConfig = {
@@ -1692,10 +1692,9 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         document.getElementById('valorExtraAparelho').value = ''; 
 
         const infoNoteEl = document.getElementById('aparelhoInfoNote');
-        const checkedInfo = checkedItems[product.id];
-
-        if (checkedInfo?.checked && checkedInfo.timestamp) {
-            const date = new Date(checkedInfo.timestamp).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+        
+        if (product.lastCheckedTimestamp) {
+            const date = new Date(product.lastCheckedTimestamp).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
             const colorsString = (product.cores && product.cores.length > 0) 
                 ? product.cores.map(c => c.nome).join(', ') 
                 : 'Nenhuma cor cadastrada';
@@ -1829,7 +1828,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             document.getElementById('vendaProdutoSearch').placeholder = placeholderText; 
             document.getElementById('aparelhoSearch').placeholder = placeholderText; 
             if(document.getElementById('adminSearchInput')) document.getElementById('adminSearchInput').placeholder = `Filtrar ${products.length} produtos...`; 
-            if (currentCalculatorSectionId === 'administracao') filterAdminProducts(); 
+            if (currentMainSectionId === 'administracao') filterAdminProducts(); 
             if (currentMainSectionId === 'stock') filterStockProducts();
         }, (error) => {
             console.error("Firebase Read Error:", error);
@@ -1984,7 +1983,6 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             minMatchCharLength: 2,
         });
     }
-    async function processNaturalLanguageCommand() { if (!areRatesLoaded) { showCustomModal({message:"Aguarde as taxas carregarem."}); return; } const command = document.getElementById('naturalCommandInput').value; if (!command.trim()) return; const priceMatches = command.match(/(?:R\$|💰|\$|€|£)?\s*[\d.,]+/g); if (!priceMatches) { showCustomModal({ message: 'Comando inválido. Valor numérico não encontrado.' }); return; } const valueStr = priceMatches.pop(), newValue = parseBrazilianCurrencyToFloat(valueStr); if (isNaN(newValue)) { showCustomModal({ message: `O valor "${valueStr}" não é válido.` }); return; } const stopWordsAndSymbols = /mudar|baixar|subir|trocar|alterar|preço|valor|do|da|o|a|de|para|pra|[-→💰]|R\$|\$/gi; const productNameQuery = command.substring(0, command.lastIndexOf(valueStr)).replace(stopWordsAndSymbols, '').trim(); if (!productNameQuery) { showCustomModal({ message: 'Não foi possível identificar o nome do produto.' }); return; } if (!fuse) { showCustomModal({ message: 'Busca de produtos não pronta.' }); return; } const results = fuse.search(productNameQuery); if (results.length === 0) { let suggestionMessage = `Produto "${productNameQuery}" não encontrado.`; if (products.length > 0) suggestionMessage += `\n\nQue tal um destes?\n${products.slice(0, 5).map(p => `• ${p.nome}`).join('\n')}`; showCustomModal({ message: suggestionMessage }); return; } const foundProduct = results[0].item; showCustomModal({ message: `Atualizar "${foundProduct.nome}" para ${newValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}?`, onConfirm: () => { updateProductInDB(foundProduct.id, { valor: newValue }); document.getElementById('naturalCommandInput').value = ''; }, onCancel: () => {} }); }
     
     // --- LÓGICA DE ESTOQUE E CORES ---
     let currentEditingProductId = null;
@@ -2631,15 +2629,16 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
                     const isChecked = e.target.checked;
                     
                     if (isChecked) {
-                        checkedItems[id] = { checked: true, timestamp: Date.now() };
-                        updateProductInDB(id, { lastCheckedTimestamp: Date.now() }); // Salva o timestamp no Firebase
+                        const timestamp = Date.now();
+                        checkedItems[id] = { checked: true, timestamp: timestamp };
+                        updateProductInDB(id, { lastCheckedTimestamp: timestamp });
                     } else {
                         delete checkedItems[id];
-                        updateProductInDB(id, { lastCheckedTimestamp: null }); // Remove o timestamp do Firebase
+                        updateProductInDB(id, { lastCheckedTimestamp: null });
                     }
                     saveCheckedItems();
-                    delete modificationTracker[id]; // Ação manual sobrescreve o rastreamento
-                    filterStockProducts(); // Re-sorts the list
+                    delete modificationTracker[id]; 
+                    filterStockProducts(); 
                 }
             });
             stockTableBody.addEventListener('click', e => {
@@ -2694,7 +2693,6 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         document.getElementById('saveColorPicker').addEventListener('click', () => {
             if (currentEditingProductId) {
                 const product = products.find(p => p.id === currentEditingProductId);
-                const oldColors = product.cores || [];
                 
                 updateProductInDB(currentEditingProductId, { cores: tempSelectedColors });
                 modificationTracker[currentEditingProductId] = { ...modificationTracker[currentEditingProductId], color: true };
