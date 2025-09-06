@@ -2314,11 +2314,10 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
 
             <div style="text-align: center; margin-top: 20pt;">
                 <div class="signature-line" style="margin-bottom: 5px;"></div>
-                <p style="margin-bottom: 5pt; margin-top:0;">Assinatura COMPRADOR: <span id="previewNome2"></span></p>
+                <p style="margin-bottom: 5pt; margin-top:0;">Assinatura COMPRADOR</p>
             </div>
         `;
         document.getElementById('previewNome').textContent = document.getElementById('compradorNome').value;
-        document.getElementById('previewNome2').textContent = document.getElementById('compradorNome').value;
         document.getElementById('previewCpf').textContent = document.getElementById('compradorCpf').value;
         document.getElementById('previewRg').textContent = document.getElementById('compradorRg').value;
         document.getElementById('previewEndereco').textContent = document.getElementById('compradorEndereco').value;
