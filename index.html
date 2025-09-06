@@ -22,7 +22,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
         /* ============================================== */
-        /* DESIGN & UX (V6.7) - ESTADOS VAZIOS            */
+        /* DESIGN & UX (V7.5) - LOADING SCREEN & CLEANUP  */
         /* ============================================== */
 
         /* 1. VARIÁVEIS DE COR E TEMA */
@@ -354,7 +354,9 @@
         }
         .acoes-produto .action-menu-content {
             display: flex;
-            justify-content: flex-end;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
         }
         #productsTableBody .form-control {
              background-color: var(--input-bg) !important;
@@ -594,22 +596,146 @@
           box-shadow: 0 0 0 1px var(--tertiary-color), 0 0 0 0.25rem rgba(var(--primary-color-rgb), 0.25);
         }
 
+        /* 20. ESTILOS DE ESTOQUE E RELATÓRIO */
+        .stock-qty-input {
+            font-weight: bold;
+        }
+        /* Remove arrows from number input */
+        .stock-qty-input::-webkit-outer-spin-button,
+        .stock-qty-input::-webkit-inner-spin-button {
+          -webkit-appearance: none;
+          margin: 0;
+        }
+        .stock-qty-input[type=number] {
+          -moz-appearance: textfield;
+        }
+        .product-colors-display {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 4px;
+        }
+        .color-swatch-sm {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        #reportPreview {
+            display: none;
+            font-family: Arial, sans-serif;
+            color: #000;
+            background: #FFF;
+        }
+        #reportPreview h3 { color: #000; font-size: 16pt; text-align: center; font-weight: bold; margin-bottom: 5px;}
+        #reportPreview p { color: #555; font-size: 10pt; text-align: center; margin-bottom: 20px;}
+        #reportPreview table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        #reportPreview th, #reportPreview td { border: 1px solid #ccc; padding: 8px; text-align: left; color: #000;}
+        #reportPreview th { background-color: #f2f2f2; font-weight: bold; }
+        
+        tr.not-checked {
+            background-color: rgba(var(--primary-color-rgb), 0.08);
+            border-left: 3px solid var(--primary-color);
+        }
+        [data-theme="light"] tr.not-checked {
+             background-color: rgba(var(--primary-color-rgb), 0.1);
+        }
+
+        /* 21. MODAL SELETOR DE COR */
+        #colorPickerModalContent { max-width: 500px; }
+        #colorPickerProductName { font-weight: 600; color: var(--primary-color); }
+        .color-palette {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+            padding: 15px;
+            background-color: var(--input-bg);
+            border-radius: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .color-swatch-lg {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            border: 2px solid transparent;
+        }
+        .color-swatch-lg:hover {
+            transform: scale(1.1);
+        }
+        .color-swatch-lg.selected {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 10px var(--primary-color);
+        }
+        #selectedColorsContainer {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid var(--glass-border);
+            min-height: 50px;
+        }
+        .selected-color-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background-color: var(--input-bg);
+            border-radius: 15px;
+            padding: 5px 10px;
+            margin: 3px;
+            font-size: 0.9rem;
+        }
+        .selected-color-tag .color-swatch-sm {
+            border-color: rgba(0,0,0,0.2);
+        }
+        .remove-color-btn {
+            cursor: pointer;
+            font-size: 1.1rem;
+            line-height: 1;
+            opacity: 0.7;
+        }
+        .remove-color-btn:hover {
+            opacity: 1;
+        }
+        input[type="color"] {
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            width: 40px;
+            height: 40px;
+            background-color: transparent;
+            border: none;
+            cursor: pointer;
+            padding: 0;
+            border-radius: 50%;
+            overflow: hidden;
+        }
+        input[type="color"]::-webkit-color-swatch {
+            border-radius: 50%;
+            border: 1px solid var(--input-border);
+        }
+        input[type="color"]::-moz-color-swatch {
+            border-radius: 50%;
+            border: 1px solid var(--input-border);
+        }
+
         /* CSS DE IMPRESSÃO (CORRIGIDO) */
         @media print {
           html, body {
-            background: #FFF !important; /* Garante fundo branco na impressão */
+            background: #FFF !important;
             margin: 0;
             padding: 0;
           }
 
-          body > *:not(#contractPreview) { 
+          body > *:not(#contractPreview):not(#reportPreview) { 
             display: none !important; 
           }
 
-          #contractPreview {
+          #contractPreview, #reportPreview {
             display: block !important;
             position: static !important;
-            margin: 0 auto; /* Centraliza na página de impressão */
+            margin: 0 auto;
             padding: 20mm;
             width: 210mm;
             min-height: 297mm;
@@ -621,16 +747,25 @@
     </style>
 </head>
 <body>
+<div id="loadingOverlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: var(--tertiary-color); z-index: 10000; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.5s ease;">
+    <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+        <span class="visually-hidden">Loading...</span>
+    </div>
+    <p class="mt-3" style="color: var(--text-secondary);">Carregando sistema...</p>
+</div>
+
 <div id="theme-toggle">
     <i class="bi bi-sun-fill"></i>
 </div>
 
 <!-- MENU PRINCIPAL NOVO -->
-<div class="container text-center" id="mainMenu">
+<div class="container text-center hidden" id="mainMenu">
     <h2 class="mb-4">Bem-vindo(a) à Central Workcell,<br/>O que você quer fazer?</h2>
     <div class="d-grid gap-2">
         <button class="btn-menu" id="goToCalculator"><i class="bi bi-calculator-fill"></i> Calculadora de Taxa</button>
         <button class="btn-menu" id="goToContract"><i class="bi bi-file-earmark-text-fill"></i> Formulário Boleto</button>
+        <button class="btn-menu" id="goToStock"><i class="bi bi-box-seam"></i> Controle de Estoque</button>
+        <button class="btn-menu" id="goToAdmin"><i class="bi bi-gear"></i> Administração</button>
     </div>
 </div>
 
@@ -643,7 +778,6 @@
             <button class="btn-menu" id="openRepassarValores"><i class="bi bi-arrow-left-right"></i> Repassar valores</button>
             <button class="btn-menu" id="openCalcularEmprestimo"><i class="bi bi-bank"></i> Calcular Empréstimo</button>
             <button class="btn-menu" id="openCalcularPorAparelho"><i class="bi bi-phone"></i> Calcular por aparelho</button>
-            <button class="btn-menu" id="openAdministracao"><i class="bi bi-gear"></i> Administração</button>
         </div>
     </div>
 
@@ -770,6 +904,7 @@
             <div id="aparelhoContentWrapper">
                 <div class="favoritos" id="aparelhoFavoritosContainer"></div>
                 <div class="mb-3 search-wrapper mx-auto"><label class="form-label" for="aparelhoSearch"><i class="bi bi-search"></i> Pesquisar Aparelho</label><input autocomplete="off" class="form-control" id="aparelhoSearch" placeholder="Carregando..." type="text"/><div class="search-results-container list-group" id="aparelhoResultsContainer"></div></div>
+                <div id="aparelhoInfoNote" class="text-center text-secondary small my-2 hidden" style="max-width: 400px; margin-left: auto; margin-right: auto; padding: 8px; background-color: var(--input-bg); border-radius: 8px;"></div>
                 <div class="mb-3 mx-auto" style="max-width: 400px;">
                     <label class="form-label" for="entradaAparelho"><i class="bi bi-wallet2"></i> Valor de entrada (opcional)</label>
                     <input class="form-control" id="entradaAparelho" min="0" placeholder="Digite o valor da entrada" step="0.01" type="number"/>
@@ -820,7 +955,7 @@
     <div class="container" id="administracao" style="display: none;">
         <div class="section-header">
             <h3>Administração</h3>
-            <button aria-label="Voltar" class="btn-back" id="backFromAdministracao"><i class="bi bi-arrow-left"></i></button>
+            <button aria-label="Voltar" class="btn-back" id="backFromAdmin"><i class="bi bi-arrow-left"></i></button>
         </div>
 
         <div class="admin-section w-100">
@@ -836,27 +971,36 @@
 
         <div id="adminProductsContent">
             <div class="admin-section text-start w-100">
-                <h4 class="mb-3"><i class="bi bi-upload"></i> Importar/Exportar Produtos</h4>
-                <div class="mb-3"><label class="form-label" for="pasteInput"><i class="bi bi-clipboard"></i> Colar Lista (Ex: iPhone 14 - 3999.00):</label><textarea class="form-control" id="pasteInput" placeholder="Cole sua lista de produtos aqui..." rows="5"></textarea></div>
-                <button class="btn btn-primary mb-2 me-2" id="importFromPasteBtn"><i class="bi bi-clipboard-check"></i> Importar</button>
-                <button class="btn btn-secondary mb-2 me-2" id="uploadFileBtn"><i class="bi bi-file-earmark-arrow-up"></i> Upload</button>
-                <button class="btn btn-info mb-2 me-2" id="exportTxt"><i class="bi bi-file-text"></i> Exportar TXT</button>
-                <button class="btn btn-info mb-2" id="exportJson"><i class="bi bi-file-earmark-code"></i> Exportar JSON</button>
-                <input accept=".txt,.csv" class="d-none" id="fileInput" type="file">
-                <div class="mt-2" id="importStatus"></div>
+                <h4 class="mb-3"><i class="bi bi-plus-circle-fill"></i> Adicionar Novo Produto</h4>
+                <form id="addProductForm">
+                    <div class="mb-3">
+                        <label for="newProductName" class="form-label">Nome do Produto</label>
+                        <input type="text" class="form-control" id="newProductName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="newProductValue" class="form-label">Valor (R$)</label>
+                        <input type="text" class="form-control" id="newProductValue" required placeholder="Ex: 2499,90">
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="newProductQuantity" class="form-label">Quantidade (Opcional)</label>
+                            <input type="number" class="form-control" id="newProductQuantity" placeholder="1" min="0">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="newProductColors" class="form-label">Cores (Opcional)</label>
+                            <input type="text" class="form-control" id="newProductColors" placeholder="Azul, Preto...">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-success w-100"><i class="bi bi-plus-lg"></i> Adicionar Produto</button>
+                </form>
             </div>
-            <div class="admin-section text-start w-100">
-                <h4 class="mb-3"><i class="bi bi-magic"></i> Comando Rápido de Produto (I.A) </h4>
-                <div class="input-group"><input class="form-control" id="naturalCommandInput" placeholder="Ex: baixar redmi 10 para 899,90" type="text"/><button class="btn btn-primary" id="applyNaturalCommand"><i class="bi bi-send-fill"></i></button></div>
-                <div class="mt-2" id="commandStatus"></div>
-            </div>
+            
             <div class="admin-section text-start w-100">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h4 class="mb-0"><i class="bi bi-list-ul"></i> Produtos</h4>
                     <input class="form-control" id="adminSearchInput" placeholder="Filtrar..." style="width: 200px;" type="text">
                 </div>
-                <div class="table-responsive"><table class="table align-middle"><thead><tr><th style="width: 65%;">Nome do Produto</th><th style="width: 35%;">Valor</th></tr></thead><tbody id="productsTableBody"></tbody></table></div>
-                <button class="btn btn-success mt-3" id="addNewProduct"><i class="bi bi-plus-lg"></i> Adicionar Novo</button>
+                <div class="table-responsive"><table class="table align-middle"><thead><tr><th style="width: 50%;">Nome do Produto</th><th style="width: 30%;">Valor</th><th style="width: 20%;" class="text-center">Qtd.</th></tr></thead><tbody id="productsTableBody"></tbody></table></div>
             </div>
             <div class="admin-section text-center w-100 pt-3">
                  <button class="btn btn-danger" id="deleteAllProductsBtn"><i class="bi bi-trash-fill"></i> Excluir todos os produtos</button>
@@ -971,68 +1115,46 @@
     </div>
 </div>
 
+<!-- CONTAINER PARA ESTOQUE -->
+<div id="stockContainer" class="container hidden">
+    <div class="section-header">
+        <h3>Controle de Estoque</h3>
+        <button aria-label="Voltar" class="btn-back" id="backFromStock"><i class="bi bi-arrow-left"></i></button>
+    </div>
+    <div class="content-card w-100">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <input class="form-control" id="stockSearchInput" placeholder="Filtrar produtos..." style="flex: 1; min-width: 180px;" type="text">
+            <div class="btn-group">
+                <button class="btn btn-outline-secondary btn-sm" id="toggleIgnoredBtn" title="Mostrar/Ocultar ignorados"><i class="bi bi-eye-slash"></i></button>
+                <button class="btn btn-outline-danger btn-sm" id="resetCountBtn" title="Resetar Contagem"><i class="bi bi-arrow-counterclockwise"></i></button>
+                <button class="btn btn-info btn-sm" id="generateReportBtn"><i class="bi bi-printer"></i> Relatório</button>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table align-middle">
+                <thead>
+                    <tr>
+                        <th style="width: 40%;">Produto</th>
+                        <th style="width: 25%;" class="text-center">Quantidade</th>
+                        <th style="width: 25%;" class="text-center">Ações</th>
+                        <th style="width: 10%;" class="text-center">OK</th>
+                    </tr>
+                </thead>
+                <tbody id="stockTableBody">
+                    <!-- Products will be dynamically inserted here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+
 <!-- Div de preview do contrato para renderização do PDF e Impressão -->
 <div id="contractPreview">
-    <h4>CONTRATO DE COMPRA E VENDA DE SMARTPHONE</h4>
-    
-    <div>
-        Pelo presente instrumento particular, as partes a seguir identificadas firmam o presente CONTRATO DE COMPRA E VENDA, mediante as cláusulas e condições abaixo:
-    </div>
-
-    <div class="section-title">VENDEDOR</div>
-    <p>Workcell Tecnologia LTDA – CNPJ nº 50.299.715/0001-65, com sede em Av. Goiás, n° 4118 - loja 05 posto - St. Crimeia Oeste, Goiânia - GO, 74563-220.</p>
-
-    <div class="section-title">COMPRADOR</div>
-    <p>
-        <strong>Nome:</strong> <span id="previewNome"></span><br>
-        <strong>CPF:</strong> <span id="previewCpf"></span> <strong>RG:</strong> <span id="previewRg"></span><br>
-        <strong>Endereço:</strong> <span id="previewEndereco"></span>
-    </p>
-
-    <div class="section-title">CLÁUSULA 1 – DO OBJETO</div>
-    <p>O presente contrato tem por objeto a venda do(s) smartphone(s) descrito(s) abaixo:</p>
-    <p>
-        <strong>Modelo:</strong> <span id="previewModelo"></span><br>
-        <strong>IMEI(s):</strong> <span id="previewImei"></span><br>
-        <strong>Valor total:</strong> R$ <span id="previewValorTotal"></span>
-    </p>
-
-    <div class="section-title">CLÁUSULA 2 – DO PAGAMENTO</div>
-    <p>
-        2.1 O valor total da compra é de R$ <span id="previewValorTotal2"></span> (<span id="previewValorExtenso"></span>), sendo pago da seguinte forma:<br>
-        a) Entrada no valor de R$ <span id="previewEntrada"></span>, paga no ato da assinatura deste contrato;<br>
-        b) O saldo restante de R$ <span id="previewSaldo"></span>, dividido em <span id="previewNumParcelas"></span> parcelas mensais de R$ <span id="previewValorParcela"></span>, a serem pagas através de boleto bancário emitido pelo VENDEDOR.
-    </p>
-    <p>
-        2.2 O não pagamento de qualquer parcela na data de vencimento acarretará:<br>
-        - Multa de 2% (dois por cento) sobre o valor da parcela em atraso;<br>
-        - Juros de mora de 1% (um por cento) ao mês;<br>
-        - Correção monetária conforme índice legal aplicável.
-    </p>
-
-    <div class="section-title">CLÁUSULA 3 – DA PROPRIEDADE</div>
-    <p>3.1 A propriedade do smartphone somente será transferida ao COMPRADOR após a quitação integral de todas as parcelas.</p>
-    <p>3.2 Em caso de inadimplência, o COMPRADOR será notificado pelo VENDEDOR e terá o prazo de 5 (cinco) dias corridos para regularizar o pagamento.</p>
-    <p>3.3 Caso não haja a regularização no prazo informado, o VENDEDOR poderá proceder ao bloqueio remoto do aparelho, impedindo seu uso até a quitação ou negociação da dívida, sem prejuízo da cobrança das parcelas vencidas e demais encargos previstos neste contrato.</p>
-
-    <div class="section-title">CLÁUSULA 4 – DAS GARANTIAS</div>
-    <p>4.1 O aparelho possui garantia legal de 1 (um) ano para qualquer defeito de fabricação pelo fabricante, contados a partir da entrega do produto.</p>
-    <p>4.2 A garantia não cobre mau uso, quedas, molhar, oxidação ou violação do aparelho.</p>
-
-    <div class="section-title">CLÁUSULA 5 – DA RESCISÃO</div>
-    <p>5.1 O não cumprimento de qualquer obrigação contratual poderá resultar na rescisão imediata deste contrato, com a cobrança das parcelas vencidas e vincendas, além das penalidades cabíveis.</p>
-
-    <div class="section-title">CLÁUSULA 6 – DO FORO</div>
-    <p>As partes elegem o foro da comarca de Goiânia para dirimir quaisquer dúvidas oriundas deste contrato.</p>
-    <p>E por estarem de acordo, firmam o presente contrato em 2 (duas) vias de igual teor.</p>
-
-    <p><strong>Local e data:</strong> <span id="previewLocalData"></span></p>
-
-    <div class="signature-line"></div>
-    <p style="text-align: center; margin-bottom: 20pt;">Assinatura VENDEDOR</p>
-    <div class="signature-line"></div>
-    <p style="text-align: center;">Assinatura COMPRADOR</p>
+    <!-- Conteúdo do contrato... -->
 </div>
+<!-- Div de preview do relatório de estoque para impressão -->
+<div id="reportPreview"></div>
 
 
 <div class="user-id-display" id="userIdDisplay" style="display: none;"></div>
@@ -1081,6 +1203,30 @@
     </div>
 </div>
 
+<div class="custom-modal-overlay" id="colorPickerModalOverlay">
+    <div class="custom-modal-content" id="colorPickerModalContent">
+        <h5 class="mb-1">Editar Cores</h5>
+        <p id="colorPickerProductName" class="text-secondary mb-3"></p>
+        <div id="colorPalette" class="color-palette"></div>
+        <div id="selectedColorsContainer">
+            <p class="text-start text-secondary small mb-2">Cores Selecionadas:</p>
+            <div id="selectedColors" class="d-flex flex-wrap gap-2"></div>
+        </div>
+        <div class="mt-3 pt-3 border-top border-secondary border-opacity-25">
+             <p class="text-start text-secondary small mb-2">Adicionar Cor Personalizada:</p>
+             <div class="d-flex gap-2 align-items-center">
+                 <input type="text" class="form-control form-control-sm" id="customColorNameInput" placeholder="Nome da Cor">
+                 <input type="color" id="customColorHexInput" value="#CCCCCC" title="Selecione a cor">
+                 <button class="btn btn-sm btn-success" id="addCustomColorBtn">Add</button>
+             </div>
+        </div>
+        <div class="mt-4 d-flex justify-content-end gap-2">
+            <button class="btn btn-secondary" id="cancelColorPicker">Cancelar</button>
+            <button class="btn btn-primary" id="saveColorPicker">Salvar</button>
+        </div>
+    </div>
+</div>
+
 <script type="application/json" id="manifest-data">
 {
   "name": "Centrar Workcell",
@@ -1098,7 +1244,7 @@
 }
 </script>
 
-<script type="text/javascript" id="sw-script">
+<script type="text/plain" id="sw-script">
 const CACHE_NAME = 'centrar-workcell-cache-v1';
 const urlsToCache = [ '/', '/index.html', 'https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap', 'https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css', 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css', 'https://cdn.jsdelivr.net/npm/fuse.js/dist/fuse.min.js', 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js', 'https://www.gstatic.com/firebasejs/11.9.1/firebase-app.js', 'https://www.gstatic.com/firebasejs/11.9.1/firebase-auth.js', 'https://www.gstatic.com/firebasejs/11.9.1/firebase-database.js' ];
 self.addEventListener('install', event => { event.waitUntil( caches.open(CACHE_NAME).then(cache => { console.log('Cache aberto'); return cache.addAll(urlsToCache); }) ); });
@@ -1127,8 +1273,13 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
     let app, db, auth, userId = null, isAuthReady = false, areRatesLoaded = false;
     let products = [], fuse, selectedAparelhoValue = 0, fecharVendaPrecoBase = 0;
     let currentCalculatorSectionId = 'calculatorHome', productsListener = null, rates = {};
+    let currentMainSectionId = 'main';
     let emprestimoLucroPercentual = 15;
+    let showIgnoredInStock = false;
+    let checkedItems = {};
+    let modificationTracker = {}; // Para rastrear mudanças de contagem
     const APARELHO_FAVORITES_KEY = 'ctwAparelhoFavoritos';
+    const CHECKED_ITEMS_KEY = 'ctwCheckedItems';
     const MAX_FAVORITES = 5;
     
     // --- UTILITÁRIO DE ARMAZENAMENTO SEGURO ---
@@ -1147,15 +1298,20 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
     const mainMenu = document.getElementById('mainMenu');
     const calculatorContainer = document.getElementById('calculatorContainer');
     const contractContainer = document.getElementById('contractContainer');
+    const stockContainer = document.getElementById('stockContainer');
 
     function showMainSection(sectionId) {
+        if (!isAuthReady) return; // Impede a navegação antes do app estar pronto
+
         mainMenu.classList.add('hidden');
         calculatorContainer.classList.add('hidden');
         contractContainer.classList.add('hidden');
+        stockContainer.classList.add('hidden');
         
         mainMenu.style.display = 'none';
         calculatorContainer.style.display = 'none';
         contractContainer.style.display = 'none';
+        stockContainer.style.display = 'none';
 
         if (sectionId === 'main') {
             mainMenu.classList.remove('hidden');
@@ -1164,12 +1320,23 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         } else if (sectionId === 'calculator') {
             calculatorContainer.classList.remove('hidden');
             calculatorContainer.style.display = 'block';
-            openCalculatorSection('calculatorHome'); // Abre a tela inicial da calculadora
+            openCalculatorSection('calculatorHome'); 
         } else if (sectionId === 'contract') {
             contractContainer.classList.remove('hidden');
             contractContainer.style.display = 'flex';
             themeToggle.style.display = 'none';
+        } else if (sectionId === 'stock') {
+            stockContainer.classList.remove('hidden');
+            stockContainer.style.display = 'flex';
+            themeToggle.style.display = 'none';
+            loadCheckedItems();
+            filterStockProducts(); 
+        } else if (sectionId === 'administracao') {
+            calculatorContainer.classList.remove('hidden');
+            calculatorContainer.style.display = 'block';
+            openCalculatorSection('administracao');
         }
+        currentMainSectionId = sectionId;
     }
 
     // --- FUNÇÕES DE ADMINISTRAÇÃO (TAXAS) ---
@@ -1245,7 +1412,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         if (!sectionId || !document.getElementById(sectionId)) sectionId = 'calculatorHome'; 
         
         const themeToggleBtn = document.getElementById('theme-toggle');
-        themeToggleBtn.style.display = (sectionId === 'calculatorHome') ? 'flex' : 'none';
+        themeToggleBtn.style.display = (sectionId === 'calculatorHome' || sectionId === 'administracao') ? 'flex' : 'none';
 
         ['calculatorHome', 'fecharVenda', 'repassarValores', 'calcularEmprestimo', 'calcularPorAparelho', 'administracao'].forEach(id => { 
             const el = document.getElementById(id);
@@ -1520,6 +1687,22 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         document.getElementById('aparelhoResultsContainer').innerHTML = ''; 
         document.getElementById('entradaAparelho').value = ''; 
         document.getElementById('valorExtraAparelho').value = ''; 
+
+        const infoNoteEl = document.getElementById('aparelhoInfoNote');
+        const checkedInfo = checkedItems[product.id];
+
+        if (checkedInfo?.checked && checkedInfo.timestamp) {
+            const date = new Date(checkedInfo.timestamp).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+            const colorsString = (product.cores && product.cores.length > 0) 
+                ? product.cores.map(c => c.nome).join(', ') 
+                : 'Nenhuma cor cadastrada';
+            
+            infoNoteEl.innerHTML = `<i class="bi bi-info-circle"></i> Última checagem em ${date} - Cores: ${colorsString}`;
+            infoNoteEl.classList.remove('hidden');
+        } else {
+            infoNoteEl.classList.add('hidden');
+        }
+
         calculateAparelho(); 
     }
     function handleProductSelectionForVenda(product) { 
@@ -1644,6 +1827,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             document.getElementById('aparelhoSearch').placeholder = placeholderText; 
             if(document.getElementById('adminSearchInput')) document.getElementById('adminSearchInput').placeholder = `Filtrar ${products.length} produtos...`; 
             if (currentCalculatorSectionId === 'administracao') filterAdminProducts(); 
+            if (currentMainSectionId === 'stock') filterStockProducts();
         }, (error) => {
             console.error("Firebase Read Error:", error);
             searchContainers.forEach(c => hideSkeletonLoader(c));
@@ -1658,7 +1842,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         if (filteredList.length === 0) {
             tableBody.innerHTML = `
                 <tr>
-                    <td colspan="2" class="text-center p-5">
+                    <td colspan="3" class="text-center p-5">
                         <i class="bi bi-journal-x" style="font-size: 4rem; color: var(--text-secondary);"></i>
                         <h5 class="mt-3">Nenhum produto encontrado</h5>
                         <p class="text-secondary">Adicione um novo produto abaixo para começar a gerir a sua lista.</p>
@@ -1668,22 +1852,25 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         } else {
              tableBody.innerHTML = filteredList.flatMap(product => [
                 `<tr class="product-data-row" data-id="${product.id}">
-                    <td><input type="text" class="form-control form-control-sm w-100" value="${escapeHtml(product.nome)}" data-field="nome"></td>
-                    <td><input type="text" class="form-control form-control-sm w-100" value="${(product.valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}" data-field="valor"></td>
+                    <td><input type="text" class="form-control form-control-sm" value="${escapeHtml(product.nome)}" data-field="nome"></td>
+                    <td><input type="text" class="form-control form-control-sm" value="${(product.valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}" data-field="valor"></td>
+                    <td><input type="number" class="form-control form-control-sm text-center" value="${product.quantidade || 0}" data-field="quantidade" min="0" step="1"></td>
                 </tr>`,
                 `<tr class="product-separator-row" data-id="${product.id}">
-                    <td colspan="2">
+                    <td colspan="3">
                          <button class="btn-toggle-menu" data-id="${product.id}" aria-label="Abrir menu de ações">
                             <i class="bi bi-chevron-down"></i>
                          </button>
                     </td>
                 </tr>`,
                 `<tr class="acoes-produto" data-id="${product.id}">
-                    <td colspan="2">
+                    <td colspan="3">
                         <div class="action-menu-content">
-                            <button class="btn btn-sm btn-danger delete-product-btn" data-id="${product.id}">
-                                <i class="bi bi-trash me-2"></i>Apagar produto
-                            </button>
+                            <div class="form-check form-switch">
+                              <input class="form-check-input ignore-toggle-switch-admin" type="checkbox" role="switch" id="ignore-admin-${product.id}" data-id="${product.id}" ${product.ignorarContagem ? 'checked' : ''}>
+                              <label class="form-check-label" for="ignore-admin-${product.id}">Ignorar na contagem</label>
+                            </div>
+                            <button class="btn btn-sm btn-danger delete-product-btn" data-id="${product.id}"><i class="bi bi-trash"></i> Apagar</button>
                         </div>
                     </td>
                 </tr>`
@@ -1691,7 +1878,38 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         }
     }
     function filterAdminProducts() { const searchTerm = document.getElementById('adminSearchInput').value; renderAdminTable(!fuse || !searchTerm ? products : fuse.search(searchTerm).map(r => r.item)); }
-    async function importFromPasteOrFile(content) { const lines = content.split('\n').filter(line => line.trim()); const productsToImport = lines.map(line => { const match = line.match(/^(.*?)\s*[- ]*(?:R\$?\s*)?([\d.,]+)$/i); if (match) { const nome = match[1].trim(); const valor = parseBrazilianCurrencyToFloat(match[2]); if (nome && !isNaN(valor)) return { nome, valor }; } return null; }).filter(Boolean); if (productsToImport.length > 0) { try { const updates = {}; productsToImport.forEach(p => { const newKey = push(getProductsRef()).key; updates[newKey] = p; }); await update(getProductsRef(), updates); showCustomModal({ message: `${productsToImport.length} produtos importados!` }); } catch (error) { showCustomModal({ message: `Erro ao importar: ${error.message}` }); } } else { showCustomModal({ message: 'Nenhum produto válido encontrado.' }); } }
+    async function importFromPasteOrFile(content) {
+        const lines = content.split('\n').filter(line => line.trim());
+        const productsToImport = lines.map(line => {
+             const parts = line.split('-').map(p => p.trim());
+            if (parts.length >= 2) {
+                const nome = parts[0];
+                const valor = parseBrazilianCurrencyToFloat(parts[1]);
+                const quantidade = parts.length > 2 ? parseInt(parts[2], 10) : 1;
+                
+                if (nome && !isNaN(valor) && !isNaN(quantidade)) {
+                    return { nome, valor, quantidade, cores: [], ignorarContagem: false };
+                }
+            }
+            return null;
+        }).filter(Boolean);
+
+        if (productsToImport.length > 0) {
+            try {
+                const updates = {};
+                productsToImport.forEach(p => {
+                    const newKey = push(getProductsRef()).key;
+                    updates[newKey] = p;
+                });
+                await update(getProductsRef(), updates);
+                showCustomModal({ message: `${productsToImport.length} produtos importados!` });
+            } catch (error) {
+                showCustomModal({ message: `Erro ao importar: ${error.message}` });
+            }
+        } else {
+            showCustomModal({ message: 'Nenhum produto válido encontrado.' });
+        }
+    }
     function exportProducts(format) { const dataStr = format === 'txt' ? products.map(p => `${p.nome} - ${(p.valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`).join('\n') : JSON.stringify(products.map(({id, ...rest}) => rest), null, 2); const blob = new Blob([dataStr], { type: `text/${format === 'txt' ? 'plain' : 'json'}` }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `products.${format}`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href); }
     
     function showCustomModal({ message, onConfirm, onCancel, showPassword = false, confirmText = 'OK', cancelText = 'Cancelar' }) {
@@ -1755,8 +1973,195 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
 
     async function deleteAllProducts() { showCustomModal({ message: "Para excluir TODOS os produtos, digite 'excluir'.", showPassword: true, confirmText: "Excluir", onConfirm: async (password) => { if (password === "excluir") { showCustomModal({ message: "Ação IRREVERSÍVEL. Apagar TUDO?", confirmText: 'SIM, EXCLUIR', onConfirm: async () => { try { await remove(getProductsRef()); showCustomModal({message: 'Todos os produtos foram excluídos.'}); } catch (error) { showCustomModal({ message: `Erro: ${error.message}` }); } }, onCancel: () => {} }); } else showCustomModal({ message: "Senha incorreta." }); }, onCancel: () => {} }); }
     function displayDynamicSearchResults(searchTerm, resultsContainerId, onItemClick) { const resultsContainer = document.getElementById(resultsContainerId); resultsContainer.innerHTML = ''; if (!fuse || !searchTerm || searchTerm.length < 2) return; const results = fuse.search(searchTerm); results.slice(0, 10).forEach(result => { const product = result.item; const a = document.createElement('a'); a.href = '#'; a.className = 'list-group-item list-group-item-action'; a.textContent = `${product.nome} - ${(product.valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`; a.onclick = (e) => { e.preventDefault(); onItemClick(product); }; resultsContainer.appendChild(a); }); }
-    function setupFuse() { fuse = new Fuse(products, { keys: ['nome'], includeScore: true, threshold: 0.3, minMatchCharLength: 2 }); }
+    function setupFuse() {
+        fuse = new Fuse(products, {
+            keys: ['nome'],
+            includeScore: true,
+            threshold: 0.3,
+            minMatchCharLength: 2,
+        });
+    }
     async function processNaturalLanguageCommand() { if (!areRatesLoaded) { showCustomModal({message:"Aguarde as taxas carregarem."}); return; } const command = document.getElementById('naturalCommandInput').value; if (!command.trim()) return; const priceMatches = command.match(/(?:R\$|💰|\$|€|£)?\s*[\d.,]+/g); if (!priceMatches) { showCustomModal({ message: 'Comando inválido. Valor numérico não encontrado.' }); return; } const valueStr = priceMatches.pop(), newValue = parseBrazilianCurrencyToFloat(valueStr); if (isNaN(newValue)) { showCustomModal({ message: `O valor "${valueStr}" não é válido.` }); return; } const stopWordsAndSymbols = /mudar|baixar|subir|trocar|alterar|preço|valor|do|da|o|a|de|para|pra|[-→💰]|R\$|\$/gi; const productNameQuery = command.substring(0, command.lastIndexOf(valueStr)).replace(stopWordsAndSymbols, '').trim(); if (!productNameQuery) { showCustomModal({ message: 'Não foi possível identificar o nome do produto.' }); return; } if (!fuse) { showCustomModal({ message: 'Busca de produtos não pronta.' }); return; } const results = fuse.search(productNameQuery); if (results.length === 0) { let suggestionMessage = `Produto "${productNameQuery}" não encontrado.`; if (products.length > 0) suggestionMessage += `\n\nQue tal um destes?\n${products.slice(0, 5).map(p => `• ${p.nome}`).join('\n')}`; showCustomModal({ message: suggestionMessage }); return; } const foundProduct = results[0].item; showCustomModal({ message: `Atualizar "${foundProduct.nome}" para ${newValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}?`, onConfirm: () => { updateProductInDB(foundProduct.id, { valor: newValue }); document.getElementById('naturalCommandInput').value = ''; }, onCancel: () => {} }); }
+    
+    // --- LÓGICA DE ESTOQUE E CORES ---
+    let currentEditingProductId = null;
+    let tempSelectedColors = [];
+    const colorPalette = [
+        { nome: 'Preto', hex: '#212121' }, { nome: 'Branco', hex: '#FFFFFF' }, { nome: 'Cinza Espacial', hex: '#535559' }, { nome: 'Prata', hex: '#E0E0E0' },
+        { nome: 'Dourado', hex: '#FFD700' }, { nome: 'Rosê', hex: '#E0BFB8' }, { nome: 'Rosa', hex: '#FFC0CB' }, { nome: 'Rosa Claro', hex: '#FFD1DC' },
+        { nome: 'Titânio Natural', hex: '#8A837E' }, { nome: 'Titânio Azul', hex: '#2E435E' }, { nome: 'Titânio Branco', hex: '#F5F5F7'}, { nome: 'Titânio Preto', hex: '#4A4A4A'},
+        { nome: 'Azul', hex: '#1565C0' }, { nome: 'Azul-Céu', hex: '#87CEEB' }, { nome: 'Azul-Sierra', hex: '#A9C2D8' }, { nome: 'Verde', hex: '#2E7D32' },
+        { nome: 'Verde-Menta', hex: '#98FF98' }, { nome: 'Verde-Alpino', hex: '#597D61' }, { nome: 'Roxo', hex: '#6A1B9A' }, { nome: 'Roxo Profundo', hex: '#4B0082'},
+        { nome: 'Lilás', hex: '#C8A2C8' }, { nome: 'Vermelho', hex: '#C62828' }, { nome: 'Laranja', hex: '#F57C00' }, { nome: 'Coral', hex: '#FF7F50' },
+        { nome: 'Amarelo', hex: '#FBC02D' }, { nome: 'Creme', hex: '#FFFDD0' }, { nome: 'Grafite', hex: '#455A64' }
+    ];
+    
+    function loadCheckedItems() {
+        const stored = safeStorage.getItem(CHECKED_ITEMS_KEY);
+        checkedItems = stored ? JSON.parse(stored) : {};
+    }
+    function saveCheckedItems() {
+        safeStorage.setItem(CHECKED_ITEMS_KEY, JSON.stringify(checkedItems));
+    }
+
+    function renderStockList(list) {
+        const tableBody = document.getElementById('stockTableBody');
+        if (!tableBody) return;
+        
+        const sortedList = [...list].sort((a, b) => {
+            const aIsChecked = checkedItems[a.id]?.checked || false;
+            const bIsChecked = checkedItems[b.id]?.checked || false;
+            if (aIsChecked !== bIsChecked) {
+                return aIsChecked ? 1 : -1; // Not checked items first
+            }
+            return a.nome.localeCompare(b.nome); // Then sort by name
+        });
+
+        if (sortedList.length === 0) {
+            tableBody.innerHTML = `<tr><td colspan="4" class="text-center p-5"><i class="bi bi-box-seam" style="font-size: 3rem; color: var(--text-secondary);"></i><h5 class="mt-3">Nenhum produto para exibir.</h5><p class="text-secondary">Verifique os filtros ou adicione produtos na Administração.</p></td></tr>`;
+        } else {
+            tableBody.innerHTML = sortedList.map(product => {
+                const isChecked = checkedItems[product.id]?.checked || false;
+                const rowClass = isChecked ? '' : 'not-checked';
+
+                return `
+                <tr data-id="${product.id}" class="${rowClass}">
+                    <td class="align-middle">
+                        <div>${escapeHtml(product.nome)}</div>
+                        <div class="product-colors-display">${(product.cores || []).map(cor => `<div class="color-swatch-sm" style="background-color:${cor.hex};" title="${cor.nome}"></div>`).join('')}</div>
+                    </td>
+                    <td class="text-center align-middle">
+                         <div class="input-group input-group-sm justify-content-center">
+                            <button class="btn btn-outline-secondary stock-qty-btn" data-change="-1" aria-label="Diminuir">-</button>
+                            <input type="number" class="form-control text-center stock-qty-input px-1" value="${product.quantidade || 0}" min="0" step="1" style="max-width: 60px; font-weight: bold;">
+                            <button class="btn btn-outline-secondary stock-qty-btn" data-change="1" aria-label="Aumentar">+</button>
+                        </div>
+                    </td>
+                    <td class="text-center align-middle">
+                        <div class="d-flex justify-content-center align-items-center gap-2">
+                            <button class="btn btn-sm btn-secondary open-color-picker-btn" data-id="${product.id}" title="Editar Cores"><i class="bi bi-palette-fill"></i></button>
+                            <div class="form-check form-switch" title="Ignorar na contagem">
+                                <input class="form-check-input ignore-toggle-switch-stock" type="checkbox" role="switch" id="ignore-stock-${product.id}" data-id="${product.id}" ${product.ignorarContagem ? 'checked' : ''}>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="text-center align-middle">
+                         <div class="form-check d-flex justify-content-center">
+                            <input class="form-check-input stock-checked-toggle" type="checkbox" title="Marcar como conferido" id="check-${product.id}" data-id="${product.id}" ${isChecked ? 'checked' : ''}>
+                        </div>
+                    </td>
+                </tr>
+            `}).join('');
+        }
+    }
+
+    function filterStockProducts() {
+        const searchTerm = document.getElementById('stockSearchInput').value;
+        let visibleProducts = showIgnoredInStock ? products : products.filter(p => !p.ignorarContagem);
+        
+        const fuseInstance = new Fuse(visibleProducts, { keys: ['nome'], threshold: 0.4 });
+        const filtered = !searchTerm ? visibleProducts : fuseInstance.search(searchTerm).map(r => r.item);
+
+        renderStockList(filtered);
+    }
+
+    function generateStockReport() {
+        const reportPreview = document.getElementById('reportPreview');
+        const visibleProducts = showIgnoredInStock ? products : products.filter(p => !p.ignorarContagem);
+        const searchTerm = document.getElementById('stockSearchInput').value;
+        
+        const fuseInstance = new Fuse(visibleProducts, { keys: ['nome'], threshold: 0.4 });
+        const filteredProducts = !searchTerm ? visibleProducts : fuseInstance.search(searchTerm).map(r => r.item);
+        
+        const today = new Date();
+        const dateString = today.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+        const timeString = today.toLocaleTimeString('pt-BR');
+
+        let reportHTML = `
+            <h3>Relatório de Estoque</h3>
+            <p>Gerado em: ${dateString} às ${timeString}</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 50%;">Produto</th>
+                        <th style="width: 30%;">Cores Disponíveis</th>
+                        <th style="width: 20%; text-align: center;">Quantidade</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${filteredProducts.map(p => {
+                        const isChecked = checkedItems[p.id]?.checked || false;
+                        const rowStyle = !isChecked ? 'style="color: red !important;"' : '';
+                        const notCheckedIndicator = !isChecked ? ' <strong style="color: red !important;">(NÃO CONFERIDO)</strong>' : '';
+                        return `
+                            <tr ${rowStyle}>
+                                <td>${escapeHtml(p.nome)}${notCheckedIndicator}</td>
+                                <td>${(p.cores || []).map(c => c.nome).join(', ') || '-'}</td>
+                                <td style="text-align: center;">${p.quantidade || 0}</td>
+                            </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+            </table>
+            <p style="text-align: left; font-size: 8pt; color: #555; margin-top: 15px;">* Itens em vermelho não foram marcados como conferidos.</p>
+        `;
+        reportPreview.innerHTML = reportHTML;
+        
+        document.getElementById('contractPreview').style.display = 'none';
+        window.print();
+        document.getElementById('contractPreview').style.display = '';
+    }
+
+    function openColorPicker(productId) {
+        currentEditingProductId = productId;
+        const product = products.find(p => p.id === productId);
+        if (!product) return;
+
+        tempSelectedColors = [...(product.cores || [])];
+        
+        document.getElementById('colorPickerProductName').textContent = product.nome;
+        renderColorPickerPalette();
+        renderSelectedColors();
+
+        document.getElementById('customColorNameInput').value = '';
+        document.getElementById('customColorHexInput').value = '#CCCCCC';
+
+        document.getElementById('colorPickerModalOverlay').classList.add('active');
+    }
+
+    function renderColorPickerPalette() {
+        const paletteContainer = document.getElementById('colorPalette');
+        paletteContainer.innerHTML = colorPalette.map(color => {
+            const isSelected = tempSelectedColors.some(sc => sc.hex.toLowerCase() === color.hex.toLowerCase());
+            return `<div class="color-swatch-lg ${isSelected ? 'selected' : ''}" style="background-color: ${color.hex}" data-hex="${color.hex}" data-nome="${color.nome}" title="${color.nome}"></div>`;
+        }).join('');
+    }
+
+    function renderSelectedColors() {
+        const selectedContainer = document.getElementById('selectedColors');
+        if (tempSelectedColors.length === 0) {
+            selectedContainer.innerHTML = '<p class="text-secondary small">Nenhuma cor selecionada.</p>';
+        } else {
+            selectedContainer.innerHTML = tempSelectedColors.map(color => `
+                <div class="selected-color-tag">
+                    <div class="color-swatch-sm" style="background-color: ${color.hex}"></div>
+                    <span>${color.nome}</span>
+                    <span class="remove-color-btn" data-hex="${color.hex}">&times;</span>
+                </div>
+            `).join('');
+        }
+    }
+
+    function toggleColorSelection(hex, nome) {
+        const index = tempSelectedColors.findIndex(c => c.hex.toLowerCase() === hex.toLowerCase());
+        if (index > -1) {
+            tempSelectedColors.splice(index, 1);
+        } else {
+            tempSelectedColors.push({ nome, hex });
+        }
+        renderColorPickerPalette();
+        renderSelectedColors();
+    }
     
     // --- LÓGICA DE FAVORITOS (APARELHO) ---
     function getAparelhoFavorites() { return JSON.parse(safeStorage.getItem(APARELHO_FAVORITES_KEY) || '{}'); }
@@ -1805,10 +2210,15 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
 
     // --- LÓGICA DE REGISTRO PWA ---
     function setupPWA() {
-        const manifestData = document.getElementById('manifest-data').textContent, manifestBlob = new Blob([manifestData], {type: 'application/json'}), manifestURL = URL.createObjectURL(manifestBlob);
+        const manifestData = document.getElementById('manifest-data').textContent;
+        const manifestBlob = new Blob([manifestData], {type: 'application/json'});
+        const manifestURL = URL.createObjectURL(manifestBlob);
         document.querySelector('link[rel="manifest"]').setAttribute('href', manifestURL);
+        
         if ('serviceWorker' in navigator) {
-            const swScript = document.getElementById('sw-script').textContent, swBlob = new Blob([swScript], {type: 'text/javascript'}), swURL = URL.createObjectURL(swBlob);
+            const swScript = document.getElementById('sw-script').textContent;
+            const swBlob = new Blob([swScript], {type: 'text/javascript'});
+            const swURL = URL.createObjectURL(swBlob);
             navigator.serviceWorker.register(swURL).then(reg => console.log('Service Worker registrado:', reg)).catch(err => console.log('Falha no registro do SW:', err));
         }
     }
@@ -1868,7 +2278,21 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             applyTheme(safeStorage.getItem('theme') || 'dark');
             app = initializeApp(firebaseConfig); auth = getAuth(app); db = getDatabase(app);
             onAuthStateChanged(auth, async (user) => {
-                if (user) { userId = user.uid; isAuthReady = true; loadRatesFromDB(); loadProductsFromDB(); showMainSection('main'); } 
+                if (user) { 
+                    userId = user.uid; 
+                    isAuthReady = true; 
+                    loadRatesFromDB(); 
+                    loadProductsFromDB(); 
+
+                    const loadingOverlay = document.getElementById('loadingOverlay');
+                    loadingOverlay.style.opacity = '0';
+                    setTimeout(() => {
+                        loadingOverlay.style.display = 'none';
+                        document.getElementById('mainMenu').classList.remove('hidden');
+                        showMainSection('main');
+                    }, 500);
+
+                } 
                 else await signInAnonymously(auth);
             });
         } catch (error) { console.error("Firebase Init Error:", error); document.body.innerHTML = `<h1>Erro ao conectar.</h1><p>${error.message}</p>`; }
@@ -1879,13 +2303,14 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         // --- Nova Navegação ---
         document.getElementById('goToCalculator').addEventListener('click', () => showMainSection('calculator'));
         document.getElementById('goToContract').addEventListener('click', () => showMainSection('contract'));
-        document.getElementById('backFromContract').addEventListener('click', () => showMainSection('main'));
-        document.getElementById('goToAdminFromEmptyState').addEventListener('click', () => openCalculatorSection('administracao'));
+        document.getElementById('goToStock').addEventListener('click', () => showMainSection('stock'));
+        document.getElementById('goToAdmin').addEventListener('click', () => showMainSection('administracao'));
+        document.getElementById('backFromAdmin').addEventListener('click', () => showMainSection('main'));
 
 
         // --- Navegação da Calculadora ---
-        ['openFecharVenda', 'openRepassarValores', 'openCalcularEmprestimo', 'openCalcularPorAparelho', 'openAdministracao'].forEach(id => { document.getElementById(id).addEventListener('click', () => openCalculatorSection(id.replace('open', '').charAt(0).toLowerCase() + id.slice(5))); });
-        ['backFromFecharVenda', 'backFromRepassarValores', 'backFromCalcularEmprestimo', 'backFromCalcularPorAparelho', 'backFromAdministracao'].forEach(id => { document.getElementById(id).addEventListener('click', () => openCalculatorSection('calculatorHome')); });
+        ['openFecharVenda', 'openRepassarValores', 'openCalcularEmprestimo', 'openCalcularPorAparelho'].forEach(id => { document.getElementById(id).addEventListener('click', () => openCalculatorSection(id.replace('open', '').charAt(0).toLowerCase() + id.slice(5))); });
+        ['backFromFecharVenda', 'backFromRepassarValores', 'backFromCalcularEmprestimo', 'backFromCalcularPorAparelho'].forEach(id => { document.getElementById(id).addEventListener('click', () => openCalculatorSection('calculatorHome')); });
         
         // --- Listeners da Calculadora (existentes) ---
         const installmentsSlider = document.getElementById('installments1');
@@ -2005,18 +2430,50 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
 
 
         document.getElementById('adminSearchInput').addEventListener('input', filterAdminProducts);
-        document.getElementById('applyNaturalCommand').addEventListener('click', processNaturalLanguageCommand);
-        document.getElementById('addNewProduct').addEventListener('click', () => push(getProductsRef(), { nome: 'Novo Produto', valor: 0 }));
-        document.getElementById('importFromPasteBtn').addEventListener('click', () => importFromPasteOrFile(document.getElementById('pasteInput').value));
-        document.getElementById('uploadFileBtn').addEventListener('click', () => document.getElementById('fileInput').click());
-        document.getElementById('fileInput').addEventListener('change', e => { const file = e.target.files[0]; if (file) { const reader = new FileReader(); reader.onload = (event) => importFromPasteOrFile(event.target.result); reader.readAsText(file); } });
-        document.getElementById('exportTxt').addEventListener('click', () => exportProducts('txt'));
-        document.getElementById('exportJson').addEventListener('click', () => exportProducts('json'));
+        
+        document.getElementById('addProductForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const nome = document.getElementById('newProductName').value.trim();
+            const valorStr = document.getElementById('newProductValue').value;
+            const quantidade = parseInt(document.getElementById('newProductQuantity').value) || 1;
+            const coresStr = document.getElementById('newProductColors').value.trim();
+
+            if (!nome || !valorStr) {
+                showCustomModal({ message: "Nome e Valor são obrigatórios." });
+                return;
+            }
+
+            const valor = parseBrazilianCurrencyToFloat(valorStr);
+            if (isNaN(valor)) {
+                 showCustomModal({ message: "Valor inválido." });
+                 return;
+            }
+            
+            const cores = coresStr.split(',')
+                .map(nomeCor => nomeCor.trim())
+                .filter(Boolean)
+                .map(nomeCor => {
+                    const paletaCor = colorPalette.find(p => p.nome.toLowerCase() === nomeCor.toLowerCase());
+                    return paletaCor || { nome: nomeCor, hex: '#cccccc' };
+                });
+
+            const newProduct = { nome, valor, quantidade, cores, ignorarContagem: false };
+
+            try {
+                await push(getProductsRef(), newProduct);
+                showCustomModal({ message: `Produto "${nome}" adicionado com sucesso!`});
+                e.target.reset();
+            } catch (error) {
+                showCustomModal({ message: `Erro ao adicionar produto: ${error.message}` });
+            }
+        });
+
         document.getElementById('deleteAllProductsBtn').addEventListener('click', deleteAllProducts);
         
         const productsTableBody = document.getElementById('productsTableBody');
         productsTableBody.addEventListener('click', e => {
             const deleteBtn = e.target.closest('.delete-product-btn');
+            
             if (deleteBtn) {
                 e.preventDefault();
                 const id = deleteBtn.dataset.id;
@@ -2048,11 +2505,25 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
                 if (dataRow) {
                     const { field } = e.target.dataset;
                     const id = dataRow.dataset.id;
-                    let value = field === 'valor' ? parseBrazilianCurrencyToFloat(e.target.value) : e.target.value;
+                    let value;
+                    if (field === 'valor') {
+                        value = parseBrazilianCurrencyToFloat(e.target.value);
+                    } else if (field === 'quantidade') {
+                        value = parseInt(e.target.value, 10);
+                        if (isNaN(value) || value < 0) value = 0;
+                    } else {
+                        value = e.target.value;
+                    }
+
                     if (id && field && value !== undefined) {
                         updateProductInDB(id, { [field]: value });
                     }
                 }
+            }
+            if (e.target.matches('.ignore-toggle-switch-admin')) {
+                 const id = e.target.dataset.id;
+                 const isChecked = e.target.checked;
+                 updateProductInDB(id, { ignorarContagem: isChecked });
             }
         });
         
@@ -2071,12 +2542,156 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         ['flagDisplayButton1', 'flagDisplayButton2', 'flagDisplayButton3', 'flagDisplayButton4'].forEach(id => { document.getElementById(id).addEventListener('click', (e) => { const sectionNumber = id.replace('flagDisplayButton', ''); openFlagModal(document.getElementById(`machine${sectionNumber}`)); }); });
         document.addEventListener('click', (e) => { document.querySelectorAll('.search-wrapper').forEach(wrapper => { if (!wrapper.contains(e.target)) { const resultsContainer = wrapper.querySelector('.search-results-container'); if (resultsContainer) resultsContainer.innerHTML = ''; } }); });
         
+        // --- Listeners de Estoque ---
+        document.getElementById('stockSearchInput').addEventListener('input', filterStockProducts);
+        document.getElementById('generateReportBtn').addEventListener('click', generateStockReport);
+        document.getElementById('toggleIgnoredBtn').addEventListener('click', (e) => {
+            showIgnoredInStock = !showIgnoredInStock;
+            const btn = e.currentTarget;
+            const icon = btn.querySelector('i');
+            if (showIgnoredInStock) {
+                btn.title = "Ocultar ignorados";
+                icon.className = 'bi bi-eye';
+                btn.classList.add('active');
+            } else {
+                btn.title = "Mostrar ignorados";
+                icon.className = 'bi bi-eye-slash';
+                btn.classList.remove('active');
+            }
+            filterStockProducts();
+        });
+        document.getElementById('resetCountBtn').addEventListener('click', () => {
+             showCustomModal({ 
+                message: "Tem certeza que deseja resetar o status de todos os itens para 'não conferido'?", 
+                confirmText: "Sim, Resetar",
+                onConfirm: () => {
+                    checkedItems = {};
+                    saveCheckedItems();
+                    filterStockProducts();
+                }, 
+                onCancel: () => {} 
+            });
+        });
+
+        const stockTableBody = document.getElementById('stockTableBody');
+        const handleStockUpdate = (inputElement) => {
+            const row = inputElement.closest('tr');
+            if (!row) return;
+            const id = row.dataset.id;
+            const product = products.find(p => p.id === id);
+            if (!product) return;
+            
+            const oldValue = product.quantidade || 0;
+            let newValue = parseInt(inputElement.value, 10);
+            if (isNaN(newValue) || newValue < 0) {
+                newValue = 0;
+                inputElement.value = 0;
+            }
+
+            if (oldValue !== newValue) {
+                updateProductInDB(id, { quantidade: newValue });
+                modificationTracker[id] = { ...modificationTracker[id], quantity: true };
+            }
+        };
+
+        if(stockTableBody) {
+             stockTableBody.addEventListener('change', e => {
+                if (e.target.classList.contains('stock-qty-input')) {
+                    handleStockUpdate(e.target);
+                }
+                if (e.target.classList.contains('ignore-toggle-switch-stock')) {
+                    const id = e.target.dataset.id;
+                    const isChecked = e.target.checked;
+                    updateProductInDB(id, { ignorarContagem: isChecked }).then(() => {
+                         setTimeout(filterStockProducts, 150); 
+                    });
+                }
+                if (e.target.classList.contains('stock-checked-toggle')) {
+                    const id = e.target.dataset.id;
+                    const isChecked = e.target.checked;
+                    
+                    if (isChecked) {
+                        checkedItems[id] = { checked: true, timestamp: Date.now() };
+                    } else {
+                        delete checkedItems[id];
+                    }
+                    saveCheckedItems();
+                    delete modificationTracker[id]; // Ação manual sobrescreve o rastreamento
+                    filterStockProducts(); // Re-sorts the list
+                }
+            });
+            stockTableBody.addEventListener('click', e => {
+                const qtyButton = e.target.closest('.stock-qty-btn');
+                const colorButton = e.target.closest('.open-color-picker-btn');
+
+                if (qtyButton) {
+                    const change = parseInt(qtyButton.dataset.change, 10);
+                    const input = qtyButton.parentElement.querySelector('.stock-qty-input');
+                    if(!input) return;
+                    let currentValue = parseInt(input.value, 10);
+                    if (isNaN(currentValue)) currentValue = 0;
+                    const newValue = Math.max(0, currentValue + change);
+                    input.value = newValue;
+                    handleStockUpdate(input);
+                }
+
+                if (colorButton) {
+                    const id = colorButton.dataset.id;
+                    openColorPicker(id);
+                }
+            });
+        }
+        
+        // --- Listeners do Seletor de Cores ---
+        const colorPickerModal = document.getElementById('colorPickerModalOverlay');
+        document.getElementById('colorPalette').addEventListener('click', e => {
+            const swatch = e.target.closest('.color-swatch-lg');
+            if (swatch) {
+                toggleColorSelection(swatch.dataset.hex, swatch.dataset.nome);
+            }
+        });
+        document.getElementById('selectedColors').addEventListener('click', e => {
+             const removeBtn = e.target.closest('.remove-color-btn');
+             if(removeBtn) {
+                 toggleColorSelection(removeBtn.dataset.hex);
+             }
+        });
+        document.getElementById('addCustomColorBtn').addEventListener('click', () => {
+            const nameInput = document.getElementById('customColorNameInput');
+            const hexInput = document.getElementById('customColorHexInput');
+            const nome = nameInput.value.trim();
+            const hex = hexInput.value;
+            if (nome) {
+                toggleColorSelection(hex, nome);
+                nameInput.value = '';
+            } else {
+                showCustomModal({message: "Por favor, digite um nome para a cor personalizada."});
+            }
+        });
+        document.getElementById('cancelColorPicker').addEventListener('click', () => colorPickerModal.classList.remove('active'));
+        document.getElementById('saveColorPicker').addEventListener('click', () => {
+            if (currentEditingProductId) {
+                const product = products.find(p => p.id === currentEditingProductId);
+                const oldColors = product.cores || [];
+                
+                updateProductInDB(currentEditingProductId, { cores: tempSelectedColors });
+                modificationTracker[currentEditingProductId] = { ...modificationTracker[currentEditingProductId], color: true };
+
+                if (modificationTracker[currentEditingProductId]?.quantity) {
+                    checkedItems[currentEditingProductId] = { checked: true, timestamp: Date.now() };
+                    saveCheckedItems();
+                    delete modificationTracker[currentEditingProductId];
+                    filterStockProducts();
+                }
+            }
+            colorPickerModal.classList.remove('active');
+        });
+
         // --- Listeners do Formulário de Contrato ---
         document.getElementById('valorTotal').addEventListener('input', calculateContractPayments);
         document.getElementById('valorEntrada').addEventListener('input', calculateContractPayments);
         document.getElementById('numeroParcelas').addEventListener('input', calculateContractPayments);
         
-        // --- Listener de Impressão ---
         document.getElementById('btnImprimir').addEventListener('click', () => {
             if (!document.getElementById('contractForm').checkValidity()) {
                 showCustomModal({ message: "Por favor, preencha todos os campos obrigatórios." });
@@ -2084,7 +2699,9 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
                 return;
             }
             populatePreview();
+            document.getElementById('reportPreview').style.display = 'none';
             window.print();
+            document.getElementById('reportPreview').style.display = '';
         });
 
         // --- Event Listeners for Export Buttons ---
@@ -2120,12 +2737,8 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
           e.preventDefault();
           const currentSection = document.querySelector('.container:not(.hidden):not([style*="display: none"])');
           if (currentSection && currentSection.id !== 'mainMenu' && currentSection.id !== 'calculatorHome') {
-             // Se estiver em uma sub-seção da calculadora, volta para o início da calculadora
-            if(calculatorContainer.contains(currentSection)) {
-                openCalculatorSection('calculatorHome');
-            } else { // se não, volta para o menu principal
-                showMainSection('main');
-            }
+             // Se estiver em uma sub-seção da calculadora ou no estoque/contrato, volta para o menu principal
+            showMainSection('main');
           } else if (currentSection && currentSection.id === 'calculatorHome') {
             showMainSection('main');
           }
@@ -2141,11 +2754,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         window.addEventListener('popstate', function () {
             const currentSection = document.querySelector('.container:not(.hidden):not([style*="display: none"])');
             if (currentSection && currentSection.id !== 'mainMenu') {
-                if(calculatorContainer.contains(currentSection) && currentSection.id !== 'calculatorHome'){
-                    openCalculatorSection('calculatorHome');
-                } else {
-                     showMainSection('main');
-                }
+                showMainSection('main');
                 history.pushState(null, null, location.href);
             }
         });
