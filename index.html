@@ -951,95 +951,96 @@
             </div>
         </div>
     </div>
+</div>
 
-    <div class="container" id="administracao" style="display: none;">
-        <div class="section-header">
-            <h3>Administração</h3>
-            <button aria-label="Voltar" class="btn-back" id="backFromAdmin"><i class="bi bi-arrow-left"></i></button>
+<!-- CONTAINER ADMINISTRAÇÃO -->
+<div class="container" id="administracao" style="display: none;">
+    <div class="section-header">
+        <h3>Administração</h3>
+        <button aria-label="Voltar" class="btn-back" id="backFromAdmin"><i class="bi bi-arrow-left"></i></button>
+    </div>
+
+    <div class="admin-section w-100">
+        <h5 class="text-center mb-3">Selecione o que deseja gerenciar</h5>
+        <div class="toggle-switch">
+            <input type="checkbox" id="adminModeToggle">
+            <label for="adminModeToggle">
+                <span><i class="bi bi-box-seam-fill me-2"></i>Produtos</span>
+                <span><i class="bi bi-percent me-2"></i>Taxas</span>
+            </label>
         </div>
+    </div>
 
-        <div class="admin-section w-100">
-            <h5 class="text-center mb-3">Selecione o que deseja gerenciar</h5>
-            <div class="toggle-switch">
-                <input type="checkbox" id="adminModeToggle">
-                <label for="adminModeToggle">
-                    <span><i class="bi bi-box-seam-fill me-2"></i>Produtos</span>
-                    <span><i class="bi bi-percent me-2"></i>Taxas</span>
-                </label>
-            </div>
-        </div>
-
-        <div id="adminProductsContent">
-            <div class="admin-section text-start w-100">
-                <h4 class="mb-3"><i class="bi bi-plus-circle-fill"></i> Adicionar Novo Produto</h4>
-                <form id="addProductForm">
-                    <div class="mb-3">
-                        <label for="newProductName" class="form-label">Nome do Produto</label>
-                        <input type="text" class="form-control" id="newProductName" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="newProductValue" class="form-label">Valor (R$)</label>
-                        <input type="text" class="form-control" id="newProductValue" required placeholder="Ex: 2499,90">
-                    </div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label for="newProductQuantity" class="form-label">Quantidade (Opcional)</label>
-                            <input type="number" class="form-control" id="newProductQuantity" placeholder="1" min="0">
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label for="newProductColors" class="form-label">Cores (Opcional)</label>
-                            <input type="text" class="form-control" id="newProductColors" placeholder="Azul, Preto...">
-                        </div>
-                    </div>
-                    <button type="submit" class="btn btn-success w-100"><i class="bi bi-plus-lg"></i> Adicionar Produto</button>
-                </form>
-            </div>
-            
-            <div class="admin-section text-start w-100">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h4 class="mb-0"><i class="bi bi-list-ul"></i> Produtos</h4>
-                    <input class="form-control" id="adminSearchInput" placeholder="Filtrar..." style="width: 200px;" type="text">
+    <div id="adminProductsContent">
+        <div class="admin-section text-start w-100">
+            <h4 class="mb-3"><i class="bi bi-plus-circle-fill"></i> Adicionar Novo Produto</h4>
+            <form id="addProductForm">
+                <div class="mb-3">
+                    <label for="newProductName" class="form-label">Nome do Produto</label>
+                    <input type="text" class="form-control" id="newProductName" required>
                 </div>
-                <div class="table-responsive"><table class="table align-middle"><thead><tr><th style="width: 50%;">Nome do Produto</th><th style="width: 30%;">Valor</th><th style="width: 20%;" class="text-center">Qtd.</th></tr></thead><tbody id="productsTableBody"></tbody></table></div>
-            </div>
-            <div class="admin-section text-center w-100 pt-3">
-                 <button class="btn btn-danger" id="deleteAllProductsBtn"><i class="bi bi-trash-fill"></i> Excluir todos os produtos</button>
-            </div>
-        </div>
-
-        <div id="adminRatesContent" class="w-100" style="display: none;">
-            <div class="admin-section">
-                <h4 class="text-start"><i class="bi bi-eye-fill"></i> Maquininhas Visíveis</h4>
-                <p class="text-start text-secondary">Desative as maquininhas que você não utiliza para simplificar as telas de cálculo.</p>
-                <div id="machineVisibilityToggles">
-                    <div class="form-check form-switch mb-2">
-                        <input class="form-check-input visibility-toggle" type="checkbox" role="switch" id="toggle-pagbank-visibility" data-machine="pagbank" checked>
-                        <label class="form-check-label" for="toggle-pagbank-visibility">PagBank</label>
+                <div class="mb-3">
+                    <label for="newProductValue" class="form-label">Valor (R$)</label>
+                    <input type="text" class="form-control" id="newProductValue" required placeholder="Ex: 2499,90">
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="newProductQuantity" class="form-label">Quantidade (Opcional)</label>
+                        <input type="number" class="form-control" id="newProductQuantity" placeholder="1" min="0">
                     </div>
-                    <div class="form-check form-switch mb-2">
-                        <input class="form-check-input visibility-toggle" type="checkbox" role="switch" id="toggle-infinity-visibility" data-machine="infinity" checked>
-                        <label class="form-check-label" for="toggle-infinity-visibility">InfinityPay</label>
-                    </div>
-                    <div class="form-check form-switch">
-                        <input class="form-check-input visibility-toggle" type="checkbox" role="switch" id="toggle-valorante-visibility" data-machine="valorante" checked>
-                        <label class="form-check-label" for="toggle-valorante-visibility">Valorante</label>
+                    <div class="col-md-6 mb-3">
+                        <label for="newProductColors" class="form-label">Cores (Opcional)</label>
+                        <input type="text" class="form-control" id="newProductColors" placeholder="Azul, Preto...">
                     </div>
                 </div>
+                <button type="submit" class="btn btn-success w-100"><i class="bi bi-plus-lg"></i> Adicionar Produto</button>
+            </form>
+        </div>
+        
+        <div class="admin-section text-start w-100">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4 class="mb-0"><i class="bi bi-list-ul"></i> Produtos</h4>
+                <input class="form-control" id="adminSearchInput" placeholder="Filtrar..." style="width: 200px;" type="text">
             </div>
-            <div class="admin-section">
-                <h4 class="text-start"><i class="bi bi-pencil-square"></i> Editar Taxas do Sistema</h4>
-                <p class="text-start text-secondary">Altere os valores e clique em salvar. As mudanças serão aplicadas para todos os usuários.</p>
-                <div class="accordion" id="ratesAccordion">
-                     <div class="text-center p-4">
-                        <div class="spinner-border text-primary" role="status">
-                            <span class="visually-hidden">Carregando...</span>
-                        </div>
+            <div class="table-responsive"><table class="table align-middle"><thead><tr><th style="width: 50%;">Nome do Produto</th><th style="width: 30%;">Valor</th><th style="width: 20%;" class="text-center">Qtd.</th></tr></thead><tbody id="productsTableBody"></tbody></table></div>
+        </div>
+        <div class="admin-section text-center w-100 pt-3">
+             <button class="btn btn-danger" id="deleteAllProductsBtn"><i class="bi bi-trash-fill"></i> Excluir todos os produtos</button>
+        </div>
+    </div>
+
+    <div id="adminRatesContent" class="w-100" style="display: none;">
+        <div class="admin-section">
+            <h4 class="text-start"><i class="bi bi-eye-fill"></i> Maquininhas Visíveis</h4>
+            <p class="text-start text-secondary">Desative as maquininhas que você não utiliza para simplificar as telas de cálculo.</p>
+            <div id="machineVisibilityToggles">
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input visibility-toggle" type="checkbox" role="switch" id="toggle-pagbank-visibility" data-machine="pagbank" checked>
+                    <label class="form-check-label" for="toggle-pagbank-visibility">PagBank</label>
+                </div>
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input visibility-toggle" type="checkbox" role="switch" id="toggle-infinity-visibility" data-machine="infinity" checked>
+                    <label class="form-check-label" for="toggle-infinity-visibility">InfinityPay</label>
+                </div>
+                <div class="form-check form-switch">
+                    <input class="form-check-input visibility-toggle" type="checkbox" role="switch" id="toggle-valorante-visibility" data-machine="valorante" checked>
+                    <label class="form-check-label" for="toggle-valorante-visibility">Valorante</label>
+                </div>
+            </div>
+        </div>
+        <div class="admin-section">
+            <h4 class="text-start"><i class="bi bi-pencil-square"></i> Editar Taxas do Sistema</h4>
+            <p class="text-start text-secondary">Altere os valores e clique em salvar. As mudanças serão aplicadas para todos os usuários.</p>
+            <div class="accordion" id="ratesAccordion">
+                 <div class="text-center p-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Carregando...</span>
                     </div>
                 </div>
-                <button class="btn btn-primary w-100 mt-4" id="saveRatesBtn">
-                    <i class="bi bi-save-fill"></i> Salvar Alterações de Taxas
-                </button>
             </div>
+            <button class="btn btn-primary w-100 mt-4" id="saveRatesBtn">
+                <i class="bi bi-save-fill"></i> Salvar Alterações de Taxas
+            </button>
         </div>
     </div>
 </div>
@@ -1256,7 +1257,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
     // --- IMPORTAÇÕES DO FIREBASE ---
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-app.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-auth.js";
-    import { getDatabase, ref, push, update, remove, onValue, off } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-database.js";
+    import { getDatabase, ref, push, update, remove, onValue } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-database.js";
 
     // --- CONFIGURAÇÃO DO FIREBASE ---
     const firebaseConfig = {
@@ -1299,6 +1300,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
     const calculatorContainer = document.getElementById('calculatorContainer');
     const contractContainer = document.getElementById('contractContainer');
     const stockContainer = document.getElementById('stockContainer');
+    const adminContainer = document.getElementById('administracao');
 
     function showMainSection(sectionId) {
         if (!isAuthReady) return; // Impede a navegação antes do app estar pronto
@@ -1307,11 +1309,13 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         calculatorContainer.classList.add('hidden');
         contractContainer.classList.add('hidden');
         stockContainer.classList.add('hidden');
+        adminContainer.classList.add('hidden');
         
         mainMenu.style.display = 'none';
         calculatorContainer.style.display = 'none';
         contractContainer.style.display = 'none';
         stockContainer.style.display = 'none';
+        adminContainer.style.display = 'none';
 
         if (sectionId === 'main') {
             mainMenu.classList.remove('hidden');
@@ -1332,9 +1336,9 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             loadCheckedItems();
             filterStockProducts(); 
         } else if (sectionId === 'administracao') {
-            calculatorContainer.classList.remove('hidden');
-            calculatorContainer.style.display = 'block';
-            openCalculatorSection('administracao');
+            adminContainer.classList.remove('hidden');
+            adminContainer.style.display = 'flex';
+            themeToggle.style.display = 'flex';
         }
         currentMainSectionId = sectionId;
     }
@@ -1412,9 +1416,9 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         if (!sectionId || !document.getElementById(sectionId)) sectionId = 'calculatorHome'; 
         
         const themeToggleBtn = document.getElementById('theme-toggle');
-        themeToggleBtn.style.display = (sectionId === 'calculatorHome' || sectionId === 'administracao') ? 'flex' : 'none';
+        themeToggleBtn.style.display = (sectionId === 'calculatorHome') ? 'flex' : 'none';
 
-        ['calculatorHome', 'fecharVenda', 'repassarValores', 'calcularEmprestimo', 'calcularPorAparelho', 'administracao'].forEach(id => { 
+        ['calculatorHome', 'fecharVenda', 'repassarValores', 'calcularEmprestimo', 'calcularPorAparelho'].forEach(id => { 
             const el = document.getElementById(id);
             if (el) el.style.display = 'none'; 
         }); 
@@ -1425,8 +1429,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             fecharVenda: () => { updateInstallmentsOptions(); updateFecharVendaUI(); }, 
             repassarValores: () => { updateRepassarValoresUI(); }, 
             calcularEmprestimo: () => { updateCalcularEmprestimoUI(); },
-            calcularPorAparelho: () => { updateCalcularPorAparelhoUI(); },
-            administracao: () => { filterAdminProducts(); }
+            calcularPorAparelho: () => { updateCalcularPorAparelhoUI(); }
         }; 
         if (sectionInitializers[sectionId]) sectionInitializers[sectionId](); 
     }
@@ -2303,9 +2306,26 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         // --- Nova Navegação ---
         document.getElementById('goToCalculator').addEventListener('click', () => showMainSection('calculator'));
         document.getElementById('goToContract').addEventListener('click', () => showMainSection('contract'));
-        document.getElementById('goToStock').addEventListener('click', () => showMainSection('stock'));
+        document.getElementById('goToStock').addEventListener('click', () => {
+             showCustomModal({ 
+                message: "Digite a senha para acessar o Estoque:", 
+                showPassword: true,
+                confirmText: "Acessar",
+                onConfirm: (password) => {
+                    if (password === "220390") {
+                        showMainSection('stock');
+                    } else {
+                        showCustomModal({ message: "Senha incorreta." });
+                    }
+                }, 
+                onCancel: () => {} 
+            });
+        });
         document.getElementById('goToAdmin').addEventListener('click', () => showMainSection('administracao'));
+        document.getElementById('backFromContract').addEventListener('click', () => showMainSection('main'));
+        document.getElementById('backFromStock').addEventListener('click', () => showMainSection('main'));
         document.getElementById('backFromAdmin').addEventListener('click', () => showMainSection('main'));
+        document.getElementById('goToAdminFromEmptyState').addEventListener('click', () => showMainSection('administracao'));
 
 
         // --- Navegação da Calculadora ---
@@ -2612,8 +2632,10 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
                     
                     if (isChecked) {
                         checkedItems[id] = { checked: true, timestamp: Date.now() };
+                        updateProductInDB(id, { lastCheckedTimestamp: Date.now() }); // Salva o timestamp no Firebase
                     } else {
                         delete checkedItems[id];
+                        updateProductInDB(id, { lastCheckedTimestamp: null }); // Remove o timestamp do Firebase
                     }
                     saveCheckedItems();
                     delete modificationTracker[id]; // Ação manual sobrescreve o rastreamento
@@ -2678,8 +2700,10 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
                 modificationTracker[currentEditingProductId] = { ...modificationTracker[currentEditingProductId], color: true };
 
                 if (modificationTracker[currentEditingProductId]?.quantity) {
-                    checkedItems[currentEditingProductId] = { checked: true, timestamp: Date.now() };
+                    const timestamp = Date.now();
+                    checkedItems[currentEditingProductId] = { checked: true, timestamp: timestamp };
                     saveCheckedItems();
+                    updateProductInDB(currentEditingProductId, { lastCheckedTimestamp: timestamp });
                     delete modificationTracker[currentEditingProductId];
                     filterStockProducts();
                 }
