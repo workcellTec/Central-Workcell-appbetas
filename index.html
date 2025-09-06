@@ -260,7 +260,7 @@
             font-weight: 600;
         }
 
-        /* 7. ESTILOS FUNCIONAIS E DE IMPRESSÃO (INTACTOS) */
+        /* 7. ESTILOS FUNCIONAIS E DE IMPRESSÃO (INTACTOS E CORRIGIDOS) */
         
         .hidden { display: none !important; }
 
@@ -723,7 +723,10 @@
             
             <div class="text-center mt-4 d-flex justify-content-center gap-2 flex-wrap">
                 <button type="button" id="btnImprimir" class="btn btn-primary"><i class='bi bi-printer'></i> Imprimir contrato</button>
+                <button type="button" id="btnLimparCampos" class="btn btn-secondary"><i class='bi bi-eraser'></i> Limpar Campos</button>
+                <button type="button" id="btnApagarRascunho" class="btn btn-outline-danger"><i class='bi bi-trash'></i> Apagar Rascunho</button>
             </div>
+            <div id="draftStatus" class="text-secondary small mt-2 text-center" style="height: 1.2em;"></div>
         </form>
     </div>
 </div>
@@ -893,11 +896,14 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
     const APARELHO_FAVORITES_KEY = 'ctwAparelhoFavoritos';
     const CHECKED_ITEMS_KEY = 'ctwCheckedItems';
     const MAX_FAVORITES = 5;
-    
+    const CONTRACT_DRAFT_KEY = 'ctwContractDraft';
+    let draftSaveTimeout;
+
     // --- UTILITÁRIO DE ARMAZENAMENTO SEGURO ---
     const safeStorage = {
         getItem(key) { try { return localStorage.getItem(key); } catch (e) { console.warn("Acesso ao localStorage negado.", e); return null; } },
-        setItem(key, value) { try { localStorage.setItem(key, value); } catch (e) { console.warn("Acesso ao localStorage negado.", e); } }
+        setItem(key, value) { try { localStorage.setItem(key, value); } catch (e) { console.warn("Acesso ao localStorage negado.", e); } },
+        removeItem(key) { try { localStorage.removeItem(key); } catch (e) { console.warn("Acesso ao localStorage negado.", e); } }
     };
 
     // --- FUNÇÕES DE TEMA (MODO NOTURNO/CLARO) ---
@@ -940,6 +946,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             contractContainer.classList.remove('hidden');
             contractContainer.style.display = 'flex';
             themeToggle.style.display = 'none';
+            loadContractDraft();
         } else if (sectionId === 'stock') {
             stockContainer.classList.remove('hidden');
             stockContainer.style.display = 'flex';
@@ -1071,7 +1078,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         installmentsSlider.dispatchEvent(new Event('input'));
     }
     function toggleEntradaAVistaUI() {
-        const isProdutoMode = !document.getElementById('vendaModeToggle').checked, isEntradaChecked = document.getElementById('entradaAVistaCheckbox').checked;
+        const isProdutoMode = document.getElementById('vendaModeToggle').checked, isEntradaChecked = document.getElementById('entradaAVistaCheckbox').checked;
         const entradaContainer = document.getElementById('entradaAVistaContainer'), finalValueContainer = document.getElementById('fecharVendaInputs'), entradaToggleContainer = document.getElementById('entradaAVistaToggleContainer');
         entradaToggleContainer.classList.toggle('hidden', !isProdutoMode || fecharVendaPrecoBase <= 0);
         if (isProdutoMode && isEntradaChecked) { entradaContainer.classList.remove('hidden'); finalValueContainer.classList.add('hidden'); document.getElementById('fecharVendaValue').value = ''; } 
@@ -1925,6 +1932,49 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             return converterGrupo(numero);
         }
     }
+    
+    function saveContractDraft() {
+        const draftStatus = document.getElementById('draftStatus');
+        const formData = {};
+        document.querySelectorAll('#contractForm input').forEach(input => {
+            if(input.id) {
+                formData[input.id] = input.value;
+            }
+        });
+        safeStorage.setItem(CONTRACT_DRAFT_KEY, JSON.stringify(formData));
+
+        if (draftStatus) {
+            draftStatus.textContent = 'Rascunho salvo!';
+            clearTimeout(draftSaveTimeout);
+            draftSaveTimeout = setTimeout(() => {
+                draftStatus.textContent = '';
+            }, 2000);
+        }
+    }
+
+    function loadContractDraft() {
+        const savedDraft = safeStorage.getItem(CONTRACT_DRAFT_KEY);
+        if (savedDraft) {
+            const formData = JSON.parse(savedDraft);
+            for (const key in formData) {
+                const input = document.getElementById(key);
+                if (input) {
+                    input.value = formData[key];
+                }
+            }
+            calculateContractPayments();
+             showCustomModal({ message: 'Rascunho anterior carregado.'});
+        }
+    }
+
+    function clearContractDraft(clearStorage = true) {
+        document.getElementById('contractForm').reset();
+        calculateContractPayments();
+        if(clearStorage) {
+            safeStorage.removeItem(CONTRACT_DRAFT_KEY);
+            showCustomModal({ message: 'Rascunho apagado.'});
+        }
+    }
 
     function populatePreview() {
         document.getElementById('contractPreview').innerHTML = `
@@ -2456,9 +2506,15 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         });
 
         // --- Listeners do Formulário de Contrato ---
-        document.getElementById('valorTotal').addEventListener('input', calculateContractPayments);
-        document.getElementById('valorEntrada').addEventListener('input', calculateContractPayments);
-        document.getElementById('numeroParcelas').addEventListener('input', calculateContractPayments);
+        document.getElementById('contractForm').addEventListener('input', () => {
+             calculateContractPayments();
+             saveContractDraft();
+        });
+        document.getElementById('btnLimparCampos').addEventListener('click', () => clearContractDraft(true));
+        document.getElementById('btnApagarRascunho').addEventListener('click', () => {
+            safeStorage.removeItem(CONTRACT_DRAFT_KEY);
+            showCustomModal({ message: 'Rascunho apagado.' });
+        });
         
         document.getElementById('btnImprimir').addEventListener('click', () => {
             if (!document.getElementById('contractForm').checkValidity()) {
