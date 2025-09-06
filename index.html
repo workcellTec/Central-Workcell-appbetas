@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<meta name='viewport' content='width=device-width, initial-scale=1'/><!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="utf-8"/>
@@ -743,6 +743,14 @@
             box-shadow: none;
             border: none;
           }
+          
+          /* CORREÇÃO: Regras para controlar qual preview é impresso */
+          body.print-only-contract #reportPreview {
+            display: none !important;
+          }
+          body.print-only-report #contractPreview {
+            display: none !important;
+          }
         }
     </style>
 </head>
@@ -1152,7 +1160,6 @@
 
 <!-- Div de preview do contrato para renderização do PDF e Impressão -->
 <div id="contractPreview">
-    <!-- Conteúdo do contrato... -->
 </div>
 <!-- Div de preview do relatório de estoque para impressão -->
 <div id="reportPreview"></div>
@@ -1230,7 +1237,7 @@
 
 <script type="application/json" id="manifest-data">
 {
-  "name"Central Workcell",
+  "name": "Central Workcell",
   "short_name": "CentralWorkcell",
   "description": "Calculadora de taxas e gerador de contratos para facilitar suas vendas.",
   "start_url": ".",
@@ -1257,7 +1264,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
     // --- IMPORTAÇÕES DO FIREBASE ---
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-app.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-auth.js";
-    import { getDatabase, ref, push, update, remove, onValue, off, get, query, orderByChild, startAt } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-database.js";
+    import { getDatabase, ref, push, update, remove, onValue, off } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-database.js";
 
     // --- CONFIGURAÇÃO DO FIREBASE ---
     const firebaseConfig = {
@@ -1339,6 +1346,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             adminContainer.classList.remove('hidden');
             adminContainer.style.display = 'flex';
             themeToggle.style.display = 'flex';
+            filterAdminProducts(); // CORREÇÃO: Renderiza os produtos ao entrar na aba
         }
         currentMainSectionId = sectionId;
     }
@@ -2108,9 +2116,8 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         `;
         reportPreview.innerHTML = reportHTML;
         
-        document.getElementById('contractPreview').style.display = 'none';
+        document.body.classList.add('print-only-report');
         window.print();
-        document.getElementById('contractPreview').style.display = '';
     }
 
     function openColorPicker(productId) {
@@ -2246,7 +2253,72 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
     }
 
     function populatePreview() {
+        document.getElementById('contractPreview').innerHTML = `
+            <h4>CONTRATO DE COMPRA E VENDA DE SMARTPHONE</h4>
+            <p>Pelo presente instrumento particular, as partes a seguir identificadas firmam o presente CONTRATO DE COMPRA E VENDA, mediante as cláusulas e condições abaixo:</p>
+            
+            <div class="section-title" style="text-transform: none; text-align: left;">VENDEDOR</div>
+            <p>Workcell Tecnologia LTDA – CNPJ nº 50.299.715/0001-65, com sede em Av. Goiás, n° 4118 - loja 05 posto - St. Crimeia Oeste, Goiânia - GO, 74563-220.</p>
+            
+            <div class="section-title" style="text-transform: none; text-align: left;">COMPRADOR</div>
+            <p style="margin-bottom: 24pt;">
+                Nome: <span id="previewNome"></span><br>
+                CPF: <span id="previewCpf"></span> RG: <span id="previewRg"></span><br>
+                Endereço: <span id="previewEndereco"></span>
+            </p>
+
+            <div class="section-title">CLÁUSULA 1 – DO OBJETO</div>
+            <p>O presente contrato tem por objeto a venda do(s) smartphone(s) descrito(s) abaixo:</p>
+            <p style="margin-bottom: 24pt;">
+                Modelo: <span id="previewModelo"></span><br>
+                IMEI(s): <span id="previewImei"></span><br>
+                Valor total: R$ <span id="previewValorTotal"></span>
+            </p>
+
+            <div class="section-title">CLÁUSULA 2 – DO PAGAMENTO</div>
+            <p>2.1 O valor total da compra é de R$ <span id="previewValorTotal2"></span> (<span id="previewValorExtenso"></span>), sendo pago da seguinte forma:</p>
+            <p>
+                a) Entrada no valor de R$ <span id="previewEntrada"></span>, paga no ato da assinatura deste contrato;<br>
+                b) O saldo restante de R$ <span id="previewSaldo"></span>, dividido em <span id="previewNumParcelas"></span> (número) parcelas mensais de R$ <span id="previewValorParcela"></span>, a serem pagas através de boleto bancário emitido pelo VENDEDOR.
+            </p>
+            <p style="margin-bottom: 24pt;">
+                2.2 O não pagamento de qualquer parcela na data de vencimento acarretará:<br>
+                Multa de 2% (dois por cento) sobre o valor da parcela em atraso;<br>
+                Juros de mora de 1% (um por cento) ao mês;<br>
+                Correção monetária conforme índice legal aplicável.
+            </p>
+
+            <div class="section-title">CLÁUSULA 3 – DA PROPRIEDADE</div>
+            <p>3.1 A propriedade do smartphone somente será transferida ao COMPRADOR após a quitação integral de todas as parcelas.</p>
+            <p>3.2 Em caso de inadimplência, o COMPRADOR será notificado pelo VENDEDOR e terá o prazo de 5 (cinco) dias corridos para regularizar o pagamento.</p>
+            <p style="margin-bottom: 24pt;">3.3 Caso não haja a regularização no prazo informado, o VENDEDOR poderá proceder ao bloqueio remoto do aparelho, impedindo seu uso até a quitação ou negociação da dívida, sem prejuízo da cobrança das parcelas vencidas e demais encargos previstos neste contrato.</p>
+
+            <div class="section-title">CLÁUSULA 4 – DAS GARANTIAS</div>
+            <p>4.1 O aparelho possui garantia legal de 1 (um) ano para qualquer defeito de fabricação pelo fabricante, contados a partir da entrega do produto.</p>
+            <p style="margin-bottom: 24pt;">4.2 A garantia não cobre mau uso, quedas, molhar, oxidação ou violação do aparelho.</p>
+
+            <div class="section-title">CLÁUSULA 5 – DA RESCISÃO</div>
+            <p style="margin-bottom: 24pt;">5.1 O não cumprimento de qualquer obrigação contratual poderá resultar na rescisão imediata deste contrato, com a cobrança das parcelas vencidas e vincendas, além das penalidades cabíveis.</p>
+
+            <div class="section-title">CLÁUSULA 6 – DO FORO</div>
+            <p>As partes elegem o foro da comarca de Goiânia para dirimir quaisquer dúvidas oriundas deste contrato.</p>
+            
+            <p style="margin-top: 24pt;">E por estarem de acordo, firmam o presente contrato em 2 (duas) vias de igual teor.</p>
+            
+            <p style="margin-top: 40pt;">Local e data: <span id="previewLocalData"></span></p>
+
+            <div style="text-align: center; margin-top: 40pt;">
+                <div class="signature-line" style="margin-bottom: 5px;"></div>
+                <p style="margin-bottom: 5pt; margin-top:0;">Assinatura VENDEDOR</p>
+            </div>
+
+            <div style="text-align: center; margin-top: 20pt;">
+                <div class="signature-line" style="margin-bottom: 5px;"></div>
+                <p style="margin-bottom: 5pt; margin-top:0;">Assinatura COMPRADOR: <span id="previewNome2"></span></p>
+            </div>
+        `;
         document.getElementById('previewNome').textContent = document.getElementById('compradorNome').value;
+        document.getElementById('previewNome2').textContent = document.getElementById('compradorNome').value;
         document.getElementById('previewCpf').textContent = document.getElementById('compradorCpf').value;
         document.getElementById('previewRg').textContent = document.getElementById('compradorRg').value;
         document.getElementById('previewEndereco').textContent = document.getElementById('compradorEndereco').value;
@@ -2261,7 +2333,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         
         document.getElementById('previewValorTotal').textContent = formatCurrency(total);
         document.getElementById('previewValorTotal2').textContent = formatCurrency(total);
-        document.getElementById('previewValorExtenso').textContent = ""; // Placeholder
+        document.getElementById('previewValorExtenso').textContent = "valor por extenso aqui"; // Placeholder
         document.getElementById('previewEntrada').textContent = formatCurrency(entrada);
         document.getElementById('previewSaldo').textContent = formatCurrency(saldo);
         document.getElementById('previewNumParcelas').textContent = `${numParcelas}`;
@@ -2721,9 +2793,8 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
                 return;
             }
             populatePreview();
-            document.getElementById('reportPreview').style.display = 'none';
+            document.body.classList.add('print-only-contract');
             window.print();
-            document.getElementById('reportPreview').style.display = '';
         });
 
         // --- Event Listeners for Export Buttons ---
@@ -2750,6 +2821,11 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             const header = `<h4 class="text-center mb-3" style="width: 100%; grid-column: 1 / -1;">${escapeHtml(aparelhoNome)}</h4>`;
             const fileName = aparelhoNome.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'calculo-aparelho';
             exportResultsToImage('resultCalcularPorAparelho', `${fileName}.png`, header);
+        });
+        
+        // CORREÇÃO: Limpa as classes do body depois da impressão
+        window.addEventListener('afterprint', () => {
+            document.body.classList.remove('print-only-contract', 'print-only-report');
         });
 
         main();
