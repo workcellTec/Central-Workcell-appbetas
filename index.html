@@ -101,6 +101,38 @@
             100% { background-position: 0% 50%; }
         }
 
+        /* ANIMAÇÕES DE TRANSIÇÃO DE PÁGINA */
+        @keyframes page-slide-in {
+            from {
+                opacity: 0;
+                transform: translateX(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        @keyframes page-slide-out {
+            from {
+                opacity: 1;
+                transform: translateX(0);
+            }
+            to {
+                opacity: 0;
+                transform: translateX(-30px);
+            }
+        }
+        
+        .page-enter {
+            animation: page-slide-in 0.4s ease-out forwards;
+        }
+
+        .page-leave {
+            animation: page-slide-out 0.4s ease-out forwards;
+        }
+        /* FIM DAS ANIMAÇÕES DE TRANSIÇÃO */
+
         #theme-toggle {
             position: fixed; top: 20px; right: 20px; z-index: 9999; cursor: pointer;
             background-color: var(--glass-bg); backdrop-filter: blur(10px);
@@ -116,6 +148,7 @@
             display: flex; flex-direction: column; align-items: center; 
             min-height: 100vh; justify-content: flex-start;
             position: relative; z-index: 1;
+            will-change: transform, opacity; /* performance hint for animations */
         }
 
         h2, h3, h4, h5 { font-weight: 600; text-align: center; color: var(--text-color); }
@@ -371,7 +404,7 @@
 </div>
 
 <!-- MENU PRINCIPAL NOVO -->
-<div class="container text-center" id="mainMenu">
+<div class="container text-center hidden" id="mainMenu" style="display: none;">
     <h2 class="mb-4">Bem-vindo(a) à Central Workcell,<br/>O que você quer fazer?</h2>
     <div class="d-grid gap-2">
         <button class="btn-menu" id="goToCalculator"><i class="bi bi-calculator-fill"></i> Calculadora de Taxa</button>
@@ -382,7 +415,7 @@
 </div>
 
 <!-- CONTAINER PARA A APLICAÇÃO DE CALCULADORA ORIGINAL -->
-<div id="calculatorContainer" class="hidden">
+<div id="calculatorContainer" class="hidden" style="display: none;">
     <div class="container text-center" id="calculatorHome">
         <h2 class="mb-4">Calculadora de Taxas,<br/>O que você quer fazer?</h2>
         <div class="d-grid gap-2">
@@ -566,7 +599,7 @@
 </div>
 
 <!-- CONTAINER ADMINISTRAÇÃO -->
-<div class="container" id="administracao" style="display: none;">
+<div class="container hidden" id="administracao" style="display: none;">
     <div class="section-header">
         <h3>Administração</h3>
         <button aria-label="Voltar" class="btn-back" id="backFromAdmin"><i class="bi bi-arrow-left"></i></button>
@@ -658,7 +691,7 @@
 </div>
 
 <!-- CONTAINER PARA O NOVO FORMULÁRIO DE CONTRATO -->
-<div id="contractContainer" class="container hidden">
+<div id="contractContainer" class="container hidden" style="display: none;">
     <div class="section-header">
         <h3>Contrato de Boleto</h3>
         <button aria-label="Voltar" class="btn-back" id="backFromContract"><i class="bi bi-arrow-left"></i></button>
@@ -732,7 +765,7 @@
 </div>
 
 <!-- CONTAINER PARA ESTOQUE -->
-<div id="stockContainer" class="container hidden">
+<div id="stockContainer" class="container hidden" style="display: none;">
     <div class="section-header">
         <h3>Controle de Estoque</h3>
         <button aria-label="Voltar" class="btn-back" id="backFromStock"><i class="bi bi-arrow-left"></i></button>
@@ -918,48 +951,71 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
     const contractContainer = document.getElementById('contractContainer');
     const stockContainer = document.getElementById('stockContainer');
     const adminContainer = document.getElementById('administracao');
+    const sectionMap = { // Helper map for easier access
+        main: mainMenu,
+        calculator: calculatorContainer,
+        contract: contractContainer,
+        stock: stockContainer,
+        administracao: adminContainer,
+    };
 
     function showMainSection(sectionId) {
         if (!isAuthReady) return; // Impede a navegação antes do app estar pronto
 
-        mainMenu.classList.add('hidden');
-        calculatorContainer.classList.add('hidden');
-        contractContainer.classList.add('hidden');
-        stockContainer.classList.add('hidden');
-        adminContainer.classList.add('hidden');
-        
-        mainMenu.style.display = 'none';
-        calculatorContainer.style.display = 'none';
-        contractContainer.style.display = 'none';
-        stockContainer.style.display = 'none';
-        adminContainer.style.display = 'none';
+        const newSection = sectionMap[sectionId];
+        const oldSectionId = currentMainSectionId;
+        const oldSection = sectionMap[oldSectionId];
 
-        if (sectionId === 'main') {
-            mainMenu.classList.remove('hidden');
-            mainMenu.style.display = 'flex';
-            themeToggle.style.display = 'flex';
-        } else if (sectionId === 'calculator') {
-            calculatorContainer.classList.remove('hidden');
-            calculatorContainer.style.display = 'block';
-            openCalculatorSection('calculatorHome'); 
-        } else if (sectionId === 'contract') {
-            contractContainer.classList.remove('hidden');
-            contractContainer.style.display = 'flex';
-            themeToggle.style.display = 'none';
-            loadContractDraft();
-        } else if (sectionId === 'stock') {
-            stockContainer.classList.remove('hidden');
-            stockContainer.style.display = 'flex';
-            themeToggle.style.display = 'none';
-            loadCheckedItems();
-            filterStockProducts(); 
-        } else if (sectionId === 'administracao') {
-            adminContainer.classList.remove('hidden');
-            adminContainer.style.display = 'flex';
-            themeToggle.style.display = 'flex';
-            filterAdminProducts();
+        const runTransition = () => {
+            // Section-specific logic that needs to run before showing the section
+            if (sectionId === 'calculator') {
+                openCalculatorSection('calculatorHome');
+            } else if (sectionId === 'contract') {
+                themeToggle.style.display = 'none';
+                loadContractDraft();
+            } else if (sectionId === 'stock') {
+                themeToggle.style.display = 'none';
+                loadCheckedItems();
+                filterStockProducts();
+            } else if (sectionId === 'administracao') {
+                themeToggle.style.display = 'flex';
+                filterAdminProducts();
+            } else if (sectionId === 'main') {
+                themeToggle.style.display = 'flex';
+            }
+
+            // Make the new section visible and start its animation
+            newSection.classList.remove('hidden');
+            const displayStyle = (sectionId === 'main' || sectionId === 'contract' || sectionId === 'stock' || sectionId === 'administracao') ? 'flex' : 'block';
+            newSection.style.display = displayStyle;
+            newSection.classList.add('page-enter');
+            
+            newSection.addEventListener('animationend', () => {
+                newSection.classList.remove('page-enter');
+            }, { once: true });
+            
+            currentMainSectionId = sectionId;
+        };
+
+        if (oldSection && oldSection !== newSection) {
+            oldSection.classList.add('page-leave');
+            oldSection.addEventListener('animationend', () => {
+                oldSection.classList.remove('page-leave');
+                oldSection.classList.add('hidden');
+                oldSection.style.display = 'none';
+                runTransition(); // Start the new section's transition AFTER the old one is gone
+            }, { once: true });
+        } else {
+            // This handles the very first load where there is no old section
+            // Hide all other sections just in case
+            Object.values(sectionMap).forEach(s => {
+                if (s !== newSection) {
+                    s.classList.add('hidden');
+                    s.style.display = 'none';
+                }
+            });
+            runTransition();
         }
-        currentMainSectionId = sectionId;
     }
 
     // --- FUNÇÕES DE ADMINISTRAÇÃO (TAXAS) ---
@@ -2085,7 +2141,6 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
                     loadingOverlay.style.opacity = '0';
                     setTimeout(() => {
                         loadingOverlay.style.display = 'none';
-                        document.getElementById('mainMenu').classList.remove('hidden');
                         showMainSection('main');
                     }, 500);
 
