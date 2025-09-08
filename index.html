@@ -31,6 +31,7 @@
             --primary-color-rgb: 239, 83, 80;
             --tertiary-color: #030303; /* Preto profundo */
             --text-color: #F1F1F1;
+            --text-color-strong: #FFFFFF;
             --text-secondary: #AAAAAA;
             --text-success: #81C784; 
             --glass-bg: rgba(28, 28, 28, 0.65); /* Fundo de vidro mais escuro e translúcido */
@@ -50,6 +51,7 @@
             --secondary-color: #f4f4f5;
             --tertiary-color: #ffffff;
             --text-color: #18181b;
+            --text-color-strong: #000000;
             --text-secondary: #52525b;
             --text-success: #B71C1C;
             --glass-bg: rgba(255, 255, 255, 0.75);
@@ -347,6 +349,7 @@
         input[type="color"] { -webkit-appearance: none; -moz-appearance: none; appearance: none; width: 40px; height: 40px; background-color: transparent; border: none; cursor: pointer; padding: 0; border-radius: 50%; overflow: hidden; }
         input[type="color"]::-webkit-color-swatch { border-radius: 50%; border: 1px solid var(--input-border); }
         input[type="color"]::-moz-color-swatch { border-radius: 50%; border: 1px solid var(--input-border); }
+        #installments1Value { color: var(--text-color-strong); }
         
         @media print {
           html, body { background: #FFF !important; }
@@ -405,7 +408,7 @@
                 <div class="col-12 col-md-4 mb-3">
                     <label for="installments1" class="form-label d-flex justify-content-between">
                         <span>Parcelas</span>
-                        <span id="installments1Value" class="fw-bold text-light">Débito</span>
+                        <span id="installments1Value" class="fw-bold">Débito</span>
                     </label>
                     <input type="range" class="form-range" id="installments1" min="0" max="18" step="1" value="0">
                 </div>
@@ -844,8 +847,8 @@
 
 <script type="application/json" id="manifest-data">
 {
-  "name": "Central Workcell",
-  "short_name": "Central Workcell 5.0",
+  "name": "Centrar Workcell",
+  "short_name": "CentrarWorkcell",
   "description": "Calculadora de taxas e gerador de contratos para facilitar suas vendas.",
   "start_url": ".",
   "display": "standalone",
@@ -2647,10 +2650,10 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
 
         // Função para configurar os switches de visibilidade
         function setupVisibilityToggles() {
-            const disabledMachines = getDisabledMachines();
             const toggles = document.querySelectorAll('.visibility-toggle');
 
             toggles.forEach(toggle => {
+                const disabledMachines = getDisabledMachines();
                 const machineName = toggle.dataset.machine;
                 // O switch está checado se a maquininha NÃO ESTIVER na lista de desativadas
                 toggle.checked = !disabledMachines.includes(machineName);
