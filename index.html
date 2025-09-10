@@ -167,6 +167,16 @@
             transition: background-color var(--transition-duration) ease, border-color var(--transition-duration) ease;
         }
         
+        /* Otimização de Estoque: Remover card de fundo */
+        #stockContainer > .content-card {
+            padding: 0;
+            background-color: transparent;
+            border: none;
+            box-shadow: none;
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+        }
+
         .container:not(#mainMenu):not(#calculatorHome) { 
             padding-top: 20px; align-items: stretch;
         }
