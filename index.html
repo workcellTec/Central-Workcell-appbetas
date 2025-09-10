@@ -289,7 +289,17 @@
         .results-table thead th { color: var(--text-secondary); }
         [data-theme="light"] .results-table { --bs-table-border-color: var(--input-border); }
         .lucro-display { color: var(--text-success); }
-        tr.not-checked { background-color: rgba(var(--primary-color-rgb), 0.08); border-left: 3px solid var(--primary-color); }
+
+        /* ESTOQUE: NOVOS ESTILOS */
+        tr.not-checked .product-name-cell div:first-child {
+            color: var(--primary-color);
+            font-weight: 500;
+        }
+        tr.is-checked {
+            opacity: 0.5;
+            transition: opacity 0.3s ease;
+        }
+        
         [data-theme="light"] tr.not-checked { background-color: rgba(var(--primary-color-rgb), 0.1); }
         @keyframes fadeInAndUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
         .content-card, .admin-section { animation: fadeInAndUp 0.5s ease-out forwards; }
@@ -352,6 +362,29 @@
         input[type="color"]::-webkit-color-swatch { border-radius: 50%; border: 1px solid var(--input-border); }
         input[type="color"]::-moz-color-swatch { border-radius: 50%; border: 1px solid var(--input-border); }
         #installments1Value { color: var(--text-color-strong); }
+
+        .quick-installments {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-bottom: 10px; /* Reduz a distância de baixo */
+            flex-wrap: wrap;
+        }
+        .quick-installment-btn {
+            background-color: var(--input-bg);
+            color: var(--text-secondary);
+            border: 1px solid var(--input-border);
+            border-radius: 10px;
+            padding: 6px 12px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .quick-installment-btn.active, .quick-installment-btn:hover {
+            background-color: var(--primary-color);
+            color: #fff;
+            border-color: var(--primary-color);
+        }
         
         @media print {
           html, body { background: #FFF !important; }
@@ -412,9 +445,13 @@
                         <span>Parcelas</span>
                         <span id="installments1Value" class="fw-bold">Débito</span>
                     </label>
+                    <div id="quickInstallmentsContainer" class="quick-installments">
+                        <!-- Botões de atalho serão inseridos aqui -->
+                    </div>
                     <input type="range" class="form-range" id="installments1" min="0" max="18" step="1" value="0">
                 </div>
             </div>
+            
             <div id="brand1Container" class="hidden"><select id="brand1"><option value="visa">Visa</option><option value="mastercard">Mastercard</option><option value="hiper">Hiper</option><option value="hipercard">Hipercard</option><option value="elo">Elo</option><option value="amex">Amex</option></select></div>
 
             <div class="toggle-switch">
@@ -1057,6 +1094,39 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         }; 
         if (sectionInitializers[sectionId]) sectionInitializers[sectionId](); 
     }
+    
+    // --- FUNÇÕES DE ATALHO DE PARCELAS ---
+    function renderQuickInstallmentButtons() {
+        const container = document.getElementById('quickInstallmentsContainer');
+        const installmentsSlider = document.getElementById("installments1");
+        const maxInstallments = parseInt(installmentsSlider.max);
+        const quickValues = [8, 10, 12, 18];
+
+        container.innerHTML = '';
+
+        quickValues.forEach(value => {
+            if (value <= maxInstallments) {
+                const btn = document.createElement('button');
+                btn.className = 'quick-installment-btn';
+                btn.textContent = `${value}x`;
+                btn.dataset.value = value;
+                btn.addEventListener('click', () => {
+                    installmentsSlider.value = value;
+                    installmentsSlider.dispatchEvent(new Event('input', { bubbles: true }));
+                });
+                container.appendChild(btn);
+            }
+        });
+    }
+
+    function updateQuickButtonsActiveState() {
+        const installmentsSlider = document.getElementById("installments1");
+        const currentValue = installmentsSlider.value;
+        document.querySelectorAll('.quick-installment-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.value === currentValue);
+        });
+    }
+
     function updateInstallmentsOptions() { 
         const installmentsSlider = document.getElementById("installments1");
         const machine = document.getElementById("machine1").value; 
@@ -1079,6 +1149,8 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         if (parseInt(installmentsSlider.value) > max) {
             installmentsSlider.value = 0;
         }
+        
+        renderQuickInstallmentButtons(); // Renderiza os botões de atalho
         // Trigger input event to update display and calculation
         installmentsSlider.dispatchEvent(new Event('input'));
     }
@@ -1111,6 +1183,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         if (!isProdutoMode) { valueLabel.innerHTML = (installments > 0 && manualMode === 'parcela') ? '<i class="bi bi-currency-dollar"></i> Valor da Parcela (R$)' : '<i class="bi bi-currency-dollar"></i> Valor Total da Venda (R$)'; valueInput.placeholder = (installments > 0 && manualMode === 'parcela') ? "Digite o valor da parcela" : "Digite o valor total"; }
         flagDisplayContainer.style.display = (machine !== "pagbank") ? 'block' : 'none';
         updateFlagDisplay('1'); calculateFecharVenda();
+        updateQuickButtonsActiveState();
     }
     function updateRepassarValoresUI() { const machine = document.getElementById("machine2").value; document.getElementById("flagDisplayContainer2").style.display = (machine !== "pagbank") ? 'block' : 'none'; updateFlagDisplay('2'); calculateRepassarValores(); }
     function updateCalcularEmprestimoUI() { const machine = document.getElementById("machine4").value; document.getElementById("flagDisplayContainer4").style.display = (machine !== "pagbank") ? 'block' : 'none'; updateFlagDisplay('4'); calculateEmprestimo(); }
@@ -1647,11 +1720,11 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         } else {
             tableBody.innerHTML = sortedList.map(product => {
                 const isChecked = checkedItems[product.id]?.checked || false;
-                const rowClass = isChecked ? '' : 'not-checked';
+                const rowClass = isChecked ? 'is-checked' : 'not-checked';
 
                 return `
                 <tr data-id="${product.id}" class="${rowClass}">
-                    <td class="align-middle">
+                    <td class="align-middle product-name-cell">
                         <div>${escapeHtml(product.nome)}</div>
                         <div class="product-colors-display">${(product.cores || []).map(cor => `<div class="color-swatch-sm" style="background-color:${cor.hex};" title="${cor.nome}"></div>`).join('')}</div>
                     </td>
