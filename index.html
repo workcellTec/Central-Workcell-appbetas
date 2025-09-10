@@ -121,6 +121,11 @@
             position: relative; z-index: 1;
             will-change: transform, opacity; /* Otimização: dica de performance para transições */
         }
+        
+        /* Correção de Rolagem */
+        #contractContainer.container {
+            min-height: auto;
+        }
 
         h2, h3, h4, h5 { font-weight: 600; text-align: center; color: var(--text-color); }
         .section-header { width: 100%; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid var(--glass-border); }
