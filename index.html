@@ -382,7 +382,7 @@
             display: flex;
             gap: 10px;
             justify-content: center;
-            margin-bottom: 10px; /* Reduz a distância de baixo */
+            margin-bottom: 15px;
             flex-wrap: wrap;
         }
         .quick-installment-btn {
@@ -430,6 +430,7 @@
         <button class="btn-menu" id="goToCalculator"><i class="bi bi-calculator-fill"></i> Calculadora de Taxa</button>
         <button class="btn-menu" id="goToContract"><i class="bi bi-file-earmark-text-fill"></i> Formulário Boleto</button>
         <button class="btn-menu" id="goToStock"><i class="bi bi-box-seam"></i> Controle de Estoque</button>
+        <button class="btn-menu" id="goToSalesManagement"><i class="bi bi-person-lines-fill"></i> Gerenciar Vendas</button>
         <button class="btn-menu" id="goToAdmin"><i class="bi bi-gear"></i> Administração</button>
     </div>
 </div>
@@ -780,6 +781,7 @@
             
             <div class="text-center mt-4 d-flex justify-content-center gap-2 flex-wrap">
                 <button type="button" id="btnImprimir" class="btn btn-primary"><i class='bi bi-printer'></i> Imprimir contrato</button>
+                <button type="button" id="btnSalvarBoleto" class="btn btn-success"><i class='bi bi-save'></i> Salvar Boleto</button>
                 <button type="button" id="btnLimparCampos" class="btn btn-secondary"><i class='bi bi-eraser'></i> Limpar Campos</button>
                 <button type="button" id="btnApagarRascunho" class="btn btn-outline-danger"><i class='bi bi-trash'></i> Apagar Rascunho</button>
             </div>
@@ -794,7 +796,7 @@
         <h3>Controle de Estoque</h3>
         <button aria-label="Voltar" class="btn-back" id="backFromStock"><i class="bi bi-arrow-left"></i></button>
     </div>
-    <div class="content-card w-100">
+    <div class="w-100">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <input class="form-control" id="stockSearchInput" placeholder="Filtrar produtos..." style="flex: 1; min-width: 180px;" type="text">
             <div class="btn-group">
@@ -821,6 +823,17 @@
     </div>
 </div>
 
+
+<!-- CONTAINER PARA GERENCIAMENTO DE VENDAS -->
+<div id="salesManagementContainer" class="container hidden" style="display: none;">
+    <div class="section-header">
+        <h3>Gerenciar Boletos</h3>
+        <button aria-label="Voltar" class="btn-back" id="backFromSalesManagement"><i class="bi bi-arrow-left"></i></button>
+    </div>
+    <div class="w-100" id="salesList">
+        <!-- Lista de vendas/boletos será inserida aqui -->
+    </div>
+</div>
 
 <!-- Div de preview do contrato para renderização do PDF e Impressão -->
 <div id="contractPreview">
@@ -899,6 +912,16 @@
     </div>
 </div>
 
+<div class="custom-modal-overlay" id="installmentsModalOverlay">
+    <div class="custom-modal-content">
+        <h4 id="installmentsModalTitle"></h4>
+        <div id="installmentsList" class="mt-3 text-start" style="max-height: 40vh; overflow-y: auto;"></div>
+        <div class="mt-4">
+            <button class="btn btn-secondary" id="closeInstallmentsModalBtn">Fechar</button>
+        </div>
+    </div>
+</div>
+
 <script type="application/json" id="manifest-data">
 {
   "name": "Centrar Workcell",
@@ -955,6 +978,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
     const MAX_FAVORITES = 5;
     const CONTRACT_DRAFT_KEY = 'ctwContractDraft';
     let draftSaveTimeout;
+    let sales = []; // Para armazenar os boletos salvos
 
     // --- UTILITÁRIO DE ARMAZENAMENTO SEGURO ---
     const safeStorage = {
@@ -975,46 +999,41 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
     const contractContainer = document.getElementById('contractContainer');
     const stockContainer = document.getElementById('stockContainer');
     const adminContainer = document.getElementById('administracao');
+    const salesManagementContainer = document.getElementById('salesManagementContainer');
+    
+    const sectionMap = {
+        main: mainMenu,
+        calculator: calculatorContainer,
+        contract: contractContainer,
+        stock: stockContainer,
+        administracao: adminContainer,
+        salesManagement: salesManagementContainer,
+    };
+
 
     function showMainSection(sectionId) {
         if (!isAuthReady) return; // Impede a navegação antes do app estar pronto
 
-        mainMenu.classList.add('hidden');
-        calculatorContainer.classList.add('hidden');
-        contractContainer.classList.add('hidden');
-        stockContainer.classList.add('hidden');
-        adminContainer.classList.add('hidden');
+        Object.values(sectionMap).forEach(section => {
+            if (section) {
+                section.classList.add('hidden');
+                section.style.display = 'none';
+            }
+        });
         
-        mainMenu.style.display = 'none';
-        calculatorContainer.style.display = 'none';
-        contractContainer.style.display = 'none';
-        stockContainer.style.display = 'none';
-        adminContainer.style.display = 'none';
+        const targetSection = sectionMap[sectionId];
+        if (targetSection) {
+            targetSection.classList.remove('hidden');
+            targetSection.style.display = 'flex'; // Usar flex para containers principais
 
-        if (sectionId === 'main') {
-            mainMenu.classList.remove('hidden');
-            mainMenu.style.display = 'flex';
-            themeToggle.style.display = 'flex';
-        } else if (sectionId === 'calculator') {
-            calculatorContainer.classList.remove('hidden');
-            calculatorContainer.style.display = 'block';
-            openCalculatorSection('calculatorHome'); 
-        } else if (sectionId === 'contract') {
-            contractContainer.classList.remove('hidden');
-            contractContainer.style.display = 'flex';
-            themeToggle.style.display = 'none';
-            loadContractDraft();
-        } else if (sectionId === 'stock') {
-            stockContainer.classList.remove('hidden');
-            stockContainer.style.display = 'flex';
-            themeToggle.style.display = 'none';
-            loadCheckedItems();
-            filterStockProducts(); 
-        } else if (sectionId === 'administracao') {
-            adminContainer.classList.remove('hidden');
-            adminContainer.style.display = 'flex';
-            themeToggle.style.display = 'flex';
-            filterAdminProducts();
+            themeToggle.style.display = 'flex'; // Padrão
+
+            if (sectionId === 'calculator') {
+                 targetSection.style.display = 'block'; // Calculadora é block
+                 openCalculatorSection('calculatorHome'); 
+            } else if (sectionId === 'contract' || sectionId === 'stock' || sectionId === 'salesManagement') {
+                 themeToggle.style.display = 'none';
+            }
         }
         currentMainSectionId = sectionId;
     }
@@ -1513,6 +1532,8 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
 
     function loadRatesFromDB() { const ratesRef = ref(db, 'rates'); onValue(ratesRef, (snapshot) => { if (snapshot.exists()) { rates = snapshot.val(); areRatesLoaded = true; updateInstallmentsOptions(); console.log("Taxas carregadas."); if (currentCalculatorSectionId === 'administracao' && document.getElementById('adminModeToggle').checked) renderRatesEditor(); } else { console.error("ERRO: As taxas não foram encontradas."); showCustomModal({ message: "Erro crítico: Não foi possível carregar as taxas." }); } }, (error) => { console.error("Erro ao carregar taxas:", error); showCustomModal({ message: `Erro ao carregar taxas: ${error.message}` }); }); }
     const getProductsRef = () => ref(db, 'products');
+    const getSalesRef = () => ref(db, `sales/${userId}`);
+
     function loadProductsFromDB() { 
         if (!db || !isAuthReady) return; 
 
@@ -1547,6 +1568,16 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             searchContainers.forEach(c => hideSkeletonLoader(c));
         }); 
     }
+    
+    function loadSalesFromDB() {
+        if (!db || !isAuthReady) return;
+        onValue(getSalesRef(), (snapshot) => {
+            const data = snapshot.val();
+            sales = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
+            renderSalesList();
+        });
+    }
+
     async function updateProductInDB(id, data) { try { await update(ref(db, `products/${id}`), data); } catch (error) { console.error(`Erro ao atualizar: ${error.message}`); } }
     
     // --- FUNÇÕES DE ADMINISTRAÇÃO (PRODUTOS) ---
@@ -2172,7 +2203,8 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
                     userId = user.uid; 
                     isAuthReady = true; 
                     loadRatesFromDB(); 
-                    loadProductsFromDB(); 
+                    loadProductsFromDB();
+                    loadSalesFromDB();
 
                     const loadingOverlay = document.getElementById('loadingOverlay');
                     loadingOverlay.style.opacity = '0';
@@ -2208,10 +2240,12 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
                 onCancel: () => {} 
             });
         });
+        document.getElementById('goToSalesManagement').addEventListener('click', () => showMainSection('salesManagement'));
         document.getElementById('goToAdmin').addEventListener('click', () => showMainSection('administracao'));
         document.getElementById('backFromContract').addEventListener('click', () => showMainSection('main'));
         document.getElementById('backFromStock').addEventListener('click', () => showMainSection('main'));
         document.getElementById('backFromAdmin').addEventListener('click', () => showMainSection('main'));
+        document.getElementById('backFromSalesManagement').addEventListener('click', () => showMainSection('main'));
         document.getElementById('goToAdminFromEmptyState').addEventListener('click', () => showMainSection('administracao'));
 
 
