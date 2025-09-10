@@ -430,7 +430,7 @@
         <button class="btn-menu" id="goToCalculator"><i class="bi bi-calculator-fill"></i> Calculadora de Taxa</button>
         <button class="btn-menu" id="goToContract"><i class="bi bi-file-earmark-text-fill"></i> Formulário Boleto</button>
         <button class="btn-menu" id="goToStock"><i class="bi bi-box-seam"></i> Controle de Estoque</button>
-        <button class="btn-menu" id="goToSalesManagement"><i class="bi bi-person-lines-fill"></i> Gerenciar Vendas</button>
+        <button class="btn-menu" id="goToSalesManagement"><i class="bi bi-person-lines-fill"></i> Gerenciar Boletos</button>
         <button class="btn-menu" id="goToAdmin"><i class="bi bi-gear"></i> Administração</button>
     </div>
 </div>
@@ -780,8 +780,7 @@
             </div>
             
             <div class="text-center mt-4 d-flex justify-content-center gap-2 flex-wrap">
-                <button type="button" id="btnImprimir" class="btn btn-primary"><i class='bi bi-printer'></i> Imprimir contrato</button>
-                <button type="button" id="btnSalvarBoleto" class="btn btn-success"><i class='bi bi-save'></i> Salvar Boleto</button>
+                <button type="button" id="btnSalvarImprimir" class="btn btn-primary"><i class='bi bi-printer'></i> Salvar e Imprimir</button>
                 <button type="button" id="btnLimparCampos" class="btn btn-secondary"><i class='bi bi-eraser'></i> Limpar Campos</button>
                 <button type="button" id="btnApagarRascunho" class="btn btn-outline-danger"><i class='bi bi-trash'></i> Apagar Rascunho</button>
             </div>
@@ -2643,15 +2642,18 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             showCustomModal({ message: 'Rascunho apagado.' });
         });
         
-        document.getElementById('btnImprimir').addEventListener('click', () => {
+        document.getElementById('btnSalvarImprimir').addEventListener('click', async () => {
             if (!document.getElementById('contractForm').checkValidity()) {
                 showCustomModal({ message: "Por favor, preencha todos os campos obrigatórios." });
                 document.getElementById('contractForm').reportValidity();
                 return;
             }
-            populatePreview();
-            document.body.classList.add('print-only-contract');
-            window.print();
+            const success = await saveSaleToDB();
+            if(success) {
+                populatePreview();
+                document.body.classList.add('print-only-contract');
+                window.print();
+            }
         });
 
         // --- Event Listeners for Export Buttons ---
