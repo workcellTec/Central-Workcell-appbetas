@@ -53,7 +53,7 @@
             --text-color: #18181b;
             --text-color-strong: #000000;
             --text-secondary: #52525b;
-            --text-success: #B71C1C;
+            --text-success: #16a34a; /* Verde mais forte para o modo claro */
             --glass-bg: rgba(255, 255, 255, 0.75);
             --glass-border: rgba(0, 0, 0, 0.1);
             --shadow-color: rgba(183, 28, 28, 0.15);
@@ -278,25 +278,7 @@
         .results-table thead th { color: var(--text-secondary); }
         [data-theme="light"] .results-table { --bs-table-border-color: var(--input-border); }
         .lucro-display { color: var(--text-success); }
-
-        /* ESTOQUE: AJUSTE DE MARGENS */
-        #stockContainer {
-            max-width: 100%; /* Faz o container usar a largura total */
-            padding-left: 8px;  /* Diminui o espaçamento esquerdo */
-            padding-right: 8px; /* Diminui o espaçamento direito */
-        }
-
-        /* ESTOQUE: NOVOS ESTILOS */
-        tr.not-checked .product-name-cell div:first-child {
-            color: var(--primary-color);
-            font-weight: 500;
-        }
-        tr.is-checked {
-            opacity: 0.5;
-            transition: opacity 0.3s ease;
-        }
         
-        [data-theme="light"] tr.not-checked { background-color: rgba(var(--primary-color-rgb), 0.1); }
         @keyframes fadeInAndUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
         .content-card, .admin-section { animation: fadeInAndUp 0.5s ease-out forwards; }
         .btn:active, .btn-menu:active { transform: scale(0.97); transition: transform 0.1s ease; }
@@ -546,6 +528,98 @@
             color: var(--text-color);
         }
 
+        /* ============================================== */
+        /* LAYOUT DE ESTOQUE (NOVO - CARD STYLE)          */
+        /* ============================================== */
+        #stockContainer {
+            max-width: 100%;
+            padding-left: 8px;
+            padding-right: 8px;
+        }
+
+        .stock-list-container {
+            width: 100%;
+        }
+
+        .stock-item-card {
+            background-color: rgba(var(--primary-color-rgb), 0.05);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--border-radius);
+            padding: 15px;
+            margin-bottom: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            transition: all var(--transition-duration) ease;
+        }
+
+        .stock-item-card.is-checked {
+            opacity: 0.6;
+            background-color: transparent;
+        }
+
+        .stock-item-main {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 15px;
+        }
+
+        .product-info {
+            flex-grow: 1;
+        }
+
+        .product-name {
+            font-weight: 500;
+            color: var(--text-color-strong);
+        }
+
+        .stock-item-card:not(.is-checked) .product-name {
+            color: var(--primary-color);
+        }
+
+        .stock-item-main .form-check.form-switch .form-check-input {
+            width: 3.5em;
+            height: 1.75em;
+            cursor: pointer;
+            margin-left: auto; /* Alinha o switch à direita */
+        }
+        
+        .stock-item-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap; 
+            gap: 15px;
+            padding-top: 12px;
+            border-top: 1px solid var(--glass-border);
+        }
+
+        .ignore-toggle-btn i {
+            font-size: 1.2rem;
+            transition: color 0.2s ease;
+        }
+        .ignore-toggle-btn .bi-eye-fill {
+            color: var(--text-success);
+        }
+        .ignore-toggle-btn .bi-eye-slash-fill {
+            color: var(--primary-color);
+        }
+
+        @media (max-width: 400px) {
+            .stock-item-controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+             .stock-item-controls .input-group {
+                width: 100%;
+                justify-content: center;
+             }
+             .stock-item-controls .d-flex {
+                width: 100%;
+                justify-content: space-around;
+             }
+        }
 
         @media print {
           html, body { background: #FFF !important; }
@@ -983,25 +1057,14 @@
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <input class="form-control" id="stockSearchInput" placeholder="Filtrar produtos..." style="flex: 1; min-width: 180px;" type="text">
             <div class="btn-group">
-                <button class="btn btn-outline-secondary btn-sm" id="toggleIgnoredBtn" title="Mostrar/Ocultar ignorados"><i class="bi bi-eye-slash"></i></button>
+                <button class="btn btn-outline-secondary btn-sm" id="toggleIgnoredBtn" title="Mostrar produtos ignorados"><i class="bi bi-eye-slash-fill"></i></button>
                 <button class="btn btn-outline-danger btn-sm" id="resetCountBtn" title="Resetar Contagem"><i class="bi bi-arrow-counterclockwise"></i></button>
                 <button class="btn btn-info btn-sm" id="generateReportBtn"><i class="bi bi-printer"></i> Relatório</button>
             </div>
         </div>
-        <div class="table-responsive">
-            <table class="table align-middle">
-                <thead>
-                    <tr>
-                        <th style="width: 40%;">Produto</th>
-                        <th style="width: 25%;" class="text-center">Quantidade</th>
-                        <th style="width: 25%;" class="text-center">Ações</th>
-                        <th style="width: 10%;" class="text-center">OK</th>
-                    </tr>
-                </thead>
-                <tbody id="stockTableBody">
-                    <!-- Products will be dynamically inserted here -->
-                </tbody>
-            </table>
+        <!-- O container da lista de estoque agora é um div, não mais uma tabela -->
+        <div class="stock-list-container" id="stockTableBody">
+            <!-- Os cards de produto serão inseridos aqui dinamicamente -->
         </div>
     </div>
 </div>
@@ -1147,7 +1210,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
     let notificationsListener = null;
     let currentMainSectionId = 'main';
     let emprestimoLucroPercentual = 15;
-    let showIgnoredInStock = false;
+    let onlyShowIgnored = false;
     let checkedItems = {};
     let modificationTracker = {}; // Para rastrear mudanças de contagem
     const APARELHO_FAVORITES_KEY = 'ctwAparelhoFavoritos';
@@ -1932,69 +1995,73 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
     }
 
     function renderStockList(list) {
-        const tableBody = document.getElementById('stockTableBody');
-        if (!tableBody) return;
+        const container = document.getElementById('stockTableBody'); // Agora é um div
+        if (!container) return;
         
         const sortedList = [...list].sort((a, b) => {
             const aIsChecked = checkedItems[a.id]?.checked || false;
             const bIsChecked = checkedItems[b.id]?.checked || false;
             if (aIsChecked !== bIsChecked) {
-                return aIsChecked ? 1 : -1; // Not checked items first
+                return aIsChecked ? 1 : -1; // Itens não checados primeiro
             }
-            return a.nome.localeCompare(b.nome); // Then sort by name
+            return a.nome.localeCompare(b.nome); // Depois ordena por nome
         });
 
         if (sortedList.length === 0) {
-            tableBody.innerHTML = `<tr><td colspan="4" class="text-center p-5"><i class="bi bi-box-seam" style="font-size: 3rem; color: var(--text-secondary);"></i><h5 class="mt-3">Nenhum produto para exibir.</h5><p class="text-secondary">Verifique os filtros ou adicione produtos na Administração.</p></td></tr>`;
+            container.innerHTML = `<div class="text-center p-5"><i class="bi bi-box-seam" style="font-size: 3rem; color: var(--text-secondary);"></i><h5 class="mt-3">Nenhum produto para exibir.</h5><p class="text-secondary">Verifique os filtros ou adicione produtos na Administração.</p></div>`;
         } else {
-            tableBody.innerHTML = sortedList.map(product => {
+            container.innerHTML = sortedList.map(product => {
                 const isChecked = checkedItems[product.id]?.checked || false;
-                const rowClass = isChecked ? 'is-checked' : 'not-checked';
+                const cardClass = isChecked ? 'is-checked' : 'not-checked';
 
                 return `
-                <tr data-id="${product.id}" class="${rowClass}">
-                    <td class="align-middle product-name-cell">
-                        <div>${escapeHtml(product.nome)}</div>
-                        <div class="product-colors-display">${(product.cores || []).map(cor => `<div class="color-swatch-sm" style="background-color:${cor.hex};" title="${cor.nome}"></div>`).join('')}</div>
-                    </td>
-                    <td class="text-center align-middle">
-                         <div class="input-group input-group-sm justify-content-center">
-                            <button class="btn btn-outline-secondary stock-qty-btn" data-change="-1" aria-label="Diminuir">-</button>
-                            <input type="number" class="form-control text-center stock-qty-input px-1" value="${product.quantidade || 0}" min="0" step="1" style="max-width: 60px; font-weight: bold;">
-                            <button class="btn btn-outline-secondary stock-qty-btn" data-change="1" aria-label="Aumentar">+</button>
+                <div class="stock-item-card ${cardClass}" data-id="${product.id}">
+                    <div class="stock-item-main">
+                        <div class="product-info">
+                            <div class="product-name">${escapeHtml(product.nome)}</div>
+                            <div class="product-colors-display">${(product.cores || []).map(cor => `<div class="color-swatch-sm" style="background-color:${cor.hex};" title="${cor.nome}"></div>`).join('')}</div>
                         </div>
-                    </td>
-                    <td class="text-center align-middle">
-                        <div class="d-flex justify-content-center align-items-center gap-2">
-                            <button class="btn btn-sm btn-secondary open-color-picker-btn" data-id="${product.id}" title="Editar Cores"><i class="bi bi-palette-fill"></i></button>
-                            <div class="form-check form-switch" title="Ignorar na contagem">
-                                <input class="form-check-input ignore-toggle-switch-stock" type="checkbox" role="switch" id="ignore-stock-${product.id}" data-id="${product.id}" ${product.ignorarContagem ? 'checked' : ''}>
-                            </div>
-                        </div>
-                    </td>
-                    <td class="text-center align-middle">
-                         <div class="form-check d-flex justify-content-center">
+                        <div class="form-check form-switch d-flex align-items-center">
                             <input class="form-check-input stock-checked-toggle" type="checkbox" title="Marcar como conferido" id="check-${product.id}" data-id="${product.id}" ${isChecked ? 'checked' : ''}>
                         </div>
-                    </td>
-                </tr>
+                    </div>
+                    <div class="stock-item-controls">
+                        <div class="input-group input-group-sm">
+                            <button class="btn btn-outline-secondary stock-qty-btn" data-change="-1" aria-label="Diminuir">-</button>
+                            <input type="number" class="form-control text-center stock-qty-input px-1" value="${product.quantidade || 0}" min="0" step="1" style="max-width: 70px;">
+                            <button class="btn btn-outline-secondary stock-qty-btn" data-change="1" aria-label="Aumentar">+</button>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <button class="btn btn-sm btn-secondary open-color-picker-btn" data-id="${product.id}" title="Editar Cores"><i class="bi bi-palette-fill"></i></button>
+                            <button class="btn btn-sm btn-secondary ignore-toggle-btn" data-id="${product.id}" title="${product.ignorarContagem ? 'Mostrar na contagem' : 'Ignorar na contagem'}">
+                                <i class="bi ${product.ignorarContagem ? 'bi-eye-slash-fill' : 'bi-eye-fill'}"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
             `}).join('');
         }
     }
 
     function filterStockProducts() {
         const searchTerm = document.getElementById('stockSearchInput').value;
-        let visibleProducts = showIgnoredInStock ? products : products.filter(p => !p.ignorarContagem);
         
-        const fuseInstance = new Fuse(visibleProducts, { keys: ['nome'], threshold: 0.4 });
-        const filtered = !searchTerm ? visibleProducts : fuseInstance.search(searchTerm).map(r => r.item);
+        let baseList;
+        if (onlyShowIgnored) {
+            baseList = products.filter(p => p.ignorarContagem);
+        } else {
+            baseList = products.filter(p => !p.ignorarContagem);
+        }
+        
+        const fuseInstance = new Fuse(baseList, { keys: ['nome'], threshold: 0.4 });
+        const filtered = !searchTerm ? baseList : fuseInstance.search(searchTerm).map(r => r.item);
 
         renderStockList(filtered);
     }
 
     function generateStockReport() {
         const reportPreview = document.getElementById('reportPreview');
-        const visibleProducts = showIgnoredInStock ? products : products.filter(p => !p.ignorarContagem);
+        const visibleProducts = onlyShowIgnored ? products.filter(p => p.ignorarContagem) : products.filter(p => !p.ignorarContagem);
         const searchTerm = document.getElementById('stockSearchInput').value;
         
         const fuseInstance = new Fuse(visibleProducts, { keys: ['nome'], threshold: 0.4 });
@@ -2904,16 +2971,18 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         document.getElementById('stockSearchInput').addEventListener('input', filterStockProducts);
         document.getElementById('generateReportBtn').addEventListener('click', generateStockReport);
         document.getElementById('toggleIgnoredBtn').addEventListener('click', (e) => {
-            showIgnoredInStock = !showIgnoredInStock;
+            onlyShowIgnored = !onlyShowIgnored;
             const btn = e.currentTarget;
             const icon = btn.querySelector('i');
-            if (showIgnoredInStock) {
-                btn.title = "Ocultar ignorados";
-                icon.className = 'bi bi-eye';
+            document.getElementById('stockSearchInput').value = '';
+
+            if (onlyShowIgnored) {
+                btn.title = "Mostrar produtos visíveis";
+                icon.className = 'bi bi-eye-fill';
                 btn.classList.add('active');
             } else {
-                btn.title = "Mostrar ignorados";
-                icon.className = 'bi bi-eye-slash';
+                btn.title = "Mostrar produtos ignorados";
+                icon.className = 'bi bi-eye-slash-fill';
                 btn.classList.remove('active');
             }
             filterStockProducts();
@@ -2933,9 +3002,9 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
 
         const stockTableBody = document.getElementById('stockTableBody');
         const handleStockUpdate = (inputElement) => {
-            const row = inputElement.closest('tr');
-            if (!row) return;
-            const id = row.dataset.id;
+            const card = inputElement.closest('.stock-item-card');
+            if (!card) return;
+            const id = card.dataset.id;
             const product = products.find(p => p.id === id);
             if (!product) return;
             
@@ -2957,13 +3026,6 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
                 if (e.target.classList.contains('stock-qty-input')) {
                     handleStockUpdate(e.target);
                 }
-                if (e.target.classList.contains('ignore-toggle-switch-stock')) {
-                    const id = e.target.dataset.id;
-                    const isChecked = e.target.checked;
-                    updateProductInDB(id, { ignorarContagem: isChecked }).then(() => {
-                         setTimeout(filterStockProducts, 150); 
-                    });
-                }
                 if (e.target.classList.contains('stock-checked-toggle')) {
                     const id = e.target.dataset.id;
                     const isChecked = e.target.checked;
@@ -2984,6 +3046,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             stockTableBody.addEventListener('click', e => {
                 const qtyButton = e.target.closest('.stock-qty-btn');
                 const colorButton = e.target.closest('.open-color-picker-btn');
+                const ignoreBtn = e.target.closest('.ignore-toggle-btn');
 
                 if (qtyButton) {
                     const change = parseInt(qtyButton.dataset.change, 10);
@@ -2999,6 +3062,15 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
                 if (colorButton) {
                     const id = colorButton.dataset.id;
                     openColorPicker(id);
+                }
+
+                if (ignoreBtn) {
+                    const id = ignoreBtn.dataset.id;
+                    const product = products.find(p => p.id === id);
+                    if (product) {
+                        const newIgnoredState = !product.ignorarContagem;
+                        updateProductInDB(id, { ignorarContagem: newIgnoredState });
+                    }
                 }
             });
         }
@@ -3267,3 +3339,4 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
 
 </body>
 </html>
+
