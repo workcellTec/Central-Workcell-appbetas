@@ -529,6 +529,11 @@
             background-color: transparent;
             border-color: var(--glass-border);
             color: var(--text-secondary);
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+         #notificationList .list-group-item:hover {
+            background-color: rgba(var(--primary-color-rgb), 0.1);
         }
         #notificationList .list-group-item strong {
             color: var(--text-color);
@@ -890,7 +895,11 @@
                         <label for="compradorRg" class="form-label">RG</label>
                         <input type="text" class="form-control" id="compradorRg">
                     </div>
-                    <div class="col-md-12 mb-3">
+                    <div class="col-md-6 mb-3">
+                        <label for="compradorTelefone" class="form-label">Telefone (WhatsApp)</label>
+                        <input type="tel" class="form-control" id="compradorTelefone" placeholder="(XX) XXXXX-XXXX">
+                    </div>
+                    <div class="col-md-6 mb-3">
                         <label for="compradorEndereco" class="form-label">Endereço Completo</label>
                         <input type="text" class="form-control" id="compradorEndereco" required>
                     </div>
@@ -2398,7 +2407,12 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
              return;
         }
 
-        historyContainer.innerHTML = `<div class="accordion w-100 history-accordion" id="boletosAccordion">${boletosArray.map(boleto => `
+        historyContainer.innerHTML = `<div class="accordion w-100 history-accordion" id="boletosAccordion">${boletosArray.map(boleto => {
+            const telefoneLimpo = boleto.compradorTelefone ? boleto.compradorTelefone.replace(/\D/g, '') : '';
+            const whatsappLink = telefoneLimpo ? `https://wa.me/55${telefoneLimpo}` : '';
+            const telefoneHtml = whatsappLink ? `<a href="${whatsappLink}" target="_blank" class="btn btn-sm btn-success"><i class="bi bi-whatsapp"></i> ${escapeHtml(boleto.compradorTelefone)}</a>` : '(Não informado)';
+            
+            return `
             <div class="accordion-item">
                 <h2 class="accordion-header" id="heading-${boleto.id}">
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-${boleto.id}" aria-expanded="false" aria-controls="collapse-${boleto.id}">
@@ -2408,7 +2422,8 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
                 <div id="collapse-${boleto.id}" class="accordion-collapse collapse" aria-labelledby="heading-${boleto.id}" data-bs-parent="#boletosAccordion">
                     <div class="accordion-body">
                         <p><strong>Comprador:</strong> ${escapeHtml(boleto.compradorNome)}<br>
-                        <strong>CPF:</strong> ${escapeHtml(boleto.compradorCpf)}</p>
+                        <strong>CPF:</strong> ${escapeHtml(boleto.compradorCpf)}<br>
+                        <strong>Telefone:</strong> ${telefoneHtml}</p>
                         <p><strong>Produto:</strong> ${escapeHtml(boleto.produtoModelo)}<br>
                         <strong>IMEI:</strong> ${escapeHtml(boleto.produtoImei)}</p>
                         <p><strong>Valor Total:</strong> R$ ${escapeHtml(boleto.valorTotal.toLocaleString('pt-BR', {minimumFractionDigits: 2}))}<br>
@@ -2420,8 +2435,8 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
                         </div>
                     </div>
                 </div>
-            </div>
-        `).join('')}</div>`;
+            </div>`
+        }).join('')}</div>`;
 
         // Add event listeners for delete buttons
         historyContainer.querySelectorAll('.delete-boleto-btn').forEach(btn => {
@@ -2488,6 +2503,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
 
                         if (dueDate.getTime() === today.getTime()) {
                             notifications.push({
+                                boletoId: key,
                                 message: `<strong>${escapeHtml(boleto.compradorNome)}:</strong> Parcela ${i + 1}/${boleto.numeroParcelas} vence hoje.`
                             });
                         }
@@ -2506,7 +2522,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             badge.textContent = notifications.length;
             badge.classList.remove('hidden');
             notificationList.innerHTML = notifications.map(notif => 
-                `<div class="list-group-item">${notif.message}</div>`
+                `<a href="#" class="list-group-item list-group-item-action notification-item" data-boleto-id="${notif.boletoId}">${notif.message}</a>`
             ).join('');
         } else {
             badge.classList.add('hidden');
@@ -2545,8 +2561,40 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
     // --- EVENT LISTENERS ---
     document.addEventListener('DOMContentLoaded', () => {
         // --- Notificações ---
-        const notificationOffcanvas = new bootstrap.Offcanvas(document.getElementById('notificationPanel'));
+        const notificationOffcanvasEl = document.getElementById('notificationPanel');
+        const notificationOffcanvas = new bootstrap.Offcanvas(notificationOffcanvasEl);
         document.getElementById('notification-bell').addEventListener('click', () => notificationOffcanvas.toggle());
+        document.getElementById('notificationList').addEventListener('click', (e) => {
+             const item = e.target.closest('.notification-item');
+             if (item) {
+                 e.preventDefault();
+                 const boletoId = item.dataset.boletoId;
+                 showMainSection('contract');
+                 
+                 // Aguarda um pouco para a UI atualizar
+                 setTimeout(() => {
+                    const toggle = document.getElementById('boletoModeToggle');
+                    if (!toggle.checked) {
+                        toggle.checked = true;
+                        toggle.dispatchEvent(new Event('change'));
+                    }
+                    // Tenta encontrar e abrir o accordion item
+                    setTimeout(() => {
+                        const accordionButton = document.querySelector(`#heading-${boletoId} button`);
+                        if (accordionButton) {
+                            const collapse = new bootstrap.Collapse(accordionButton.getAttribute('data-bs-target'), {
+                                toggle: false
+                            });
+                            collapse.show();
+                            accordionButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                    }, 300); // tempo para o histórico carregar
+                 }, 100);
+                 
+                 notificationOffcanvas.hide();
+             }
+        });
+
         
         // --- Tema ---
         const savedTheme = safeStorage.getItem('theme') || 'dark';
@@ -2994,6 +3042,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
                 compradorNome: document.getElementById('compradorNome').value,
                 compradorCpf: document.getElementById('compradorCpf').value,
                 compradorRg: document.getElementById('compradorRg').value,
+                compradorTelefone: document.getElementById('compradorTelefone').value,
                 compradorEndereco: document.getElementById('compradorEndereco').value,
                 produtoModelo: document.getElementById('produtoModelo').value,
                 produtoImei: document.getElementById('produtoImei').value,
