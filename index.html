@@ -939,7 +939,7 @@
                         </select>
                     </div>
                     <div class="col-md-6 mb-3">
-                        <label for="primeiroVencimento" class="form-label">1º Vencimento (Opcional)</label>
+                        <label for="primeiroVencimento" class="form-label">Dia do 1º Vencimento <span style="color: var(--primary-color); font-size: 0.8em;">(Opcional)</span></label>
                         <input type="date" class="form-control" id="primeiroVencimento">
                     </div>
                     <div class="col-md-6 mb-3">
@@ -2464,9 +2464,20 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         if (!db || !isAuthReady) return;
         const boletosRef = ref(db, 'boletos');
 
+        const todayStr = new Date().toISOString().split('T')[0]; // "YYYY-MM-DD"
+        const viewedNotifsKey = `viewedNotifications_${todayStr}`;
+        
+        // Cleanup old notification keys from localStorage
+        Object.keys(localStorage).forEach(key => {
+            if (key.startsWith('viewedNotifications_') && key !== viewedNotifsKey) {
+                safeStorage.removeItem(key);
+            }
+        });
+
         if (notificationsListener) off(boletosRef, 'value', notificationsListener);
 
         notificationsListener = onValue(boletosRef, (snapshot) => {
+            const viewedNotifs = JSON.parse(safeStorage.getItem(viewedNotifsKey) || '[]');
             const notifications = [];
             if (snapshot.exists()) {
                 const data = snapshot.val();
@@ -2475,14 +2486,11 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
 
                 for (const key in data) {
                     const boleto = data[key];
-                    // Se não houver data de primeiro vencimento, usa a data de criação como base para o MÊS/ANO.
-                    // O dia será o mesmo dia em que o contrato foi feito, nos meses/semanas seguintes.
                     const baseDate = boleto.primeiroVencimento ? new Date(boleto.primeiroVencimento + 'T00:00:00') : new Date(boleto.criadoEm);
 
                     for (let i = 0; i < boleto.numeroParcelas; i++) {
                         let dueDate;
                         if(boleto.primeiroVencimento) {
-                            // Se tem data de início, a primeira parcela (i=0) é nessa data.
                              dueDate = new Date(baseDate);
                              if (boleto.tipoParcela === 'mensais') {
                                 dueDate.setMonth(baseDate.getMonth() + i);
@@ -2490,7 +2498,6 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
                                 dueDate.setDate(baseDate.getDate() + (i * 7));
                             }
                         } else {
-                            // Se não tem data de início, a primeira parcela (i=0) é um período depois da criação.
                              dueDate = new Date(baseDate);
                              if (boleto.tipoParcela === 'mensais') {
                                 dueDate.setMonth(baseDate.getMonth() + i + 1);
@@ -2502,10 +2509,14 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
                         dueDate.setHours(0, 0, 0, 0);
 
                         if (dueDate.getTime() === today.getTime()) {
-                            notifications.push({
-                                boletoId: key,
-                                message: `<strong>${escapeHtml(boleto.compradorNome)}:</strong> Parcela ${i + 1}/${boleto.numeroParcelas} vence hoje.`
-                            });
+                            const notificationId = `${key}_${i}`; // boletoId_parcelaIndex
+                            if (!viewedNotifs.includes(notificationId)) {
+                                 notifications.push({
+                                    notificationId: notificationId,
+                                    boletoId: key,
+                                    message: `<strong>${escapeHtml(boleto.compradorNome)}:</strong> Parcela ${i + 1}/${boleto.numeroParcelas} vence hoje.`
+                                });
+                            }
                         }
                     }
                 }
@@ -2522,7 +2533,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             badge.textContent = notifications.length;
             badge.classList.remove('hidden');
             notificationList.innerHTML = notifications.map(notif => 
-                `<a href="#" class="list-group-item list-group-item-action notification-item" data-boleto-id="${notif.boletoId}">${notif.message}</a>`
+                `<a href="#" class="list-group-item list-group-item-action notification-item" data-boleto-id="${notif.boletoId}" data-notification-id="${notif.notificationId}">${notif.message}</a>`
             ).join('');
         } else {
             badge.classList.add('hidden');
@@ -2562,39 +2573,61 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
     document.addEventListener('DOMContentLoaded', () => {
         // --- Notificações ---
         const notificationOffcanvasEl = document.getElementById('notificationPanel');
-        const notificationOffcanvas = new bootstrap.Offcanvas(notificationOffcanvasEl);
+        const notificationOffcanvas = bootstrap.Offcanvas.getOrCreateInstance(notificationOffcanvasEl);
         document.getElementById('notification-bell').addEventListener('click', () => notificationOffcanvas.toggle());
         document.getElementById('notificationList').addEventListener('click', (e) => {
              const item = e.target.closest('.notification-item');
              if (item) {
                  e.preventDefault();
                  const boletoId = item.dataset.boletoId;
+                 const notificationId = item.dataset.notificationId;
+
+                 // Mark as viewed
+                 const todayStr = new Date().toISOString().split('T')[0];
+                 const viewedNotifsKey = `viewedNotifications_${todayStr}`;
+                 let viewedNotifs = JSON.parse(safeStorage.getItem(viewedNotifsKey) || '[]');
+                 if (!viewedNotifs.includes(notificationId)) {
+                    viewedNotifs.push(notificationId);
+                    safeStorage.setItem(viewedNotifsKey, JSON.stringify(viewedNotifs));
+                 }
+
+                 // Visually remove notification and update badge
+                 item.remove();
+                 const remainingItems = document.querySelectorAll('#notificationList .notification-item').length;
+                 const badge = document.querySelector('#notification-bell .notification-badge');
+                 if (remainingItems > 0) {
+                    badge.textContent = remainingItems;
+                 } else {
+                    badge.classList.add('hidden');
+                    document.getElementById('notificationList').innerHTML = '<div class="list-group-item text-center">Nenhuma notificação hoje.</div>';
+                 }
+
+                 // Navigate to history
                  showMainSection('contract');
                  
-                 // Aguarda um pouco para a UI atualizar
                  setTimeout(() => {
                     const toggle = document.getElementById('boletoModeToggle');
                     if (!toggle.checked) {
                         toggle.checked = true;
                         toggle.dispatchEvent(new Event('change'));
                     }
-                    // Tenta encontrar e abrir o accordion item
                     setTimeout(() => {
                         const accordionButton = document.querySelector(`#heading-${boletoId} button`);
                         if (accordionButton) {
-                            const collapse = new bootstrap.Collapse(accordionButton.getAttribute('data-bs-target'), {
-                                toggle: false
-                            });
-                            collapse.show();
-                            accordionButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            const collapseEl = document.getElementById(accordionButton.getAttribute('data-bs-target').substring(1));
+                            const bsCollapse = bootstrap.Collapse.getOrCreateInstance(collapseEl, { toggle: false });
+                            bsCollapse.show();
+                            
+                            collapseEl.addEventListener('shown.bs.collapse', () => {
+                                accordionButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }, { once: true });
                         }
-                    }, 300); // tempo para o histórico carregar
+                    }, 300); 
                  }, 100);
                  
                  notificationOffcanvas.hide();
              }
         });
-
         
         // --- Tema ---
         const savedTheme = safeStorage.getItem('theme') || 'dark';
