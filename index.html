@@ -261,6 +261,31 @@
         .custom-modal-overlay.active { opacity: 1; visibility: visible; }
         .custom-modal-content { background-color: var(--secondary-color); color: var(--text-color); padding: 30px; border-radius: var(--border-radius); text-align: center; max-width: 400px; width: 90%; box-shadow: 0 10px 40px var(--shadow-color); transform: scale(0.9); transition: transform var(--transition-duration) ease; border: 1px solid var(--glass-border); }
         .custom-modal-overlay.active .custom-modal-content { transform: scale(1); }
+        
+        /* NOVO ESTILO PARA NOTIFICAÇÃO TOAST */
+        #toastNotification {
+            position: fixed;
+            top: -100px; /* Começa fora da tela */
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: var(--glass-bg);
+            color: var(--text-color);
+            padding: 12px 20px;
+            border-radius: var(--border-radius);
+            z-index: 10001; /* Acima de outros elementos */
+            border: 1px solid var(--glass-border);
+            backdrop-filter: blur(5px);
+            box-shadow: 0 4px 15px var(--shadow-color);
+            transition: top 0.4s ease-in-out, opacity 0.4s ease-in-out;
+            opacity: 0;
+            font-size: 0.9rem;
+            pointer-events: none; /* Não bloqueia cliques */
+        }
+        #toastNotification.show {
+            top: 30px; /* Anima para esta posição */
+            opacity: 1;
+        }
+
 
         #contractContainer .content-card { max-width: 800px; margin: 0 auto; }
         .form-section-title { color: var(--primary-color); border-bottom: 1px solid var(--glass-border); }
@@ -276,15 +301,8 @@
         .spinner-border.text-primary { color: var(--primary-color) !important; }
         .results-table { --bs-table-color: var(--text-color); --bs-table-bg: transparent; --bs-table-border-color: var(--glass-border); --bs-table-hover-bg: rgba(var(--primary-color-rgb), 0.1); --bs-table-hover-color: var(--text-color); }
         .results-table thead th { color: var(--text-secondary); }
-        
-        /* ESTILO PARA LINHAS COPIÁVEIS */
-        .results-table tbody tr.copyable-row {
-            cursor: pointer;
-        }
-        .results-table tbody tr.copyable-row:hover {
-            background-color: rgba(var(--primary-color-rgb), 0.2) !important;
-        }
-
+        /* MODIFICAÇÃO: Adiciona cursor pointer para linhas de resultado copiáveis */
+        .results-table tbody tr.copyable-row { cursor: pointer; }
         [data-theme="light"] .results-table { --bs-table-border-color: var(--input-border); }
         .lucro-display { color: var(--text-success); }
         
@@ -536,28 +554,6 @@
         #notificationList .list-group-item strong {
             color: var(--text-color);
         }
-
-        /* ESTILO DA NOVA NOTIFICAÇÃO "TOAST" */
-        .toast-notification {
-            position: fixed;
-            bottom: -100px; /* Começa fora da tela */
-            left: 50%;
-            transform: translateX(-50%);
-            background-color: var(--primary-color);
-            color: #fff;
-            padding: 12px 24px;
-            border-radius: 25px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-            z-index: 10001; /* Acima de tudo */
-            transition: bottom 0.5s cubic-bezier(0.68, -0.55, 0.27, 1.55);
-            font-weight: 500;
-            font-size: 0.9rem;
-            pointer-events: none; /* Não bloqueia cliques */
-        }
-        .toast-notification.show {
-            bottom: 30px; /* Desliza para a posição visível */
-        }
-
 
         /* ============================================== */
         /* LAYOUT DE ESTOQUE (NOVO - CARD STYLE)          */
@@ -1110,6 +1106,7 @@
 
 <div class="user-id-display" id="userIdDisplay" style="display: none;"></div>
 
+<!-- MODAL ANTIGO (PARA CONFIRMAÇÕES) -->
 <div class="custom-modal-overlay" id="customModalOverlay">
     <div class="custom-modal-content">
         <h4 id="customModalMessage"></h4>
@@ -1120,6 +1117,9 @@
         </div>
     </div>
 </div>
+
+<!-- NOVA NOTIFICAÇÃO TOAST (para mensagens rápidas) -->
+<div id="toastNotification"></div>
 
 <div class="custom-modal-overlay" id="lucroModalOverlay">
     <div class="custom-modal-content">
@@ -1191,12 +1191,6 @@
   </div>
 </div>
 
-<!-- Nova Notificação Toast -->
-<div id="toastNotification" class="toast-notification">
-    <span id="toastMessage"></span>
-</div>
-
-
 <script type="application/json" id="manifest-data">
 {
   "name": "Centrar Workcell",
@@ -1255,7 +1249,6 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
     const MAX_FAVORITES = 5;
     const CONTRACT_DRAFT_KEY = 'ctwContractDraft';
     let draftSaveTimeout;
-    let toastTimer = null; // Timer para a nova notificação toast
 
     // --- UTILITÁRIO DE ARMAZENAMENTO SEGURO ---
     const safeStorage = {
@@ -1373,7 +1366,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             else { if (type === 'debito') updatedRates[machine].debito = value; else if (type === 'credito') updatedRates[machine].credito[parseInt(installments) - 1] = value; }
         });
         if (hasError) { showCustomModal({ message: "Corrija campos inválidos." }); return; }
-        try { await update(ref(db, 'rates'), updatedRates); showToast("Taxas atualizadas!"); } 
+        try { await update(ref(db, 'rates'), updatedRates); showCustomModal({ message: "Taxas atualizadas!" }); } 
         catch (error) { console.error("Erro ao salvar taxas:", error); showCustomModal({ message: `Erro ao salvar: ${error.message}` }); }
     }
 
@@ -1583,14 +1576,13 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         const debitTax = getRate(machine, brand, 0); 
         if(debitTax !== null && debitTax !== undefined) { 
             const valorBrutoDebito = valorDesejado / (1 - debitTax / 100); 
-            tableRows += `<tr class="copyable-row debit-row" data-installments="Débito" data-installment-value="" data-total-value="${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}"><td>Débito</td><td>-</td><td>${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`; 
+            tableRows += `<tr class="debit-row"><td>Débito</td><td>-</td><td>${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`; 
         } 
         for (let i = 1; i <= maxInstallments; i++) { 
             const creditTax = getRate(machine, brand, i); 
             if (creditTax !== undefined) { 
-                const valorBrutoCredit = valorDesejado / (1 - creditTax / 100);
-                const valorParcela = valorBrutoCredit / i; 
-                tableRows += `<tr class="copyable-row" data-installments="${i}x" data-installment-value="${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}" data-total-value="${valorBrutoCredit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}"><td>${i}x</td><td>${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td><td>${valorBrutoCredit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`; 
+                const valorBrutoCredit = valorDesejado / (1 - creditTax / 100), valorParcela = valorBrutoCredit / i; 
+                tableRows += `<tr><td>${i}x</td><td>${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td><td>${valorBrutoCredit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`; 
             } 
         } 
 
@@ -1633,14 +1625,14 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         const debitTax = getRate(machine, brand, 0);
         if (debitTax !== null && debitTax !== undefined) { 
             const valorBrutoDebito = valorDesejado / (1 - debitTax / 100); 
-            tableRows += `<tr class="copyable-row debit-row" data-installments="Débito" data-installment-value="" data-total-value="${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}"><td>Débito</td><td>-</td><td>${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`; 
+            tableRows += `<tr class="debit-row"><td>Débito</td><td>-</td><td>${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`; 
         }
         for (let i = 1; i <= maxInstallments; i++) { 
             const creditTax = getRate(machine, brand, i); 
             if (creditTax !== undefined) { 
                 const valorBrutoCredit = valorDesejado / (1 - creditTax / 100); 
                 const valorParcela = valorBrutoCredit / i; 
-                tableRows += `<tr class="copyable-row" data-installments="${i}x" data-installment-value="${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}" data-total-value="${valorBrutoCredit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}"><td>${i}x</td><td>${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td><td>${valorBrutoCredit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`; 
+                tableRows += `<tr><td>${i}x</td><td>${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td><td>${valorBrutoCredit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`; 
             } 
         }
 
@@ -1694,14 +1686,14 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         const debitTax = getRate(machine, brand, 0);
         if (debitTax !== null && debitTax !== undefined) { 
             const valorBrutoDebito = valorBaseParaCalculo / (1 - debitTax / 100); 
-            tableRows += `<tr class="copyable-row debit-row" data-installments="Débito" data-installment-value="" data-total-value="${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}"><td>Débito</td><td>-</td><td>${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`; 
+            tableRows += `<tr class="debit-row copyable-row" data-installments="Débito" data-parcela="${valorBrutoDebito.toFixed(2)}" data-total="${valorBrutoDebito.toFixed(2)}"><td>Débito</td><td>-</td><td>${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`; 
         }
         for (let i = 1; i <= maxInstallments; i++) { 
             const creditTax = getRate(machine, brand, i); 
             if (creditTax !== undefined) { 
-                const valorBrutoCredit = valorBaseParaCalculo / (1 - creditTax / 100);
-                const valorParcela = valorBrutoCredit / i; 
-                tableRows += `<tr class="copyable-row" data-installments="${i}x" data-installment-value="${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}" data-total-value="${valorBrutoCredit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}"><td>${i}x</td><td>${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td><td>${valorBrutoCredit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`; 
+                const valorBrutoCredit = valorBaseParaCalculo / (1 - creditTax / 100), valorParcela = valorBrutoCredit / i; 
+                // MODIFICAÇÃO: Adicionada classe 'copyable-row' e data-attributes para a função de copiar
+                tableRows += `<tr class="copyable-row" data-installments="${i}" data-parcela="${valorParcela.toFixed(2)}" data-total="${valorBrutoCredit.toFixed(2)}"><td>${i}x</td><td>${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td><td>${valorBrutoCredit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`; 
             } 
         }
         
@@ -1933,7 +1925,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
                     updates[newKey] = p;
                 });
                 await update(getProductsRef(), updates);
-                showToast(`${productsToImport.length} produtos importados!`);
+                showCustomModal({ message: `${productsToImport.length} produtos importados!` });
             } catch (error) {
                 showCustomModal({ message: `Erro ao importar: ${error.message}` });
             }
@@ -1943,38 +1935,41 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
     }
     function exportProducts(format) { const dataStr = format === 'txt' ? products.map(p => `${p.nome} - ${(p.valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`).join('\n') : JSON.stringify(products.map(({id, ...rest}) => rest), null, 2); const blob = new Blob([dataStr], { type: `text/${format === 'txt' ? 'plain' : 'json'}` }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `products.${format}`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href); }
     
-    // NOVA FUNÇÃO TOAST
-    function showToast(message) {
-        const toast = document.getElementById('toastNotification');
-        const toastMessage = document.getElementById('toastMessage');
-        if (!toast || !toastMessage) return;
-
-        if (toastTimer) clearTimeout(toastTimer);
-
-        toastMessage.textContent = message;
-        toast.classList.add('show');
-
-        toastTimer = setTimeout(() => {
-            toast.classList.remove('show');
-            toastTimer = null;
-        }, 2000); // Some em 2 segundos
-    }
-    
+    // MODIFICAÇÃO: Função de modal agora prioriza um "toast" para mensagens informativas
     function showCustomModal({ message, onConfirm, onCancel, showPassword = false, confirmText = 'OK', cancelText = 'Cancelar' }) {
+        const isInformational = typeof onConfirm !== 'function' && typeof onCancel !== 'function' && !showPassword;
+
+        if (isInformational) {
+            const toast = document.getElementById('toastNotification');
+            // Limpa qualquer timeout anterior para evitar que o toast suma antes da hora se for chamado em sequência
+            if (toast.currentTimeout) {
+                clearTimeout(toast.currentTimeout);
+            }
+            toast.textContent = message;
+            toast.classList.add('show');
+            // Define um novo timeout para esconder o toast
+            toast.currentTimeout = setTimeout(() => {
+                toast.classList.remove('show');
+            }, 2000); // Sumir após 2 segundos
+            return; // Encerra a função aqui para não mostrar o modal grande
+        }
+        
+        // Lógica original para modais de confirmação/senha
         const overlay = document.getElementById('customModalOverlay');
         const messageEl = document.getElementById('customModalMessage');
         const passInput = document.getElementById('customModalPasswordInput');
         const okBtn = overlay.querySelector('.btn-ok');
         const cancelBtn = overlay.querySelector('.btn-cancel');
         const buttonsContainer = document.getElementById('customModalButtons');
-        
-        const closeModal = () => overlay.classList.remove('active');
+
+        const closeModal = () => {
+            overlay.classList.remove('active');
+        };
         
         messageEl.textContent = message;
         passInput.value = '';
         passInput.classList.toggle('hidden', !showPassword);
 
-        // Apenas modais com botões (confirmação, etc.)
         buttonsContainer.classList.remove('hidden');
         
         if (typeof onConfirm === 'function') {
@@ -1996,39 +1991,17 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
                 onCancel();
             };
         } else {
-            // Se não houver cancel, mostra OK para fechar
             cancelBtn.style.display = 'none';
-            okBtn.textContent = 'OK';
-            okBtn.style.display = 'inline-flex';
-            okBtn.onclick = closeModal;
         }
-        
 
         overlay.classList.add('active');
         if (showPassword) {
             passInput.focus();
         }
     }
-    
-    // FUNÇÃO PARA COPIAR TEXTO ATUALIZADA
-    function copyToClipboard(text) {
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.style.position = 'fixed'; 
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.select();
-        try {
-            document.execCommand('copy');
-            showToast("Simulação copiada!"); // <-- MUDANÇA AQUI
-        } catch (err) {
-            console.error('Fallback: Oops, unable to copy', err);
-            showToast("Erro ao copiar.");
-        }
-        document.body.removeChild(textarea);
-    }
 
-    async function deleteAllProducts() { showCustomModal({ message: "Para excluir TODOS os produtos, digite 'excluir'.", showPassword: true, confirmText: "Excluir", onConfirm: async (password) => { if (password === "excluir") { showCustomModal({ message: "Ação IRREVERSÍVEL. Apagar TUDO?", confirmText: 'SIM, EXCLUIR', onConfirm: async () => { try { await remove(getProductsRef()); showToast('Todos os produtos foram excluídos.'); } catch (error) { showCustomModal({ message: `Erro: ${error.message}` }); } }, onCancel: () => {} }); } else showCustomModal({ message: "Senha incorreta." }); }, onCancel: () => {} }); }
+
+    async function deleteAllProducts() { showCustomModal({ message: "Para excluir TODOS os produtos, digite 'excluir'.", showPassword: true, confirmText: "Excluir", onConfirm: async (password) => { if (password === "excluir") { showCustomModal({ message: "Ação IRREVERSÍVEL. Apagar TUDO?", confirmText: 'SIM, EXCLUIR', onConfirm: async () => { try { await remove(getProductsRef()); showCustomModal({message: 'Todos os produtos foram excluídos.'}); } catch (error) { showCustomModal({ message: `Erro: ${error.message}` }); } }, onCancel: () => {} }); } else showCustomModal({ message: "Senha incorreta." }); }, onCancel: () => {} }); }
     function displayDynamicSearchResults(searchTerm, resultsContainerId, onItemClick) { const resultsContainer = document.getElementById(resultsContainerId); resultsContainer.innerHTML = ''; if (!fuse || !searchTerm || searchTerm.length < 2) return; const results = fuse.search(searchTerm); results.slice(0, 10).forEach(result => { const product = result.item; const a = document.createElement('a'); a.href = '#'; a.className = 'list-group-item list-group-item-action'; a.textContent = `${product.nome} - ${(product.valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`; a.onclick = (e) => { e.preventDefault(); onItemClick(product); }; resultsContainer.appendChild(a); }); }
     function setupFuse() {
         fuse = new Fuse(products, {
@@ -2403,7 +2376,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
                 }
             }
             calculateContractPayments();
-             showToast('Rascunho anterior carregado.');
+             showCustomModal({ message: 'Rascunho anterior carregado.'});
         }
     }
 
@@ -2412,7 +2385,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         calculateContractPayments();
         if(clearStorage) {
             safeStorage.removeItem(CONTRACT_DRAFT_KEY);
-            showToast('Rascunho apagado.');
+            showCustomModal({ message: 'Rascunho apagado.'});
         }
     }
 
@@ -2588,7 +2561,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
                     onConfirm: async () => {
                         try {
                             await remove(ref(db, `boletos/${boletoId}`));
-                            showToast("Registro excluído com sucesso.");
+                            showCustomModal({ message: "Registro excluído com sucesso." });
                         } catch (error) {
                             showCustomModal({ message: `Erro ao excluir: ${error.message}` });
                         }
@@ -2846,6 +2819,48 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             }
         });
 
+        // MODIFICAÇÃO: Listener para copiar simulação ao clicar na linha do resultado
+        document.getElementById('resultCalcularPorAparelho').addEventListener('click', (e) => {
+            const row = e.target.closest('.copyable-row');
+            if (!row) return;
+
+            const installments = row.dataset.installments;
+            const parcelaValue = parseFloat(row.dataset.parcela);
+            const totalValue = parseFloat(row.dataset.total);
+            const produtoNome = document.getElementById('aparelhoSearch').value.trim() || 'Produto';
+
+            const parcelaFormatted = parcelaValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+            const totalFormatted = totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+            // Monta o texto no formato solicitado
+            const textToCopy = `${installments}x ${parcelaFormatted}\n_(Total: ${totalFormatted})_\n${produtoNome}`;
+
+            // Usa um textarea temporário para garantir compatibilidade
+            const textArea = document.createElement("textarea");
+            textArea.value = textToCopy;
+            textArea.style.position = "fixed";
+            textArea.style.top = "0";
+            textArea.style.left = "0";
+            textArea.style.opacity = "0";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    showCustomModal({ message: 'Simulação copiada!' });
+                } else {
+                    showCustomModal({ message: 'Falha ao copiar.' });
+                }
+            } catch (err) {
+                console.error('Erro ao copiar:', err);
+                showCustomModal({ message: 'Erro ao copiar.' });
+            }
+
+            document.body.removeChild(textArea);
+        });
+
         const favoriteNameModal = document.getElementById('favoriteNameModalOverlay');
         const favoriteNameInput = document.getElementById('favoriteNameInput');
         const confirmSaveFavoriteBtn = document.getElementById('confirmSaveFavoriteBtn');
@@ -2953,7 +2968,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
 
             try {
                 await push(getProductsRef(), newProduct);
-                showToast(`Produto "${nome}" adicionado!`);
+                showCustomModal({ message: `Produto "${nome}" adicionado com sucesso!`});
                 e.target.reset();
             } catch (error) {
                 showCustomModal({ message: `Erro ao adicionar produto: ${error.message}` });
@@ -3204,7 +3219,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         document.getElementById('btnLimparCampos').addEventListener('click', () => clearContractDraft(true));
         document.getElementById('btnApagarRascunho').addEventListener('click', () => {
             safeStorage.removeItem(CONTRACT_DRAFT_KEY);
-            showToast('Rascunho apagado.');
+            showCustomModal({ message: 'Rascunho apagado.' });
         });
         
         document.getElementById('btnImprimir').addEventListener('click', () => {
@@ -3236,7 +3251,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
 
             push(boletosRef, boletoData)
                 .then(() => {
-                    showToast('Contrato salvo no banco de dados!');
+                    showCustomModal({ message: 'Contrato salvo no banco de dados!' });
                     // Após salvar, continua com a impressão
                     populatePreview();
                     document.body.classList.add('print-only-contract');
@@ -3276,28 +3291,6 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
         
         window.addEventListener('afterprint', () => {
             document.body.classList.remove('print-only-contract', 'print-only-report');
-        });
-        
-        // NOVO LISTENER PARA COPIAR SIMULAÇÃO
-        document.body.addEventListener('click', (e) => {
-            const row = e.target.closest('tr.copyable-row');
-            if (!row) return;
-
-            const { installments, installmentValue, totalValue } = row.dataset;
-
-            if (!installments || !totalValue) return;
-
-            // Formata o texto para copiar
-            let textToCopy;
-            if (installments === 'Débito') {
-                // Formato simplificado para débito
-                textToCopy = `${installments}\t${totalValue}`;
-            } else {
-                // Formato completo para parcelas de crédito
-                textToCopy = `${installments}\t${installmentValue}\n_(Total: ${totalValue})_`;
-            }
-            
-            copyToClipboard(textToCopy);
         });
 
         main();
@@ -3427,5 +3420,3 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
 
 </body>
 </html>
-
-
