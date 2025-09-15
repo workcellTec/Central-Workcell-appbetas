@@ -2828,12 +2828,20 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
             const parcelaValue = parseFloat(row.dataset.parcela);
             const totalValue = parseFloat(row.dataset.total);
             const produtoNome = document.getElementById('aparelhoSearch').value.trim() || 'Produto';
+            const entradaValue = parseFloat(document.getElementById('entradaAparelho').value) || 0;
 
             const parcelaFormatted = parcelaValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
             const totalFormatted = totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-            // Monta o texto no formato solicitado
-            const textToCopy = `${installments}x ${parcelaFormatted}\n_(Total: ${totalFormatted})_\n${produtoNome}`;
+            // Verifica se há valor de entrada para adicioná-lo à mensagem
+            let entradaText = '';
+            if (entradaValue > 0) {
+                const entradaFormatted = entradaValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                entradaText = `\n"+${entradaFormatted} no dinheiro ou pix"`;
+            }
+
+            // Monta o texto final no formato solicitado
+            const textToCopy = `${installments}x ${parcelaFormatted}\n_(Total: ${totalFormatted})_${entradaText}\n🔵 ${produtoNome}`;
 
             // Usa um textarea temporário para garantir compatibilidade
             const textArea = document.createElement("textarea");
@@ -2860,6 +2868,7 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
 
             document.body.removeChild(textArea);
         });
+
 
         const favoriteNameModal = document.getElementById('favoriteNameModalOverlay');
         const favoriteNameInput = document.getElementById('favoriteNameInput');
@@ -3420,3 +3429,4 @@ self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]
 
 </body>
 </html>
+
