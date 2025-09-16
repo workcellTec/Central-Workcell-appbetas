@@ -2684,7 +2684,7 @@ let customText = '';
 if (currentlySelectedProductForCalc && currentlySelectedProductForCalc.tag && currentlySelectedProductForCalc.tag !== 'Nenhuma' && tagTexts[currentlySelectedProductForCalc.tag]) {
 customText = `\n\n${tagTexts[currentlySelectedProductForCalc.tag]}`;
 }
-const textToCopy = `${installments}x ${parcelaFormatted}\n_(Total: ${totalFormatted})_${entradaText}\n🔵 ${produtoNome}${customText}`;
+const textToCopy = `${installments}x ${parcelaFormatted}\n_(Total: ${totalFormatted})_${entradaText}\n ${produtoNome}${customText}`;
 const textArea = document.createElement("textarea");
 textArea.value = textToCopy;
 textArea.style.position = "fixed";
