@@ -2441,7 +2441,7 @@ function setupNotificationListeners() {
                 if (notif.date === todayStr) {
                     generalNotifications.push({
                         isGeneral: true,
-                        message: `<div class="d-flex align-items-start"><i class="bi bi-megaphone-fill me-2 text-info"></i> <div><strong>Aviso:</strong> ${escapeHtml(notif.text)}</div></div>`
+                        message: `<div class="d-flex align-items-start"><i class="bi bi-megaphone-fill me-2 text-info"></i> <div style="white-space: pre-wrap;"><strong>Aviso:</strong> ${escapeHtml(notif.text)}</div></div>`
                     });
                 }
             });
