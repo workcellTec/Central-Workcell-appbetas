@@ -995,6 +995,13 @@ Vá à secção de <strong style="color: var(--text-color);">Administração</st
 <div class="admin-section">
 <h4 class="text-start"><i class="bi bi-pencil-square"></i> Editar Taxas do Sistema</h4>
 <p class="text-start text-secondary">Altere os valores e clique em salvar. As mudanças serão aplicadas para todos os usuários.</p>
+    <div class="form-check form-switch bg-dark p-3 rounded-3 mb-4 d-flex justify-content-between align-items-center">
+    <label class="form-check-label" for="arredondarToggle">
+        <strong class="fs-5">Arredondar Parcelas para R$ xx,90</strong>
+        <p class="text-secondary small mb-0">Aplica um arredondamento para cima em todas as simulações de parcelamento.</p>
+    </label>
+    <input class="form-check-input" type="checkbox" role="switch" id="arredondarToggle" style="width: 4em; height: 2em;">
+</div>
 <div class="accordion" id="ratesAccordion">
 <div class="text-center p-4">
 <div class="spinner-border text-primary" role="status">
@@ -1557,12 +1564,21 @@ if(debitTax !== null && debitTax !== undefined) {
 const valorBrutoDebito = valorDesejado / (1 - debitTax / 100);
 tableRows += `<tr class="debit-row"><td>Débito</td><td>-</td><td>${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`;
 }
+const arredondarAtivo = safeStorage.getItem('ctwArredondarEnabled') === 'true';
 for (let i = 1; i <= maxInstallments; i++) {
-const creditTax = getRate(machine, brand, i);
-if (creditTax !== undefined) {
-const valorBrutoCredit = valorDesejado / (1 - creditTax / 100), valorParcela = valorBrutoCredit / i;
-tableRows += `<tr><td>${i}x</td><td>${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td><td>${valorBrutoCredit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`;
-}
+    const creditTax = getRate(machine, brand, i);
+    if (creditTax !== undefined) {
+        const valorBrutoBase = valorDesejado / (1 - creditTax / 100);
+        let valorParcela = valorBrutoBase / i;
+        let valorTotalFinal = valorBrutoBase;
+
+        if (arredondarAtivo) {
+            valorParcela = Math.floor(valorParcela) + 0.90;
+            valorTotalFinal = valorParcela * i;
+        }
+        
+        tableRows += `<tr><td>${i}x</td><td>${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td><td>${valorTotalFinal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`;
+    }
 }
 if (tableRows) {
 resultDiv.innerHTML = `<div class="table-responsive"><table class="table results-table"><thead><tr><th>Parcelas</th><th>Valor da Parcela</th><th>Total a Passar</th></tr></thead><tbody>${tableRows}</tbody></table></div>`;
@@ -1598,13 +1614,21 @@ if (debitTax !== null && debitTax !== undefined) {
 const valorBrutoDebito = valorDesejado / (1 - debitTax / 100);
 tableRows += `<tr class="debit-row"><td>Débito</td><td>-</td><td>${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`;
 }
+const arredondarAtivo = safeStorage.getItem('ctwArredondarEnabled') === 'true';
 for (let i = 1; i <= maxInstallments; i++) {
-const creditTax = getRate(machine, brand, i);
-if (creditTax !== undefined) {
-const valorBrutoCredit = valorDesejado / (1 - creditTax / 100);
-const valorParcela = valorBrutoCredit / i;
-tableRows += `<tr><td>${i}x</td><td>${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td><td>${valorBrutoCredit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`;
-}
+    const creditTax = getRate(machine, brand, i);
+    if (creditTax !== undefined) {
+        const valorBrutoBase = valorDesejado / (1 - creditTax / 100);
+        let valorParcela = valorBrutoBase / i;
+        let valorTotalFinal = valorBrutoBase;
+
+        if (arredondarAtivo) {
+            valorParcela = Math.floor(valorParcela) + 0.90;
+            valorTotalFinal = valorParcela * i;
+        }
+
+        tableRows += `<tr><td>${i}x</td><td>${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td><td>${valorTotalFinal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`;
+    }
 }
 if (tableRows) {
 resultDiv.innerHTML = `<div class="table-responsive"><table class="table results-table"><thead><tr><th>Parcelas</th><th>Valor da Parcela</th><th>Total a Passar</th></tr></thead><tbody>${tableRows}</tbody></table></div>`;
@@ -1650,12 +1674,21 @@ if (debitTax !== null && debitTax !== undefined) {
 const valorBrutoDebito = valorBaseParaCalculo / (1 - debitTax / 100);
 tableRows += `<tr class="debit-row copyable-row" data-installments="Débito" data-parcela="${valorBrutoDebito.toFixed(2)}" data-total="${valorBrutoDebito.toFixed(2)}"><td>Débito</td><td>-</td><td>${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`;
 }
+const arredondarAtivo = safeStorage.getItem('ctwArredondarEnabled') === 'true';
 for (let i = 1; i <= maxInstallments; i++) {
-const creditTax = getRate(machine, brand, i);
-if (creditTax !== undefined) {
-const valorBrutoCredit = valorBaseParaCalculo / (1 - creditTax / 100), valorParcela = valorBrutoCredit / i;
-tableRows += `<tr class="copyable-row" data-installments="${i}" data-parcela="${valorParcela.toFixed(2)}" data-total="${valorBrutoCredit.toFixed(2)}"><td>${i}x</td><td>${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td><td>${valorBrutoCredit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`;
-}
+    const creditTax = getRate(machine, brand, i);
+    if (creditTax !== undefined) {
+        const valorBrutoBase = valorBaseParaCalculo / (1 - creditTax / 100);
+        let valorParcela = valorBrutoBase / i;
+        let valorTotalFinal = valorBrutoBase;
+
+        if (arredondarAtivo) {
+            valorParcela = Math.floor(valorParcela) + 0.90;
+            valorTotalFinal = valorParcela * i;
+        }
+        
+        tableRows += `<tr class="copyable-row" data-installments="${i}" data-parcela="${valorParcela.toFixed(2)}" data-total="${valorTotalFinal.toFixed(2)}"><td>${i}x</td><td>${valorParcela.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td><td>${valorTotalFinal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`;
+    }
 }
 let finalHtml = headerHtml;
 if(tableRows) {
@@ -3405,6 +3438,20 @@ window.addEventListener('afterprint', () => {
 document.body.classList.remove('print-only-contract', 'print-only-report');
 });
 main();
+    // CÓDIGO JAVASCRIPT PARA ADICIONAR
+// Gerencia o estado do interruptor de arredondamento
+const arredondarToggle = document.getElementById('arredondarToggle');
+if (arredondarToggle) {
+    // Define o estado inicial do toggle com base no que está salvo
+    arredondarToggle.checked = safeStorage.getItem('ctwArredondarEnabled') === 'true';
+
+    // Salva a preferência quando o usuário muda o estado
+    arredondarToggle.addEventListener('change', () => {
+        safeStorage.setItem('ctwArredondarEnabled', arredondarToggle.checked);
+        showCustomModal({ message: `Arredondamento ${arredondarToggle.checked ? 'ATIVADO' : 'DESATIVADO'}.` });
+    });
+}
+// FIM DO CÓDIGO PARA ADICIONAR
 document.addEventListener('backbutton', function (e) {
 e.preventDefault();
 const currentSection = document.querySelector('.container:not(.hidden):not([style*="display: none"])');
