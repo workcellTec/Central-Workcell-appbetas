@@ -2646,7 +2646,7 @@ function renderScheduledNotificationsAdminList() {
             listContainer.innerHTML = notificationsArray.map(notif => `
                 <div class="d-flex justify-content-between align-items-center p-3 border-bottom" style="border-color: var(--glass-border) !important;">
                     <div>
-                        <p class="mb-1"><strong>${escapeHtml(notif.text)}</strong></p>
+                        <p class="mb-1" style="white-space: pre-wrap;"><strong>${escapeHtml(notif.text)}</strong></p>
                         <small class="text-secondary">Para o dia: ${new Date(notif.date + 'T12:00:00').toLocaleDateString('pt-BR')}</small>
                     </div>
                     <button class="btn btn-sm btn-outline-danger delete-notification-btn" data-id="${notif.id}"><i class="bi bi-trash"></i></button>
