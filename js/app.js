@@ -471,7 +471,7 @@ function renderCarrinho() {
         return;
     }
 
-    const totalCarrinho = carrinhoDeAparelhos.reduce((total, p) => total + parseFloat(p.valor), 0);
+    // A variável 'totalCarrinho' não é mais necessária aqui, pois não será exibida.
 
     container.innerHTML = `
         <div class="p-3 rounded mb-2" style="background-color: var(--input-bg);">
@@ -479,16 +479,11 @@ function renderCarrinho() {
             <ul class="list-unstyled mb-2">
                 ${carrinhoDeAparelhos.map((produto, index) => `
                     <li class="d-flex justify-content-between align-items-center mb-1">
-                        <span>${escapeHtml(produto.nome)} - ${parseFloat(produto.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                        <span>${escapeHtml(produto.nome)}</span>
                         <button class="btn btn-sm btn-outline-danger" onclick="removerDoCarrinho(${index})" style="line-height: 1; padding: 4px 8px;">&times;</button>
                     </li>
                 `).join('')}
             </ul>
-            <hr class="my-2" style="border-color: var(--glass-border);">
-            <div class="d-flex justify-content-between fw-bold">
-                <span>Subtotal:</span>
-                <span>${totalCarrinho.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
-            </div>
         </div>
     `;
 }
@@ -2578,15 +2573,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('saveColorPicker').addEventListener('click', () => {
         if (currentEditingProductId) {
             updateProductInDB(currentEditingProductId, { cores: tempSelectedColors });
-            modificationTracker[currentEditingProductId] = { ...modificationTracker[currentEditingProductId], color: true };
-            if (modificationTracker[currentEditingProductId]?.quantity) {
-                const timestamp = Date.now();
-                checkedItems[currentEditingProductId] = { checked: true, timestamp: timestamp };
-                saveCheckedItems();
-                updateProductInDB(currentEditingProductId, { lastCheckedTimestamp: timestamp });
-                delete modificationTracker[currentEditingProductId];
-                filterStockProducts();
-            }
+            // A lógica que marcava o item como 'conferido' automaticamente foi removida.
         }
         colorPickerModal.classList.remove('active');
     });
@@ -2648,6 +2635,18 @@ document.addEventListener('DOMContentLoaded', () => {
             });
     });
 
+    document.getElementById('exportRepassarBtn').addEventListener('click', () => {
+        exportResultsToImage('resultRepassarValores', 'repassar-valores.png');
+    });
+    document.getElementById('exportEmprestimoBtn').addEventListener('click', () => {
+        const valorBase = parseFloat(document.getElementById('emprestimoValue').value) || 0;
+        if (valorBase <= 0) {
+            showCustomModal({ message: "Insira um valor base para exportar." });
+            return;
+        }
+        const header = `<h4 class="text-center mb-3" style="width: 100%; grid-column: 1 / -1;">Você Recebe na Hora: ${valorBase.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</h4>`;
+        exportResultsToImage('resultCalcularEmprestimo', 'calculo-emprestimo.png', header);
+    });
     document.getElementById('exportAparelhoBtn').addEventListener('click', () => {
         // Nova lógica: Verifica se o carrinho tem itens
         if (carrinhoDeAparelhos.length === 0) {
