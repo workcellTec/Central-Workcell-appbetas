@@ -584,6 +584,11 @@ function handleProductSelectionForAparelho(product) {
         document.getElementById('valorExtraAparelho').value = '40';
     }
 
+    // NOVO: Mostra um aviso quando o segundo produto é adicionado
+    if (carrinhoDeAparelhos.length === 2) {
+        showCustomModal({ message: "Múltiplos produtos: Textos de etiqueta desativados." });
+    }
+
     // Re-adicionando a lógica para mostrar as cores do ÚLTIMO produto adicionado
     const infoNoteEl = document.getElementById('aparelhoInfoNote');
     if (product.lastCheckedTimestamp) {
