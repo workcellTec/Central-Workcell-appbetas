@@ -2648,24 +2648,22 @@ document.addEventListener('DOMContentLoaded', () => {
             });
     });
 
-    document.getElementById('exportRepassarBtn').addEventListener('click', () => {
-        exportResultsToImage('resultRepassarValores', 'repassar-valores.png');
-    });
-    document.getElementById('exportEmprestimoBtn').addEventListener('click', () => {
-        const valorBase = parseFloat(document.getElementById('emprestimoValue').value) || 0;
-        if (valorBase <= 0) {
-            showCustomModal({ message: "Insira um valor base para exportar." });
-            return;
-        }
-        const header = `<h4 class="text-center mb-3" style="width: 100%; grid-column: 1 / -1;">Você Recebe na Hora: ${valorBase.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</h4>`;
-        exportResultsToImage('resultCalcularEmprestimo', 'calculo-emprestimo.png', header);
-    });
     document.getElementById('exportAparelhoBtn').addEventListener('click', () => {
-        const aparelhoNome = document.getElementById('aparelhoSearch').value.trim();
-        if (!aparelhoNome) {
-            showCustomModal({ message: "Selecione um aparelho para exportar." });
+        // Nova lógica: Verifica se o carrinho tem itens
+        if (carrinhoDeAparelhos.length === 0) {
+            showCustomModal({ message: "Adicione um aparelho para exportar." });
             return;
         }
+
+        // Nova lógica: Gera o nome a partir dos itens do carrinho (igual fizemos para copiar/colar)
+        const productCounts = carrinhoDeAparelhos.reduce((acc, product) => {
+            acc[product.nome] = (acc[product.nome] || 0) + 1;
+            return acc;
+        }, {});
+        const aparelhoNome = Object.entries(productCounts)
+            .map(([nome, qtd]) => qtd > 1 ? `${qtd}x ${nome}` : nome)
+            .join(' e ');
+
         const header = `<h4 class="text-center mb-3" style="width: 100%; grid-column: 1 / -1;">${escapeHtml(aparelhoNome)}</h4>`;
         const fileName = aparelhoNome.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'calculo-aparelho';
         exportResultsToImage('resultCalcularPorAparelho', `${fileName}.png`, header);
