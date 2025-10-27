@@ -49,6 +49,7 @@
             <button class="btn-menu" id="goToContract"><i class="bi bi-file-earmark-text-fill"></i> Boletos</button>
             <button class="btn-menu" id="goToStock"><i class="bi bi-box-seam"></i> Controle de Estoque</button>
             <button class="btn-menu" id="goToAdmin"><i class="bi bi-gear"></i> Administração</button>
+            <button class="btn-menu" id="goToManutencao"><i class="bi bi-tools"></i> Manutenção / Técnico</button>
         </div>
     </div>
     
@@ -422,6 +423,57 @@
             <div class="stock-list-container" id="stockTableBody"></div>
         </div>
     </div>
+    <div id="manutencaoContainer" class="container hidden">
+    <div class="section-header">
+        <h3>Controle de Manutenção</h3>
+        <button aria-label="Voltar" class="btn-back" id="backFromManutencao">
+            <i class="bi bi-arrow-left"></i>
+        </button>
+    </div>
+
+    <div class="toggle-switch">
+        <input type="checkbox" id="manutencaoModeToggle">
+        <label for="manutencaoModeToggle">
+            <span><i class="bi bi-hourglass-split"></i> Com o Técnico</span>
+            <span><i class="bi bi-check2-all"></i> Concluídos</span>
+        </label>
+    </div>
+
+    <div id="comTecnicoContent" class="w-100">
+        <div class="admin-section w-100">
+            <h5 class="mb-3"><i class="bi bi-box-arrow-up"></i> Enviar Aparelho para o Técnico</h5>
+
+            <div class="mb-3 search-wrapper">
+                <label class="form-label" for="manutencaoProdutoSearch">1. Pesquisar Produto</label>
+                <input autocomplete="off" class="form-control" id="manutencaoProdutoSearch" placeholder="Digite o nome do aparelho..." type="text"/>
+                <div class="search-results-container list-group" id="manutencaoSearchResultsContainer"></div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label" for="manutencaoDefeito">2. Defeito Relatado</label>
+                <textarea class="form-control" id="manutencaoDefeito" rows="2" placeholder="Ex: Tela não liga, câmera com mancha..."></textarea>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label" for="manutencaoDescricao">3. Descrição (Senha, Acessórios, etc.)</label>
+                <textarea class="form-control" id="manutencaoDescricao" rows="2" placeholder="Ex: Senha '1234', sem película, com caixa..."></textarea>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label" for="manutencaoLinkFotos">4. Link das Fotos (Google Drive)</label>
+                <input type="url" class="form-control" id="manutencaoLinkFotos" placeholder="Cole o link da pasta do Drive aqui...">
+            </div>
+
+            <button id="btnEnviarParaTecnico" class="btn btn-primary w-100"><i class="bi bi-send"></i> Registrar Envio</button>
+        </div>
+
+        <div id="listaComTecnico" class="w-100 mt-4">
+            </div>
+    </div>
+
+    <div id="historicoManutencaoContent" class="hidden w-100">
+        </div>
+</div>
     
     <div id="contractPreview"></div>
     <div id="reportPreview"></div>
