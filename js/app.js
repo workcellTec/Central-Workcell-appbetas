@@ -16,8 +16,6 @@ let app, db, auth, userId = null, isAuthReady = false, areRatesLoaded = false;
 let products = [], fuse, selectedAparelhoValue = 0, fecharVendaPrecoBase = 0;
 let currentCalculatorSectionId = 'calculatorHome', productsListener = null, rates = {};
 let boletosListener = null;
-let manutencaoListener = null;
-let produtoSelecionadoParaManutencao = null;
 let installmentNotificationsListener = null;
 let generalNotificationsListener = null;
 let currentMainSectionId = 'main';
@@ -85,9 +83,7 @@ function showMainSection(sectionId) {
     contractContainer.style.display = 'none';
     stockContainer.style.display = 'none';
     adminContainer.style.display = 'none';
-manutencaoContainer.classList.add('hidden');
-manutencaoContainer.style.display = 'none';
-    
+
     if (sectionId === 'main') {
         mainMenu.classList.remove('hidden');
         mainMenu.style.display = 'flex';
@@ -115,17 +111,6 @@ manutencaoContainer.style.display = 'none';
         adminContainer.style.display = 'flex';
         filterAdminProducts();
     }
-    else if (sectionId === 'manutencao') {
-    manutencaoContainer.classList.remove('hidden');
-    manutencaoContainer.style.display = 'flex';
-    // Certificar que a aba "Com Técnico" é a padrão
-    const toggle = document.getElementById('manutencaoModeToggle');
-    if (toggle.checked) {
-        toggle.checked = false;
-        toggle.dispatchEvent(new Event('change'));
-    }
-    loadManutencaoList(); // Função que vamos criar
-}
     currentMainSectionId = sectionId;
 }
 
@@ -806,7 +791,7 @@ function renderAdminProductList(filteredList = products) {
                         </div>
                         <div class="form-group">
                             <label class="form-label">Qtd.</label>
-                            <input type="number" class="form-control text-center" value="${product.quantidade || 0}" data-field="quantidade" min="0" step="1" readonly>
+                            <input type="number" class="form-control text-center" value="${product.quantidade || 0}" data-field="quantidade" min="0" step="1">
                         </div>
                         <div class="form-group full-width">
                             <label class="form-label">Etiqueta</label>
@@ -818,7 +803,6 @@ function renderAdminProductList(filteredList = products) {
                             <input class="form-check-input ignore-toggle-switch-admin" type="checkbox" role="switch" id="ignore-admin-${product.id}" data-id="${product.id}" ${product.ignorarContagem ? 'checked' : ''}>
                             <label class="form-check-label" for="ignore-admin-${product.id}">Ignorar</label>
                         </div>
-                        <button class="btn btn-sm btn-secondary open-color-picker-btn" data-id="${product.id}" title="Editar Cores"><i class="bi bi-palette-fill"></i> Cores</button>
                         <button class="btn btn-sm btn-outline-danger delete-product-btn" data-id="${product.id}"><i class="bi bi-trash"></i> Apagar</button>
                     </div>
                 </div>
@@ -1044,6 +1028,7 @@ function renderStockList(list) {
                         <button class="btn btn-outline-secondary stock-qty-btn" data-change="1" aria-label="Aumentar">+</button>
                     </div>
                     <div class="d-flex align-items-center gap-2">
+                        <button class="btn btn-sm btn-secondary open-color-picker-btn" data-id="${product.id}" title="Editar Cores"><i class="bi bi-palette-fill"></i></button>
                         <button class="btn btn-sm btn-secondary ignore-toggle-btn" data-id="${product.id}" title="${product.ignorarContagem ? 'Mostrar na contagem' : 'Ignorar na contagem'}">
                             <i class="bi ${product.ignorarContagem ? 'bi-eye-slash-fill' : 'bi-eye-fill'}"></i>
                         </button>
@@ -1786,192 +1771,6 @@ function renderScheduledNotificationsAdminList() {
         }
     });
 }
-// --- INÍCIO: Funções do Módulo de Manutenção ---
-
-function handleProdutoManutencaoSelect(product) {
-    produtoSelecionadoParaManutencao = product; // Armazena o produto todo
-    document.getElementById('manutencaoProdutoSearch').value = product.nome;
-    document.getElementById('manutencaoSearchResultsContainer').innerHTML = '';
-}
-
-async function enviarParaTecnico() {
-    if (!produtoSelecionadoParaManutencao) {
-        showCustomModal({ message: "Por favor, selecione um produto da lista." });
-        return;
-    }
-
-    const defeito = document.getElementById('manutencaoDefeito').value.trim();
-    const descricao = document.getElementById('manutencaoDescricao').value.trim();
-    const linkFotos = document.getElementById('manutencaoLinkFotos').value.trim();
-
-    if (!defeito) {
-        showCustomModal({ message: "Por favor, descreva o defeito." });
-        return;
-    }
-
-    const manutencaoData = {
-        produtoId: produtoSelecionadoParaManutencao.id,
-        produtoNome: produtoSelecionadoParaManutencao.nome,
-        defeitoRelatado: defeito,
-        descricaoAdicional: descricao,
-        linkFotos: linkFotos || "",
-        dataEnvio: new Date().toISOString(),
-        status: "Com Técnico"
-    };
-
-    try {
-        await push(ref(db, 'manutencao'), manutencaoData);
-        showCustomModal({ message: "Envio registrado com sucesso!" });
-
-        // Limpa o formulário
-        document.getElementById('manutencaoProdutoSearch').value = '';
-        document.getElementById('manutencaoDefeito').value = '';
-        document.getElementById('manutencaoDescricao').value = '';
-        document.getElementById('manutencaoLinkFotos').value = '';
-        produtoSelecionadoParaManutencao = null;
-
-        // OPCIONAL: Se quiser dar baixa no estoque principal, descomente as linhas abaixo
-        // const prodRef = ref(db, `products/${manutencaoData.produtoId}`);
-        // const novaQtd = (produtoSelecionadoParaManutencao.quantidade || 1) - 1;
-        // await update(prodRef, { quantidade: novaQtd });
-
-    } catch (error) {
-        showCustomModal({ message: `Erro ao registrar: ${error.message}` });
-    }
-}
-
-function loadManutencaoList() {
-    if (!db || !isAuthReady) return;
-
-    const showHistory = document.getElementById('manutencaoModeToggle').checked;
-    const manutencaoRef = ref(db, 'manutencao');
-    const targetContainerId = showHistory ? 'historicoManutencaoContent' : 'listaComTecnico';
-    const targetStatus = showHistory ? "Concluído" : "Com Técnico";
-    const container = document.getElementById(targetContainerId);
-
-    container.innerHTML = '<div class="text-center p-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Carregando...</span></div></div>';
-
-    if (manutencaoListener) off(manutencaoRef, 'value', manutencaoListener);
-
-    manutencaoListener = onValue(manutencaoRef, (snapshot) => {
-        if (!snapshot.exists()) {
-            container.innerHTML = '<p class="text-secondary text-center mt-3">Nenhum item aqui.</p>';
-            return;
-        }
-
-        const data = snapshot.val();
-        let itemsHtml = "";
-        let itemCount = 0;
-
-        // Ordenar por data, mais novo primeiro
-        const sortedKeys = Object.keys(data).sort((a, b) => 
-            new Date(data[b].dataEnvio) - new Date(data[a].dataEnvio)
-        );
-
-        sortedKeys.forEach(key => {
-            const item = data[key];
-            if (item.status === targetStatus) {
-                itemCount++;
-                const dataEnvio = new Date(item.dataEnvio);
-                const dataEnvioFormatada = dataEnvio.toLocaleDateString('pt-BR');
-
-                // A LÓGICA QUE RESOLVE SEU PROBLEMA
-                const diasPassados = (new Date() - dataEnvio) / (1000 * 60 * 60 * 24);
-                let alertaAtraso = '';
-                if (!showHistory && diasPassados > 2) { // 2 dias de "tolerância"
-                    alertaAtraso = `
-                    <div class="alert alert-danger p-2 small mt-2">
-                        <i class="bi bi-alarm-fill"></i> 
-                        Atenção: ${Math.floor(diasPassados)} dias com o técnico!
-                    </div>`;
-                }
-
-                // Botão de Fotos
-                let botaoFotosHtml = '';
-                if (item.linkFotos) {
-                    botaoFotosHtml = `
-                    <a href="${escapeHtml(item.linkFotos)}" target="_blank" class="btn btn-sm btn-info mt-2">
-                        <i class="bi bi-camera-fill"></i> Ver Fotos (Drive)
-                    </a>`;
-                }
-
-                itemsHtml += `
-                <div class="stock-item-card" data-id="${key}" style="${diasPassados > 2 && !showHistory ? 'border-color: var(--primary-color);' : ''}">
-                    <div class="product-info">
-                        <div class="product-name">${escapeHtml(item.produtoNome)}</div>
-                        <p class="mb-0 mt-2"><strong>Defeito:</strong> ${escapeHtml(item.defeitoRelatado)}</p>
-                        <p class="mb-0 mt-1" style="color: var(--primary-color);">
-                            <strong>Obs:</strong> ${escapeHtml(item.descricaoAdicional || 'Nenhuma')}
-                        </p>
-                    </div>
-
-                    <div classd="d-flex flex-column align-items-start w-100">
-                        ${botaoFotosHtml}
-                        ${alertaAtraso}
-                    </div>
-
-                    <div class="stock-item-controls mt-3">
-                        <span class="text-secondary small">
-                            ${showHistory ? 'Recebido em:' : 'Enviado em:'} 
-                            ${showHistory && item.dataRecebimento ? new Date(item.dataRecebimento).toLocaleDateString('pt-BR') : dataEnvioFormatada}
-                        </span>
-                        ${showHistory ? 
-                            `<button class="btn btn-sm btn-outline-danger btn-apagar-historico" data-id="${key}"><i class="bi bi-trash"></i></button>` :
-                            `<button class="btn btn-sm btn-success btn-receber-tecnico" data-id="${key}"><i class="bi bi-box-arrow-in-down"></i> Dar Baixa (Receber)</button>`
-                        }
-                    </div>
-                </div>
-                `;
-            }
-        });
-
-        container.innerHTML = itemCount > 0 ? itemsHtml : '<p class="text-secondary text-center mt-3">Nenhum item aqui.</p>';
-    });
-}
-
-async function darBaixaDoTecnico(id) {
-    showCustomModal({
-        message: "Confirmar recebimento deste aparelho?",
-        confirmText: "Sim, Receber",
-        onConfirm: async () => {
-            const manutencaoRef = ref(db, `manutencao/${id}`);
-            try {
-                await update(manutencaoRef, {
-                    status: "Concluído",
-                    dataRecebimento: new Date().toISOString()
-                });
-
-                // OPCIONAL: Se quiser devolver ao estoque, descomente as linhas abaixo
-                // const snapshot = await get(manutencaoRef); // (precisa importar 'get' lá no topo)
-                // const item = snapshot.val();
-                // const prodRef = ref(db, `products/${item.produtoId}`);
-                // const prodSnapshot = await get(prodRef);
-                // const produto = prodSnapshot.val();
-                // const novaQtd = (produto.quantidade || 0) + 1;
-                // await update(prodRef, { quantidade: novaQtd });
-
-                showCustomModal({ message: "Baixa registrada!" });
-            } catch (error) {
-                showCustomModal({ message: `Erro: ${error.message}` });
-            }
-        },
-        onCancel: () => {}
-    });
-}
-
-async function apagarRegistroManutencao(id) {
-     showCustomModal({
-        message: "Tem certeza que deseja apagar este registro do histórico?",
-        confirmText: "Apagar",
-        onConfirm: async () => {
-            await remove(ref(db, `manutencao/${id}`));
-            showCustomModal({ message: "Registro apagado." });
-        },
-        onCancel: () => {}
-    });
-}
-
-// --- FIM: Funções do Módulo de Manutenção ---
 
 async function main() {
     try {
@@ -2093,46 +1892,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('backFromContract').addEventListener('click', () => showMainSection('main'));
     document.getElementById('backFromStock').addEventListener('click', () => showMainSection('main'));
     document.getElementById('backFromAdmin').addEventListener('click', () => showMainSection('main'));
-    // --- INÍCIO: Listeners da Manutenção ---
-document.getElementById('goToManutencao').addEventListener('click', () => showMainSection('manutencao'));
-document.getElementById('backFromManutencao').addEventListener('click', () => showMainSection('main'));
-
-// Listener da busca de produto
-document.getElementById('manutencaoProdutoSearch').addEventListener('input', () => {
-    displayDynamicSearchResults(
-        document.getElementById('manutencaoProdutoSearch').value, 
-        'manutencaoSearchResultsContainer', 
-        handleProdutoManutencaoSelect
-    );
-});
-
-// Listener do botão de Enviar
-document.getElementById('btnEnviarParaTecnico').addEventListener('click', enviarParaTecnico);
-
-// Listener do Toggle "Com Técnico" / "Histórico"
-document.getElementById('manutencaoModeToggle').addEventListener('change', (e) => {
-    const showHistory = e.target.checked;
-    document.getElementById('comTecnicoContent').classList.toggle('hidden', showHistory);
-    document.getElementById('historicoManutencaoContent').classList.toggle('hidden', !showHistory);
-    loadManutencaoList(); // Recarrega a lista correta
-});
-
-// Listener para os botões de "Receber" e "Apagar"
-document.getElementById('manutencaoContainer').addEventListener('click', (e) => {
-    const btnReceber = e.target.closest('.btn-receber-tecnico');
-    const btnApagar = e.target.closest('.btn-apagar-historico');
-
-    if (btnReceber) {
-        const id = btnReceber.dataset.id;
-        darBaixaDoTecnico(id);
-    }
-    if (btnApagar) {
-        const id = btnApagar.dataset.id;
-        apagarRegistroManutencao(id);
-    }
-});
-// --- FIM: Listeners da Manutenção ---
-    
     document.getElementById('goToAdminFromEmptyState').addEventListener('click', () => showMainSection('administracao'));
 
     ['openFecharVenda', 'openRepassarValores', 'openCalcularEmprestimo', 'openCalcularPorAparelho'].forEach(id => { document.getElementById(id).addEventListener('click', () => openCalculatorSection(id.replace('open', '').charAt(0).toLowerCase() + id.slice(5))); });
@@ -2437,64 +2196,57 @@ document.getElementById('manutencaoContainer').addEventListener('click', (e) => 
     
     const productsListContainer = document.getElementById('productsListContainer');
     productsListContainer.addEventListener('click', e => {
-    const header = e.target.closest('.admin-product-header');
-    if (header) {
-        e.preventDefault();
-        const accordionItem = header.parentElement;
-        if (!accordionItem.classList.contains('is-open')) {
-            const openItems = productsListContainer.querySelectorAll('.admin-product-accordion.is-open');
-            openItems.forEach(item => {
-                if (item !== accordionItem) {
-                    item.classList.remove('is-open');
-                }
-            });
+        const header = e.target.closest('.admin-product-header');
+        if (header) {
+            e.preventDefault();
+            const accordionItem = header.parentElement;
+            if (!accordionItem.classList.contains('is-open')) {
+                const openItems = productsListContainer.querySelectorAll('.admin-product-accordion.is-open');
+                openItems.forEach(item => {
+                    if (item !== accordionItem) {
+                        item.classList.remove('is-open');
+                    }
+                });
+            }
+            accordionItem.classList.toggle('is-open');
+            return;
         }
-        accordionItem.classList.toggle('is-open');
-        return;
-    }
 
-    const deleteBtn = e.target.closest('.delete-product-btn');
-    if (deleteBtn) {
-        e.preventDefault();
-        const id = deleteBtn.dataset.id;
-        showCustomModal({ message: "Excluir este produto?", onConfirm: async () => await remove(ref(db, `products/${id}`)), onCancel: () => {} });
-        return;
-    }
-
-    // LÓGICA DO BOTÃO DE CORES ADICIONADA AQUI
-    const colorBtn = e.target.closest('.open-color-picker-btn');
-    if (colorBtn) {
-        e.preventDefault();
-        const id = colorBtn.dataset.id;
-        openColorPicker(id);
-        return;
-    }
-});
+        const deleteBtn = e.target.closest('.delete-product-btn');
+        if (deleteBtn) {
+            e.preventDefault();
+            const id = deleteBtn.dataset.id;
+            showCustomModal({ message: "Excluir este produto?", onConfirm: async () => await remove(ref(db, `products/${id}`)), onCancel: () => {} });
+            return;
+        }
+    });
     
     productsListContainer.addEventListener('change', e => {
-    if (e.target.matches('.form-control, .form-select')) {
-        const card = e.target.closest('.admin-product-accordion');
-        if (card) {
-            const { field } = e.target.dataset;
-            const id = card.dataset.id;
-            let value;
-            if (field === 'valor') {
-                value = parseBrazilianCurrencyToFloat(e.target.value);
-            // LÓGICA DE QUANTIDADE FOI REMOVIDA DAQUI
-            } else {
-                value = e.target.value;
-            }
-            if (id && field && value !== undefined) {
-                updateProductInDB(id, { [field]: value });
+        if (e.target.matches('.form-control, .form-select')) {
+            const card = e.target.closest('.admin-product-accordion');
+            if (card) {
+                const { field } = e.target.dataset;
+                const id = card.dataset.id;
+                let value;
+                if (field === 'valor') {
+                    value = parseBrazilianCurrencyToFloat(e.target.value);
+                } else if (field === 'quantidade') {
+                    value = parseInt(e.target.value, 10);
+                    if (isNaN(value) || value < 0) value = 0;
+                } else {
+                    value = e.target.value;
+                }
+                if (id && field && value !== undefined) {
+                    updateProductInDB(id, { [field]: value });
+                }
             }
         }
-    }
-    if (e.target.matches('.ignore-toggle-switch-admin')) {
-        const id = e.target.dataset.id;
-        const isChecked = e.target.checked;
-        updateProductInDB(id, { ignorarContagem: isChecked });
-    }
-});
+        if (e.target.matches('.ignore-toggle-switch-admin')) {
+            const id = e.target.dataset.id;
+            const isChecked = e.target.checked;
+            updateProductInDB(id, { ignorarContagem: isChecked });
+        }
+    });
 
     document.getElementById('admin-nav-buttons').addEventListener('click', e => {
         if (e.target.tagName !== 'BUTTON') return;
@@ -2769,28 +2521,32 @@ document.getElementById('manutencaoContainer').addEventListener('click', (e) => 
         });
         
         stockTableBody.addEventListener('click', e => {
-    const qtyButton = e.target.closest('.stock-qty-btn');
-    const ignoreBtn = e.target.closest('.ignore-toggle-btn');
-    if (qtyButton) {
-        const change = parseInt(qtyButton.dataset.change, 10);
-        const input = qtyButton.parentElement.querySelector('.stock-qty-input');
-        if(!input) return;
-        let currentValue = parseInt(input.value, 10);
-        if (isNaN(currentValue)) currentValue = 0;
-        const newValue = Math.max(0, currentValue + change);
-        input.value = newValue;
-        handleStockUpdate(input);
-    }
-    // LÓGICA DO BOTÃO DE CORES REMOVIDA DAQUI
-    if (ignoreBtn) {
-        const id = ignoreBtn.dataset.id;
-        const product = products.find(p => p.id === id);
-        if (product) {
-            const newIgnoredState = !product.ignorarContagem;
-            updateProductInDB(id, { ignorarContagem: newIgnoredState });
-        }
-    }
-});
+            const qtyButton = e.target.closest('.stock-qty-btn');
+            const colorButton = e.target.closest('.open-color-picker-btn');
+            const ignoreBtn = e.target.closest('.ignore-toggle-btn');
+            if (qtyButton) {
+                const change = parseInt(qtyButton.dataset.change, 10);
+                const input = qtyButton.parentElement.querySelector('.stock-qty-input');
+                if(!input) return;
+                let currentValue = parseInt(input.value, 10);
+                if (isNaN(currentValue)) currentValue = 0;
+                const newValue = Math.max(0, currentValue + change);
+                input.value = newValue;
+                handleStockUpdate(input);
+            }
+            if (colorButton) {
+                const id = colorButton.dataset.id;
+                openColorPicker(id);
+            }
+            if (ignoreBtn) {
+                const id = ignoreBtn.dataset.id;
+                const product = products.find(p => p.id === id);
+                if (product) {
+                    const newIgnoredState = !product.ignorarContagem;
+                    updateProductInDB(id, { ignorarContagem: newIgnoredState });
+                }
+            }
+        });
     }
 
     const colorPickerModal = document.getElementById('colorPickerModalOverlay');
