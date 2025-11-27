@@ -19,6 +19,51 @@
 
     <script src="https://cdn.jsdelivr.net/npm/fuse.js/dist/fuse.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    
+    <style>
+    /* Força o layout lado a lado */
+    .product-action-buttons {
+        display: flex !important;
+        gap: 12px !important;
+        margin-top: 15px !important;
+    }
+
+    /* Estilo base dos botões (Pílula Redondinha) */
+    .btn-action-sm {
+        flex: 1 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 8px !important;
+        padding: 12px 15px !important;
+        border-radius: 50px !important; /* Bem redondo */
+        font-size: 0.9rem !important;
+        font-weight: 600 !important;
+        border: none !important; /* Remove a borda cinza feia */
+        cursor: pointer !important;
+        transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important; /* Sombra suave */
+    }
+
+    /* Botão Editar Valor (Verde Dinheiro) */
+    .edit-price-btn {
+        background-color: rgba(16, 185, 129, 0.15) !important; /* Fundo verde transparente */
+        color: #10b981 !important; /* Texto verde */
+    }
+    
+    /* Botão Editar Cores (Roxo/Azul do Sistema) */
+    .edit-colors-btn {
+        background-color: rgba(139, 92, 246, 0.15) !important; /* Fundo roxo transparente */
+        color: #8b5cf6 !important; /* Texto roxo */
+    }
+
+    /* Efeito ao clicar/passar mouse */
+    .btn-action-sm:active, .btn-action-sm:hover {
+        transform: translateY(-2px) !important; /* Sobe um pouquinho */
+        filter: brightness(1.1) !important;
+    }
+</style>
+
 </head>
 <body>
     <div id="loadingOverlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: var(--tertiary-color); z-index: 10000; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.5s ease;">
@@ -439,6 +484,20 @@
     </div>
     
     <div id="toastNotification"></div>
+
+    <div class="custom-modal-overlay" id="editPriceModalOverlay">
+        <div class="custom-modal-content">
+            <h4>Editar Valor do Produto</h4>
+            <p class="text-secondary small mb-3">Este valor será alterado apenas para este cálculo.</p>
+            <input class="form-control form-control-lg mb-3" id="editPriceInput" type="number" step="0.01" inputmode="decimal" placeholder="0,00"/>
+            <input type="hidden" id="editPriceProductIndex">
+            <div class="d-flex gap-2 justify-content-center mt-3">
+                <button class="btn btn-secondary" id="cancelEditPriceBtn">Cancelar</button>
+                <button class="btn btn-primary" id="confirmEditPriceBtn">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
     
     <div class="custom-modal-overlay" id="lucroModalOverlay">
         <div class="custom-modal-content">
