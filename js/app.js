@@ -584,42 +584,59 @@ function calculateAparelho() {
 }
 
 function handleProductSelectionForAparelho(product) {
-    carrinhoDeAparelhos.push(product);
-    document.getElementById('aparelhoSearch').value = ''; // Limpa a busca para o próximo item
+    // Adiciona como cópia para permitir edição
+    carrinhoDeAparelhos.push({ ...product }); 
+    const currentIndex = carrinhoDeAparelhos.length - 1;
+    
+    document.getElementById('aparelhoSearch').value = ''; 
     document.getElementById('aparelhoResultsContainer').innerHTML = '';
     document.getElementById('aparelhoSearch').focus();
 
-    // Se este é o PRIMEIRO produto adicionado, define o valor extra padrão
     if (carrinhoDeAparelhos.length === 1) {
         document.getElementById('valorExtraAparelho').value = '40';
     }
-
-    // NOVO: Mostra um aviso quando o segundo produto é adicionado
     if (carrinhoDeAparelhos.length === 2) {
         showCustomModal({ message: "Múltiplos produtos: Textos de etiqueta desativados." });
     }
 
-    // LÓGICA ATUALIZADA DA NOTA COM O LÁPIS
+    // --- NOVO DESIGN DO CARD ---
     const infoNoteEl = document.getElementById('aparelhoInfoNote');
+    
+    let dateInfo = "Verificado hoje";
     if (product.lastCheckedTimestamp) {
-        const date = new Date(product.lastCheckedTimestamp).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-        const colorsString = (product.cores && product.cores.length > 0)
-            ? product.cores.map(c => c.nome).join(', ')
-            : 'Nenhuma cor cadastrada';
-            
-        // Adicionando o botão de lápis aqui
-        const editBtn = `<button class="btn btn-sm text-primary edit-colors-shortcut" style="padding: 0 0 0 8px; border: none; background: none; line-height: 1;" data-id="${product.id}" title="Editar cores"><i class="bi bi-pencil-square"></i></button>`;
-        
-        infoNoteEl.innerHTML = `<div class="d-flex align-items-center justify-content-center flex-wrap gap-1"><i class="bi bi-info-circle"></i> <span><strong>Último item:</strong> Checado em ${date} - Cores: ${colorsString}</span> ${editBtn}</div>`;
-        infoNoteEl.classList.remove('hidden');
-    } else {
-         infoNoteEl.classList.add('hidden');
+        dateInfo = "Verificado em " + new Date(product.lastCheckedTimestamp).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
     }
 
-    // Atualiza a interface
+    let colorsHtml = '';
+    if (product.cores && product.cores.length > 0) {
+        colorsHtml = product.cores.map(c => `<div class="color-pill"><div class="color-swatch-sm" style="background-color:${c.hex};"></div>${c.nome}</div>`).join('');
+    } else {
+        colorsHtml = '<span class="text-secondary small ms-1">Sem cores definidas</span>';
+    }
+
+    infoNoteEl.innerHTML = `
+        <div class="product-action-card">
+            <div class="product-action-header">
+                <div class="product-action-info">
+                    <h5>${escapeHtml(product.nome)}</h5>
+                    <div class="product-action-date"><i class="bi bi-clock-history"></i> ${dateInfo}</div>
+                </div>
+                <div class="text-success fw-bold fs-5">
+                    ${parseFloat(product.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </div>
+            </div>
+            <div class="product-action-colors my-2">${colorsHtml}</div>
+            <div class="product-action-buttons">
+                <button class="btn-action-sm edit-price-btn" data-index="${currentIndex}"><i class="bi bi-cash-coin"></i> Editar Valor</button>
+                <button class="btn-action-sm edit-colors-btn" data-id="${product.id}"><i class="bi bi-palette"></i> Editar Cores</button>
+            </div>
+        </div>`;
+    
+    infoNoteEl.classList.remove('hidden');
     renderCarrinho();
     calculateAparelho();
 }
+
 
 function handleProductSelectionForVenda(product) {
     fecharVendaPrecoBase = parseFloat(product.valor);
@@ -1827,13 +1844,43 @@ document.addEventListener('DOMContentLoaded', () => {
     
     document.getElementById('notification-bell').addEventListener('click', () => notificationOffcanvas.toggle());
     
-    // LISTENER PARA O LÁPIS DA NOTA DE CORES
+    // LISTENER PARA O NOVO CARD (Cores e Preço)
     document.getElementById('aparelhoInfoNote').addEventListener('click', (e) => {
-        const editBtn = e.target.closest('.edit-colors-shortcut');
-        if (editBtn) {
-            e.preventDefault(); // Evita comportamentos estranhos
-            const id = editBtn.dataset.id;
-            openColorPicker(id);
+        // Botão Editar Cores
+        const colorBtn = e.target.closest('.edit-colors-btn');
+        if (colorBtn) { e.preventDefault(); openColorPicker(colorBtn.dataset.id); }
+
+        // Botão Editar Valor (NOVO)
+        const priceBtn = e.target.closest('.edit-price-btn');
+        if (priceBtn) {
+            e.preventDefault();
+            const index = priceBtn.dataset.index;
+            const item = carrinhoDeAparelhos[index];
+            document.getElementById('editPriceInput').value = item.valor;
+            document.getElementById('editPriceProductIndex').value = index;
+            document.getElementById('editPriceModalOverlay').classList.add('active');
+            setTimeout(() => document.getElementById('editPriceInput').focus(), 100);
+        }
+    });
+
+    // Lógica do Modal de Editar Preço
+    const closePriceModal = () => document.getElementById('editPriceModalOverlay').classList.remove('active');
+    document.getElementById('cancelEditPriceBtn').addEventListener('click', closePriceModal);
+    
+    document.getElementById('confirmEditPriceBtn').addEventListener('click', () => {
+        const index = document.getElementById('editPriceProductIndex').value;
+        const newVal = parseFloat(document.getElementById('editPriceInput').value);
+        if (!isNaN(newVal) && newVal > 0) {
+            carrinhoDeAparelhos[index].valor = newVal; // Atualiza valor
+            renderCarrinho();
+            calculateAparelho();
+            // Atualiza visualmente o preço no card
+            const cardPriceEl = document.querySelector('.product-action-header .text-success');
+            if(cardPriceEl) cardPriceEl.textContent = newVal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+            closePriceModal();
+            showCustomModal({ message: "Valor atualizado!" });
+        } else {
+            showCustomModal({ message: "Valor inválido." });
         }
     });
     
