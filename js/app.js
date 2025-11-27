@@ -567,6 +567,16 @@ function calculateAparelho() {
 
     let finalHtml = headerHtml;
     if(tableRows) {
+        // --- ADIÇÃO: Toggle de Seleção Múltipla ---
+        finalHtml += `
+        <div class="d-flex justify-content-end align-items-center mb-2 px-2">
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="multiSelectToggle">
+                <label class="form-check-label small" for="multiSelectToggle">Selecionar Vários</label>
+            </div>
+        </div>`;
+        // ------------------------------------------
+        
         finalHtml += `<div class="table-responsive"><table class="table results-table"><thead><tr><th>Parcelas</th><th>Valor da Parcela</th><th>Total a Passar</th></tr></thead><tbody>${tableRows}</tbody></table></div>`;
     }
     resultDiv.innerHTML = finalHtml;
@@ -589,14 +599,18 @@ function handleProductSelectionForAparelho(product) {
         showCustomModal({ message: "Múltiplos produtos: Textos de etiqueta desativados." });
     }
 
-    // Re-adicionando a lógica para mostrar as cores do ÚLTIMO produto adicionado
+    // LÓGICA ATUALIZADA DA NOTA COM O LÁPIS
     const infoNoteEl = document.getElementById('aparelhoInfoNote');
     if (product.lastCheckedTimestamp) {
         const date = new Date(product.lastCheckedTimestamp).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
         const colorsString = (product.cores && product.cores.length > 0)
             ? product.cores.map(c => c.nome).join(', ')
             : 'Nenhuma cor cadastrada';
-        infoNoteEl.innerHTML = `<i class="bi bi-info-circle"></i> <strong>Último item:</strong> Checado em ${date} - Cores: ${colorsString}`;
+            
+        // Adicionando o botão de lápis aqui
+        const editBtn = `<button class="btn btn-sm text-primary edit-colors-shortcut" style="padding: 0 0 0 8px; border: none; background: none; line-height: 1;" data-id="${product.id}" title="Editar cores"><i class="bi bi-pencil-square"></i></button>`;
+        
+        infoNoteEl.innerHTML = `<div class="d-flex align-items-center justify-content-center flex-wrap gap-1"><i class="bi bi-info-circle"></i> <span><strong>Último item:</strong> Checado em ${date} - Cores: ${colorsString}</span> ${editBtn}</div>`;
         infoNoteEl.classList.remove('hidden');
     } else {
          infoNoteEl.classList.add('hidden');
@@ -1810,7 +1824,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const notificationOffcanvasEl = document.getElementById('notificationPanel');
     const notificationOffcanvas = bootstrap.Offcanvas.getOrCreateInstance(notificationOffcanvasEl);
     
+    
     document.getElementById('notification-bell').addEventListener('click', () => notificationOffcanvas.toggle());
+    
+    // LISTENER PARA O LÁPIS DA NOTA DE CORES
+    document.getElementById('aparelhoInfoNote').addEventListener('click', (e) => {
+        const editBtn = e.target.closest('.edit-colors-shortcut');
+        if (editBtn) {
+            e.preventDefault(); // Evita comportamentos estranhos
+            const id = editBtn.dataset.id;
+            openColorPicker(id);
+        }
+    });
     
     document.getElementById('notificationList').addEventListener('click', (e) => {
         const item = e.target.closest('.notification-item');
@@ -1957,75 +1982,166 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // INSERIR BOTÃO FLUTUANTE NA DOM SE NÃO EXISTIR
+    if (!document.getElementById('fabCopyMulti')) {
+        const fab = document.createElement('button');
+        fab.id = 'fabCopyMulti';
+        fab.className = 'btn btn-primary';
+        fab.innerHTML = '<i class="bi bi-clipboard-check"></i> Copiar Seleção';
+        document.body.appendChild(fab);
+        
+        // Ação do Botão Flutuante
+        fab.addEventListener('click', () => {
+            const selectedRows = document.querySelectorAll('#resultCalcularPorAparelho .copyable-row.is-selected');
+            if (selectedRows.length === 0) return;
+
+            // Coleta dados
+            let simulations = [];
+            selectedRows.forEach(row => {
+                const inst = row.dataset.installments;
+                const parc = parseFloat(row.dataset.parcela).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                const tot = parseFloat(row.dataset.total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                
+                let lineText = '';
+                if (inst === 'Débito') {
+                    lineText = `Débito: ${parc}`;
+                } else {
+                    lineText = `${inst}x de ${parc}`; // Removido o total individual para ficar mais limpo na lista, ou pode manter
+                    // Se quiser manter o total em cada linha: lineText = `${inst}x de ${parc} (Total: ${tot})`;
+                }
+                simulations.push(lineText);
+            });
+
+            // Monta o bloco de simulações com "Ou"
+            let simulationBlock = simulations.map((text, index) => {
+                return index === 0 ? text : `Ou ${text}`;
+            }).join('\n');
+
+            // Dados do Produto
+            const productCounts = carrinhoDeAparelhos.reduce((acc, product) => {
+                acc[product.nome] = (acc[product.nome] || 0) + 1;
+                return acc;
+            }, {});
+            const produtoNome = Object.entries(productCounts)
+                .map(([nome, qtd]) => qtd > 1 ? `${qtd}x ${nome}` : nome)
+                .join(' e ');
+
+            // Dados da Entrada
+            const entradaValue = parseFloat(document.getElementById('entradaAparelho').value) || 0;
+            let entradaText = '';
+            if (entradaValue > 0) {
+                const entradaFormatted = entradaValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                entradaText = `\n"+${entradaFormatted} no dinheiro ou pix"`;
+            }
+
+            // Dados da Etiqueta
+            let customText = '';
+            if (carrinhoDeAparelhos.length === 1) {
+                const produtoUnico = carrinhoDeAparelhos[0];
+                if (produtoUnico.tag && produtoUnico.tag !== 'Nenhuma' && tagTexts[produtoUnico.tag]) {
+                    customText = `\n\n${tagTexts[produtoUnico.tag]}`;
+                }
+            }
+
+            // Montagem Final
+            let textToCopy;
+            const invertOrder = safeStorage.getItem('ctwInvertCopyOrder') === 'true';
+            
+            if (invertOrder) {
+                textToCopy = `${produtoNome}\n${simulationBlock}${entradaText}${customText}`;
+            } else {
+                textToCopy = `${simulationBlock}${entradaText}\n\n${produtoNome}${customText}`;
+            }
+
+            // Copiar
+            const textArea = document.createElement("textarea");
+            textArea.value = textToCopy;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            
+            showCustomModal({ message: 'Simulações copiadas!' });
+            
+            // Limpar seleção
+            selectedRows.forEach(r => r.classList.remove('is-selected'));
+            fab.style.display = 'none';
+        });
+    }
+
+    // LISTENER DA TABELA (ATUALIZADO)
     document.getElementById('resultCalcularPorAparelho').addEventListener('click', (e) => {
+        // Verifica toggle
+        const toggle = document.getElementById('multiSelectToggle');
+        const isMultiMode = toggle && toggle.checked;
+
         const row = e.target.closest('.copyable-row');
         if (!row || carrinhoDeAparelhos.length === 0) return;
-        
-        const installments = row.dataset.installments;
-        const parcelaValue = parseFloat(row.dataset.parcela);
-        const totalValue = parseFloat(row.dataset.total);
-        const entradaValue = parseFloat(document.getElementById('entradaAparelho').value) || 0;
-        
-        const parcelaFormatted = parcelaValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-        const totalFormatted = totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-        
-        // Lógica para gerar o nome dos produtos
-        const productCounts = carrinhoDeAparelhos.reduce((acc, product) => {
-            acc[product.nome] = (acc[product.nome] || 0) + 1;
-            return acc;
-        }, {});
-        const produtoNome = Object.entries(productCounts)
-            .map(([nome, qtd]) => qtd > 1 ? `${qtd}x ${nome}` : nome)
-            .join(' e ');
 
-        let entradaText = '';
-        if (entradaValue > 0) {
-            const entradaFormatted = entradaValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-            entradaText = `\n"+${entradaFormatted} no dinheiro ou pix"`;
-        }
-        
-        // Desativa texto de etiqueta se tiver mais de 1 produto no carrinho
-        let customText = '';
-        if (carrinhoDeAparelhos.length === 1) {
-            const produtoUnico = carrinhoDeAparelhos[0];
-            if (produtoUnico.tag && produtoUnico.tag !== 'Nenhuma' && tagTexts[produtoUnico.tag]) {
-                customText = `\n\n${tagTexts[produtoUnico.tag]}`;
-            }
-        }
-        
-        let textToCopy;
-        const invertOrder = safeStorage.getItem('ctwInvertCopyOrder') === 'true';
-        const simulationBlock = `${installments}x ${parcelaFormatted}\n_(Total: ${totalFormatted})_${entradaText}`;
-        const productNameBlock = produtoNome;
-        const customTextBlock = customText;
-
-        if (invertOrder) {
-            textToCopy = `${productNameBlock}\n${simulationBlock}${customTextBlock}`;
-        } else {
-            textToCopy = `${simulationBlock}\n ${productNameBlock}${customTextBlock}`;
-        }
-        
-        const textArea = document.createElement("textarea");
-        textArea.value = textToCopy;
-        textArea.style.position = "fixed";
-        textArea.style.top = "0";
-        textArea.style.left = "0";
-        textArea.style.opacity = "0";
-        document.body.appendChild(textArea);
-        textArea.focus();
-        textArea.select();
-        try {
-            const successful = document.execCommand('copy');
-            if (successful) {
-                showCustomModal({ message: 'Simulação copiada!' });
+        if (isMultiMode) {
+            // MODO SELEÇÃO MÚLTIPLA
+            row.classList.toggle('is-selected');
+            
+            const count = document.querySelectorAll('#resultCalcularPorAparelho .copyable-row.is-selected').length;
+            const fab = document.getElementById('fabCopyMulti');
+            
+            if (count > 0) {
+                fab.style.display = 'block';
+                fab.innerHTML = `<i class="bi bi-clipboard-check"></i> Copiar (${count})`;
             } else {
-                showCustomModal({ message: 'Falha ao copiar.' });
+                fab.style.display = 'none';
             }
-        } catch (err) {
-            console.error('Erro ao copiar:', err);
-            showCustomModal({ message: 'Erro ao copiar.' });
+            
+        } else {
+            // MODO CLÁSSICO (Copia um só) - CÓDIGO ORIGINAL MANTIDO AQUI
+            const installments = row.dataset.installments;
+            const parcelaValue = parseFloat(row.dataset.parcela);
+            const totalValue = parseFloat(row.dataset.total);
+            const entradaValue = parseFloat(document.getElementById('entradaAparelho').value) || 0;
+            
+            const parcelaFormatted = parcelaValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+            const totalFormatted = totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+            
+            const productCounts = carrinhoDeAparelhos.reduce((acc, product) => {
+                acc[product.nome] = (acc[product.nome] || 0) + 1;
+                return acc;
+            }, {});
+            const produtoNome = Object.entries(productCounts)
+                .map(([nome, qtd]) => qtd > 1 ? `${qtd}x ${nome}` : nome)
+                .join(' e ');
+
+            let entradaText = '';
+            if (entradaValue > 0) {
+                const entradaFormatted = entradaValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                entradaText = `\n"+${entradaFormatted} no dinheiro ou pix"`;
+            }
+            
+            let customText = '';
+            if (carrinhoDeAparelhos.length === 1) {
+                const produtoUnico = carrinhoDeAparelhos[0];
+                if (produtoUnico.tag && produtoUnico.tag !== 'Nenhuma' && tagTexts[produtoUnico.tag]) {
+                    customText = `\n\n${tagTexts[produtoUnico.tag]}`;
+                }
+            }
+            
+            let textToCopy;
+            const invertOrder = safeStorage.getItem('ctwInvertCopyOrder') === 'true';
+            const simulationBlock = `${installments}x ${parcelaFormatted}\n_(Total: ${totalFormatted})_${entradaText}`;
+            
+            if (invertOrder) {
+                textToCopy = `${produtoNome}\n${simulationBlock}${customText}`;
+            } else {
+                textToCopy = `${simulationBlock}\n ${produtoNome}${customText}`;
+            }
+            
+            const textArea = document.createElement("textarea");
+            textArea.value = textToCopy;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            showCustomModal({ message: 'Simulação copiada!' });
         }
-        document.body.removeChild(textArea);
     });
 
     ['resultRepassarValores', 'resultCalcularEmprestimo'].forEach(containerId => {
@@ -2576,6 +2692,32 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     document.getElementById('cancelColorPicker').addEventListener('click', () => colorPickerModal.classList.remove('active'));
     document.getElementById('saveColorPicker').addEventListener('click', () => {
+        if (currentEditingProductId) {
+            // ATUALIZAÇÃO: Salva as cores E a data atual
+            const newTimestamp = Date.now();
+            updateProductInDB(currentEditingProductId, { 
+                cores: tempSelectedColors,
+                lastCheckedTimestamp: newTimestamp
+            });
+            
+            // ATUALIZAÇÃO VISUAL IMEDIATA DA NOTA (Se ela estiver visível para este produto)
+            const infoNoteEl = document.getElementById('aparelhoInfoNote');
+            const shortcutBtn = infoNoteEl.querySelector('.edit-colors-shortcut');
+            
+            // Verifica se a nota que está na tela é do produto que acabamos de editar
+            if (shortcutBtn && shortcutBtn.dataset.id === currentEditingProductId) {
+                const date = new Date(newTimestamp).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+                const colorsString = tempSelectedColors.length > 0 
+                    ? tempSelectedColors.map(c => c.nome).join(', ') 
+                    : 'Nenhuma cor cadastrada';
+                
+                // Reconstrói o HTML da nota com os dados novos
+                const editBtn = `<button class="btn btn-sm text-primary edit-colors-shortcut" style="padding: 0 0 0 8px; border: none; background: none; line-height: 1;" data-id="${currentEditingProductId}" title="Editar cores"><i class="bi bi-pencil-square"></i></button>`;
+                infoNoteEl.innerHTML = `<div class="d-flex align-items-center justify-content-center flex-wrap gap-1"><i class="bi bi-info-circle"></i> <span><strong>Último item:</strong> Checado em ${date} - Cores: ${colorsString}</span> ${editBtn}</div>`;
+            }
+        }
+        colorPickerModal.classList.remove('active');
+    });('click', () => {
         if (currentEditingProductId) {
             updateProductInDB(currentEditingProductId, { cores: tempSelectedColors });
             // A lógica que marcava o item como 'conferido' automaticamente foi removida.
