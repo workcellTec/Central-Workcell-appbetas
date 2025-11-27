@@ -1007,3 +1007,68 @@ input[type="color"]::-moz-color-swatch { border-radius: 50%; border: 1px solid v
 .btn-action-sm i {
     font-size: 1rem;
 }
+
+    /* --- CORREÇÃO DE LAYOUT DO CARD --- */
+
+/* 1. Cores lado a lado (Inline) */
+.product-action-colors {
+    display: flex;
+    flex-wrap: wrap; /* Se tiver muitas cores, quebra linha de forma bonita */
+    gap: 8px; /* Espaço entre as cores */
+    align-items: center;
+    margin: 10px 0; /* Espaço acima e abaixo */
+}
+
+/* Estilo da "etiqueta" de cor individual */
+.color-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background-color: rgba(255, 255, 255, 0.05); /* Fundo bem sutil */
+    border: 1px solid var(--glass-border);
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+/* A bolinha da cor */
+.color-swatch-sm {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.2);
+    display: inline-block;
+}
+
+/* 2. Cabeçalho do Card (Nome + Data + Botão X) */
+.product-action-header {
+    display: flex;
+    justify-content: space-between; /* Joga o texto pra esq e o X pra direita */
+    align-items: flex-start;
+    padding-bottom: 5px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    margin-bottom: 5px;
+}
+
+/* 3. O Botão "X" Moderno */
+.btn-remove-card {
+    background: transparent; /* Remove o fundo cinza feio */
+    border: none; /* Remove a borda quadrada */
+    color: #ff4d4d; /* Cor vermelha suave */
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 5px;
+    margin-left: 10px;
+    transition: transform 0.2s, color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-remove-card:hover {
+    transform: scale(1.2); /* Aumenta um pouco ao passar o mouse */
+    color: #ff0000;
+}
