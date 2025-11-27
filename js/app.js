@@ -1009,10 +1009,14 @@ function setupFuse() {
     fuse = new Fuse(products, {
         keys: ['nome'],
         includeScore: true,
-        threshold: 0.3,
+        // CONFIGURAÇÃO TURBINADA:
+        threshold: 0.2,       // Deixamos bem mais rigoroso (antes era 0.3).
+        ignoreLocation: true, // O SEGREDO: Ignora se tem emoji no começo, foca só se as letras batem.
         minMatchCharLength: 2,
+        useExtendedSearch: true // Entende melhor palavras separadas
     });
 }
+
 
 let currentEditingProductId = null;
 let tempSelectedColors = [];
@@ -1039,6 +1043,27 @@ function renderStockList(list) {
     const container = document.getElementById('stockTableBody');
     if (!container) return;
     
+    // --- CÓDIGO NOVO: ATUALIZA A BARRA DE PROGRESSO ---
+    // 1. Pega apenas produtos que contam (ignora os "ignorarContagem")
+    const totalInventory = products.filter(p => !p.ignorarContagem);
+    const totalCount = totalInventory.length;
+    
+    // 2. Conta quantos desses estão marcados no checkedItems
+    const checkedCount = totalInventory.reduce((acc, p) => {
+        return acc + (checkedItems[p.id]?.checked ? 1 : 0);
+    }, 0);
+
+    // 3. Calcula a porcentagem
+    const percent = totalCount > 0 ? (checkedCount / totalCount) * 100 : 0;
+
+    // 4. Atualiza a tela
+    const bar = document.getElementById('stockProgressBar');
+    const text = document.getElementById('stockProgressText');
+    
+    if (bar) bar.style.width = `${percent}%`;
+    if (text) text.innerHTML = `<span style="color: var(--text-color);">${checkedCount}</span> de ${totalCount} conferidos (${Math.round(percent)}%)`;
+    // --------------------------------------------------
+
     const sortedList = [...list].sort((a, b) => {
         const aIsChecked = checkedItems[a.id]?.checked || false;
         const bIsChecked = checkedItems[b.id]?.checked || false;
@@ -1083,18 +1108,32 @@ function renderStockList(list) {
     }
 }
 
+
 function filterStockProducts() {
     const searchTerm = document.getElementById('stockSearchInput').value;
     let baseList;
+    
+    // Filtra primeiro quem está ignorado ou não
     if (onlyShowIgnored) {
         baseList = products.filter(p => p.ignorarContagem);
     } else {
         baseList = products.filter(p => !p.ignorarContagem);
     }
-    const fuseInstance = new Fuse(baseList, { keys: ['nome'], threshold: 0.4 });
+
+    // Configuração de busca ESPECIAL para o estoque (Mais exata)
+    const fuseInstance = new Fuse(baseList, { 
+        keys: ['nome'], 
+        threshold: 0.2,       // Rigoroso: Evita mostrar "X7" quando digita "F7"
+        ignoreLocation: true, // Ignora os emojis atrapalhando o começo da frase
+        useExtendedSearch: true 
+    });
+
+    // Se não tiver nada escrito, mostra tudo. Se tiver, usa a busca inteligente.
     const filtered = !searchTerm ? baseList : fuseInstance.search(searchTerm).map(r => r.item);
+    
     renderStockList(filtered);
 }
+
 
 function generateStockReport() {
     const reportPreview = document.getElementById('reportPreview');
