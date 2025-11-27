@@ -1982,12 +1982,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // INSERIR BOTÃO FLUTUANTE NA DOM SE NÃO EXISTIR
-    if (!document.getElementById('fabCopyMulti')) {
-        const fab = document.createElement('button');
+    // --- CÓDIGO DO PASSO 3: Lógica de Seleção Múltipla e Cópia (CORRIGIDO) ---
+
+    // 1. Cria o Botão Flutuante (se ainda não existir)
+    let fab = document.getElementById('fabCopyMulti');
+    
+    if (!fab) {
+        fab = document.createElement('button');
         fab.id = 'fabCopyMulti';
         fab.className = 'btn btn-primary';
         fab.innerHTML = '<i class="bi bi-clipboard-check"></i> Copiar Seleção';
+        // CORREÇÃO: Força ele a começar invisível
+        fab.style.display = 'none'; 
         document.body.appendChild(fab);
         
         // Ação do Botão Flutuante
@@ -2000,19 +2006,17 @@ document.addEventListener('DOMContentLoaded', () => {
             selectedRows.forEach(row => {
                 const inst = row.dataset.installments;
                 const parc = parseFloat(row.dataset.parcela).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                const tot = parseFloat(row.dataset.total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
                 
                 let lineText = '';
                 if (inst === 'Débito') {
                     lineText = `Débito: ${parc}`;
                 } else {
-                    lineText = `${inst}x de ${parc}`; // Removido o total individual para ficar mais limpo na lista, ou pode manter
-                    // Se quiser manter o total em cada linha: lineText = `${inst}x de ${parc} (Total: ${tot})`;
+                    lineText = `${inst}x de ${parc}`; 
                 }
                 simulations.push(lineText);
             });
 
-            // Monta o bloco de simulações com "Ou"
+            // Monta o bloco com "Ou"
             let simulationBlock = simulations.map((text, index) => {
                 return index === 0 ? text : `Ou ${text}`;
             }).join('\n');
@@ -2058,24 +2062,26 @@ document.addEventListener('DOMContentLoaded', () => {
             textArea.value = textToCopy;
             document.body.appendChild(textArea);
             textArea.select();
-            document.execCommand('copy');
+            try {
+                document.execCommand('copy');
+                showCustomModal({ message: 'Simulações copiadas!' });
+            } catch (err) {
+                showCustomModal({ message: 'Erro ao copiar.' });
+            }
             document.body.removeChild(textArea);
             
-            showCustomModal({ message: 'Simulações copiadas!' });
-            
-            // Limpar seleção
+            // Limpa a seleção e esconde o botão
             selectedRows.forEach(r => r.classList.remove('is-selected'));
             fab.style.display = 'none';
         });
     }
 
-    // LISTENER DA TABELA (ATUALIZADO)
+    // 2. O Novo Event Listener da Tabela
     document.getElementById('resultCalcularPorAparelho').addEventListener('click', (e) => {
-        // Verifica toggle
         const toggle = document.getElementById('multiSelectToggle');
         const isMultiMode = toggle && toggle.checked;
-
         const row = e.target.closest('.copyable-row');
+        
         if (!row || carrinhoDeAparelhos.length === 0) return;
 
         if (isMultiMode) {
@@ -2083,17 +2089,23 @@ document.addEventListener('DOMContentLoaded', () => {
             row.classList.toggle('is-selected');
             
             const count = document.querySelectorAll('#resultCalcularPorAparelho .copyable-row.is-selected').length;
-            const fab = document.getElementById('fabCopyMulti');
+            const fabBtn = document.getElementById('fabCopyMulti');
             
+            // CORREÇÃO: Só mostra se count > 0
             if (count > 0) {
-                fab.style.display = 'block';
-                fab.innerHTML = `<i class="bi bi-clipboard-check"></i> Copiar (${count})`;
+                fabBtn.style.display = 'block';
+                fabBtn.innerHTML = `<i class="bi bi-clipboard-check"></i> Copiar (${count})`;
             } else {
-                fab.style.display = 'none';
+                fabBtn.style.display = 'none';
             }
             
         } else {
-            // MODO CLÁSSICO (Copia um só) - CÓDIGO ORIGINAL MANTIDO AQUI
+            // MODO CLÁSSICO (Cópia única)
+            // Esconde o botão múltiplo se alguém clicar no modo simples por engano
+            document.getElementById('fabCopyMulti').style.display = 'none';
+            document.querySelectorAll('#resultCalcularPorAparelho .copyable-row.is-selected').forEach(r => r.classList.remove('is-selected'));
+
+            // Lógica original de cópia única...
             const installments = row.dataset.installments;
             const parcelaValue = parseFloat(row.dataset.parcela);
             const totalValue = parseFloat(row.dataset.total);
@@ -2142,6 +2154,16 @@ document.addEventListener('DOMContentLoaded', () => {
             document.body.removeChild(textArea);
             showCustomModal({ message: 'Simulação copiada!' });
         }
+    });
+
+    // CORREÇÃO EXTRA: Esconder o botão ao sair da seção
+    // Procure no seu código onde tem "backFromCalcularPorAparelho"
+    // e adicione essa linha dentro do evento de click:
+    document.getElementById('backFromCalcularPorAparelho').addEventListener('click', () => {
+         const fabBtn = document.getElementById('fabCopyMulti');
+         if(fabBtn) fabBtn.style.display = 'none';
+         // Limpa seleções visuais
+         document.querySelectorAll('.copyable-row.is-selected').forEach(r => r.classList.remove('is-selected'));
     });
 
     ['resultRepassarValores', 'resultCalcularEmprestimo'].forEach(containerId => {
