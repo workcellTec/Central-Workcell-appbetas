@@ -464,29 +464,70 @@ function renderCarrinho() {
     const container = document.getElementById('carrinhoAparelhosContainer');
     if (!container) return;
 
+    container.innerHTML = '';
+
+    // Se estiver vazio, esconde e sai
     if (carrinhoDeAparelhos.length === 0) {
-        container.innerHTML = '';
-        // Adicionado para limpar a nota de info quando o carrinho estiver vazio
-        document.getElementById('aparelhoInfoNote').classList.add('hidden');
         return;
     }
 
-    // A variável 'totalCarrinho' não é mais necessária aqui, pois não será exibida.
+    // Cria um card bonito para cada produto na lista
+    carrinhoDeAparelhos.forEach((product, index) => {
+        
+        // Lógica da data
+        let dateInfo = "Verificado hoje";
+        if (product.lastCheckedTimestamp) {
+            dateInfo = "Verificado em " + new Date(product.lastCheckedTimestamp).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+        }
 
-    container.innerHTML = `
-        <div class="p-3 rounded mb-2" style="background-color: var(--input-bg);">
-            <h6 class="mb-2">Produtos no cálculo:</h6>
-            <ul class="list-unstyled mb-2">
-                ${carrinhoDeAparelhos.map((produto, index) => `
-                    <li class="d-flex justify-content-between align-items-center mb-1">
-                        <span>${escapeHtml(produto.nome)}</span>
-                        <button class="btn btn-sm btn-outline-danger" onclick="removerDoCarrinho(${index})" style="line-height: 1; padding: 4px 8px;">&times;</button>
-                    </li>
-                `).join('')}
-            </ul>
+        // Lógica das Cores (Gera as pílulas para ficarem lado a lado)
+        let colorsHtml = '';
+        if (product.cores && product.cores.length > 0) {
+            colorsHtml = product.cores.map(c => 
+                `<div class="color-pill" title="${c.nome}">
+                    <div class="color-swatch-sm" style="background-color:${c.hex};"></div>
+                    <span>${c.nome}</span>
+                </div>`
+            ).join('');
+        } else {
+            colorsHtml = '<span class="text-secondary small ms-1">Sem cores definidas</span>';
+        }
+
+        // --- ESTRUTURA HTML DO CARD CORRIGIDA ---
+        const cardHtml = `
+        <div class="product-action-card">
+            
+            <div class="product-action-header">
+                <div class="product-action-info" style="flex: 1;">
+                    <h5 class="mb-1 text-start">${escapeHtml(product.nome)}</h5>
+                    <div class="product-action-date text-start"><i class="bi bi-clock-history"></i> ${dateInfo}</div>
+                </div>
+                
+                <button class="btn-remove-card" onclick="removerDoCarrinho(${index})" title="Remover item">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+            
+            <div class="product-action-colors">
+                ${colorsHtml}
+            </div>
+
+            <div class="product-action-buttons">
+                <button class="btn-action-sm edit-price-btn" data-index="${index}">
+                    <i class="bi bi-cash-coin"></i> Editar Valor
+                </button>
+                <button class="btn-action-sm edit-colors-btn" data-id="${product.id}">
+                    <i class="bi bi-palette"></i> Editar Cores
+                </button>
+            </div>
         </div>
-    `;
+        `;
+
+        container.insertAdjacentHTML('beforeend', cardHtml);
+    });
 }
+
+
 
 function removerDoCarrinho(index) {
     carrinhoDeAparelhos.splice(index, 1);
@@ -584,14 +625,14 @@ function calculateAparelho() {
 }
 
 function handleProductSelectionForAparelho(product) {
-    // Adiciona como cópia para permitir edição
+    // Adiciona ao carrinho
     carrinhoDeAparelhos.push({ ...product }); 
-    const currentIndex = carrinhoDeAparelhos.length - 1;
     
+    // Limpa a busca
     document.getElementById('aparelhoSearch').value = ''; 
     document.getElementById('aparelhoResultsContainer').innerHTML = '';
-    document.getElementById('aparelhoSearch').focus();
-
+    
+    // Configurações iniciais
     if (carrinhoDeAparelhos.length === 1) {
         document.getElementById('valorExtraAparelho').value = '40';
     }
@@ -599,43 +640,15 @@ function handleProductSelectionForAparelho(product) {
         showCustomModal({ message: "Múltiplos produtos: Textos de etiqueta desativados." });
     }
 
-    // --- NOVO DESIGN DO CARD ---
-    const infoNoteEl = document.getElementById('aparelhoInfoNote');
-    
-    let dateInfo = "Verificado hoje";
-    if (product.lastCheckedTimestamp) {
-        dateInfo = "Verificado em " + new Date(product.lastCheckedTimestamp).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-    }
+    // Esconde a nota antiga (pois agora tudo estará no carrinho unificado)
+    document.getElementById('aparelhoInfoNote').classList.add('hidden');
+    document.getElementById('aparelhoInfoNote').innerHTML = '';
 
-    let colorsHtml = '';
-    if (product.cores && product.cores.length > 0) {
-        colorsHtml = product.cores.map(c => `<div class="color-pill"><div class="color-swatch-sm" style="background-color:${c.hex};"></div>${c.nome}</div>`).join('');
-    } else {
-        colorsHtml = '<span class="text-secondary small ms-1">Sem cores definidas</span>';
-    }
-
-    infoNoteEl.innerHTML = `
-        <div class="product-action-card">
-            <div class="product-action-header">
-                <div class="product-action-info">
-                    <h5>${escapeHtml(product.nome)}</h5>
-                    <div class="product-action-date"><i class="bi bi-clock-history"></i> ${dateInfo}</div>
-                </div>
-                <div class="text-success fw-bold fs-5">
-                    ${parseFloat(product.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                </div>
-            </div>
-            <div class="product-action-colors my-2">${colorsHtml}</div>
-            <div class="product-action-buttons">
-                <button class="btn-action-sm edit-price-btn" data-index="${currentIndex}"><i class="bi bi-cash-coin"></i> Editar Valor</button>
-                <button class="btn-action-sm edit-colors-btn" data-id="${product.id}"><i class="bi bi-palette"></i> Editar Cores</button>
-            </div>
-        </div>`;
-    
-    infoNoteEl.classList.remove('hidden');
+    // Atualiza a tela unificada
     renderCarrinho();
     calculateAparelho();
 }
+
 
 
 function handleProductSelectionForVenda(product) {
@@ -1841,27 +1854,121 @@ document.addEventListener('DOMContentLoaded', () => {
     const notificationOffcanvasEl = document.getElementById('notificationPanel');
     const notificationOffcanvas = bootstrap.Offcanvas.getOrCreateInstance(notificationOffcanvasEl);
     
+        // --- LÓGICA DE MÁSCARA DE DINHEIRO (R$) AO VIVO ---
+    
+    const moneyInput = document.getElementById('editPriceInput');
+
+    moneyInput.addEventListener('input', (e) => {
+        let value = e.target.value;
+        
+        // 1. Remove tudo que não for dígito (0-9)
+        value = value.replace(/\D/g, "");
+        
+        // 2. Divide por 100 para considerar os centavos
+        // Ex: se digitou "259900", vira 2599.00
+        const floatValue = (parseFloat(value) / 100);
+        
+        if(isNaN(floatValue)) {
+            e.target.value = "";
+            return;
+        }
+
+        // 3. Formata como moeda brasileira
+        e.target.value = floatValue.toLocaleString('pt-BR', {
+            style: 'currency',
+            currency: 'BRL'
+        });
+    });
+
+    // --- AJUSTE NO BOTÃO "CONFIRMAR" PARA LER O VALOR FORMATADO ---
+    
+    // ATENÇÃO: Você precisa substituir o seu listener do "confirmEditPriceBtn" antigo por este novo,
+    // pois agora ele precisa "limpar" o R$ antes de salvar no banco de dados.
+
+    // Remova o listener antigo do 'confirmEditPriceBtn' e coloque este:
+       // ATUALIZAÇÃO: BOTÃO "CONFIRMAR EDIÇÃO DE PREÇO" (Salva no Banco de Dados)
+    document.getElementById('confirmEditPriceBtn').addEventListener('click', async () => {
+        const index = document.getElementById('editPriceProductIndex').value;
+        const itemCarrinho = carrinhoDeAparelhos[index]; // O item no carrinho
+        const productId = itemCarrinho.id; // Precisamos do ID para salvar no banco
+        
+        // Pega o valor do campo e limpa a formatação (R$)
+        let rawValue = document.getElementById('editPriceInput').value;
+        rawValue = rawValue.replace(/\D/g, ""); // Remove tudo que não é número
+        const cleanValue = parseFloat(rawValue) / 100;
+
+        if (!isNaN(cleanValue) && cleanValue > 0) {
+            try {
+                // 1. ATUALIZA NO BANCO DE DADOS (Oficial)
+                await updateProductInDB(productId, { valor: cleanValue });
+
+                // 2. Atualiza o item que já está no carrinho localmente para refletir a mudança
+                itemCarrinho.valor = cleanValue;
+
+                // 3. Atualiza também na lista geral de produtos (na memória) para buscas futuras
+                const produtoNaMemoria = products.find(p => p.id === productId);
+                if (produtoNaMemoria) {
+                    produtoNaMemoria.valor = cleanValue;
+                }
+
+                // 4. Recalcula e redesenha a tela
+                renderCarrinho();
+                calculateAparelho();
+                
+                closePriceModal();
+                showCustomModal({ message: "Preço atualizado no sistema com sucesso!" });
+
+            } catch (error) {
+                console.error(error);
+                showCustomModal({ message: "Erro ao salvar no banco de dados." });
+            }
+        } else {
+            showCustomModal({ message: "Valor inválido." });
+        }
+    });
+
+
+    
     
     document.getElementById('notification-bell').addEventListener('click', () => notificationOffcanvas.toggle());
     
     // LISTENER PARA O NOVO CARD (Cores e Preço)
-    document.getElementById('aparelhoInfoNote').addEventListener('click', (e) => {
-        // Botão Editar Cores
-        const colorBtn = e.target.closest('.edit-colors-btn');
-        if (colorBtn) { e.preventDefault(); openColorPicker(colorBtn.dataset.id); }
+        // LISTENER ATUALIZADO PARA O CARRINHO UNIFICADO
+    // Mudamos de 'aparelhoInfoNote' para 'carrinhoAparelhosContainer'
+    const carrinhoContainer = document.getElementById('carrinhoAparelhosContainer');
+    
+    if (carrinhoContainer) {
+        carrinhoContainer.addEventListener('click', (e) => {
+            // 1. Botão Editar Cores
+            const colorBtn = e.target.closest('.edit-colors-btn');
+            if (colorBtn) { 
+                e.preventDefault(); 
+                openColorPicker(colorBtn.dataset.id); 
+                return; // Para a execução aqui
+            }
 
-        // Botão Editar Valor (NOVO)
-        const priceBtn = e.target.closest('.edit-price-btn');
-        if (priceBtn) {
-            e.preventDefault();
-            const index = priceBtn.dataset.index;
-            const item = carrinhoDeAparelhos[index];
-            document.getElementById('editPriceInput').value = item.valor;
-            document.getElementById('editPriceProductIndex').value = index;
-            document.getElementById('editPriceModalOverlay').classList.add('active');
-            setTimeout(() => document.getElementById('editPriceInput').focus(), 100);
-        }
-    });
+            // 2. Botão Editar Valor
+            const priceBtn = e.target.closest('.edit-price-btn');
+            if (priceBtn) {
+                e.preventDefault();
+                const index = priceBtn.dataset.index;
+                const item = carrinhoDeAparelhos[index];
+                
+                // Preenche o input com o valor formatado (R$)
+                document.getElementById('editPriceInput').value = item.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+                // Guarda qual produto estamos editando
+                document.getElementById('editPriceProductIndex').value = index;
+                
+                // Abre o modal
+                document.getElementById('editPriceModalOverlay').classList.add('active');
+                
+                // Foca no campo para digitar
+                setTimeout(() => document.getElementById('editPriceInput').focus(), 100);
+            }
+        });
+    }
+
 
     // Lógica do Modal de Editar Preço
     const closePriceModal = () => document.getElementById('editPriceModalOverlay').classList.remove('active');
