@@ -1072,3 +1072,69 @@ input[type="color"]::-moz-color-swatch { border-radius: 50%; border: 1px solid v
     transform: scale(1.2); /* Aumenta um pouco ao passar o mouse */
     color: #ff0000;
 }
+/* --- MELHORIAS VISUAIS DO ESTOQUE --- */
+
+/* 1. Botões de Quantidade Redondos e Modernos */
+.stock-qty-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 50% !important; /* Totalmente redondo */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--glass-border);
+    background-color: rgba(255, 255, 255, 0.05);
+    color: var(--text-color);
+    transition: all 0.2s ease;
+    padding: 0; /* Remove preenchimento extra */
+}
+
+.stock-qty-btn:hover {
+    background-color: var(--primary-color);
+    color: white;
+    transform: scale(1.1);
+    border-color: var(--primary-color);
+}
+
+.stock-qty-input {
+    background: transparent !important;
+    border: none !important;
+    color: var(--text-color) !important;
+    font-weight: 700 !important;
+    font-size: 1.1rem !important;
+    max-width: 50px !important; /* Menor largura */
+}
+
+/* Container dos botões de quantidade */
+.input-group-sm {
+    background-color: var(--input-bg);
+    border-radius: 20px;
+    padding: 4px;
+    border: 1px solid var(--glass-border);
+    gap: 5px; /* Espaço entre os botões */
+}
+
+/* 2. Visual de "Item Conferido" (Brilho Verde em vez de apagado) */
+.stock-item-card {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 1px solid var(--glass-border);
+}
+
+.stock-item-card.is-checked {
+    opacity: 1 !important; /* Remove a transparência antiga */
+    border-color: var(--text-success) !important; /* Borda verde */
+    background: linear-gradient(90deg, rgba(var(--text-success), 0.05) 0%, rgba(var(--primary-color-rgb), 0.05) 100%);
+    box-shadow: 0 0 15px rgba(22, 163, 74, 0.15); /* Brilho verde suave */
+}
+
+.stock-item-card.is-checked .product-name {
+    color: var(--text-success) !important; /* Nome fica verde */
+    text-decoration: none; /* Garante que não tenha risco */
+}
+
+/* Ícone de check do switch mais evidente */
+.form-check-input:checked {
+    background-color: var(--text-success);
+    border-color: var(--text-success);
+    filter: drop-shadow(0 0 2px rgba(0,255,0,0.5));
+}
