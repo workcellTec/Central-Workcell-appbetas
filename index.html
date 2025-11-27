@@ -63,6 +63,52 @@
         filter: brightness(1.1) !important;
     }
 </style>
+<style>
+    /* FORÇAR VISUAL DAS CORES (Lado a Lado) */
+    .product-action-colors {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 8px !important;
+        margin: 8px 0 !important;
+    }
+    
+    .color-pill {
+        display: inline-flex !important;
+        width: auto !important;
+        align-items: center !important;
+        background: rgba(255, 255, 255, 0.05) !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        padding: 4px 10px !important;
+        border-radius: 20px !important;
+    }
+
+    /* FORÇAR VISUAL DO CABEÇALHO E DO BOTÃO X */
+    .product-action-header {
+        display: flex !important;
+        justify-content: space-between !important;
+        align-items: flex-start !important;
+        width: 100% !important;
+    }
+
+    .btn-remove-card {
+        background: transparent !important;
+        border: none !important;
+        color: #ff4d4d !important;
+        font-size: 1.3rem !important;
+        padding: 0 0 0 10px !important;
+        margin: 0 !important;
+        box-shadow: none !important;
+        width: auto !important;
+        height: auto !important;
+    }
+    
+    /* Esconde qualquer fundo ou borda antiga que esteja sobrando */
+    .btn-remove-card:hover {
+        background: transparent !important;
+        transform: scale(1.1);
+        color: #ff0000 !important;
+    }
+</style>
 
 </head>
 <body>
@@ -488,8 +534,9 @@
     <div class="custom-modal-overlay" id="editPriceModalOverlay">
         <div class="custom-modal-content">
             <h4>Editar Valor do Produto</h4>
-            <p class="text-secondary small mb-3">Este valor será alterado apenas para este cálculo.</p>
-            <input class="form-control form-control-lg mb-3" id="editPriceInput" type="number" step="0.01" inputmode="decimal" placeholder="0,00"/>
+            <p class="text-warning small mb-3"><i class="bi bi-exclamation-triangle"></i> Atenção: Isso altera o preço oficial do produto no sistema.</p>
+            <input class="form-control form-control-lg mb-3" id="editPriceInput" type="text" inputmode="numeric" placeholder="R$ 0,00"/>
+
             <input type="hidden" id="editPriceProductIndex">
             <div class="d-flex gap-2 justify-content-center mt-3">
                 <button class="btn btn-secondary" id="cancelEditPriceBtn">Cancelar</button>
