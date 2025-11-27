@@ -906,3 +906,23 @@ input[type="color"]::-moz-color-swatch { border-radius: 50%; border: 1px solid v
     display: block;
     margin: -30px auto 0 auto;
 }
+
+/* Estilo para linhas selecionadas */
+.copyable-row.is-selected {
+    background-color: rgba(var(--primary-color-rgb), 0.25) !important;
+    border-left: 4px solid var(--primary-color);
+}
+/* Botão Flutuante de Copiar */
+#fabCopyMulti {
+    position: fixed;
+    bottom: 25px;
+    right: 25px;
+    z-index: 10000;
+    padding: 12px 24px;
+    border-radius: 50px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+    font-weight: bold;
+    display: none; /* Escondido por padrão */
+    animation: fadeInUp 0.3s ease;
+}
+@keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
