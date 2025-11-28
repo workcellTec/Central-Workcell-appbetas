@@ -2228,7 +2228,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let entradaText = '';
             if (entradaValue > 0) {
                 const entradaFormatted = entradaValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                entradaText = `\n"+${entradaFormatted} no dinheiro ou pix"`;
+                entradaText = `\n*_+${entradaFormatted} no dinheiro ou pix_*`;
             }
 
             // Dados da Etiqueta
@@ -2318,7 +2318,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let entradaText = '';
             if (entradaValue > 0) {
                 const entradaFormatted = entradaValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                entradaText = `\n"+${entradaFormatted} no dinheiro ou pix"`;
+                entradaText = `\n*_+${entradaFormatted} no dinheiro ou pix_*`;
             }
             
             let customText = '';
