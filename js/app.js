@@ -112,6 +112,9 @@ function showMainSection(sectionId) {
         filterAdminProducts();
     }
     currentMainSectionId = sectionId;
+    
+        // --- ADICIONE ESTA LINHA ---
+    safeStorage.setItem('ctwLastSection', sectionId);
 }
 
 function renderRatesEditor() {
@@ -203,6 +206,8 @@ function openCalculatorSection(sectionId) {
         calcularPorAparelho: () => { updateCalcularPorAparelhoUI(); }
     };
     if (sectionInitializers[sectionId]) sectionInitializers[sectionId]();
+       // --- ADICIONE ESTA LINHA ---
+    safeStorage.setItem('ctwLastCalcSub', sectionId);
 }
 
 function renderQuickInstallmentButtons() {
@@ -294,12 +299,61 @@ function updateFecharVendaUI() {
 function updateRepassarValoresUI() { const machine = document.getElementById("machine2").value; document.getElementById("flagDisplayContainer2").style.display = (machine !== "pagbank") ? 'block' : 'none'; updateFlagDisplay('2'); calculateRepassarValores(); }
 function updateCalcularEmprestimoUI() { const machine = document.getElementById("machine4").value; document.getElementById("flagDisplayContainer4").style.display = (machine !== "pagbank") ? 'block' : 'none'; updateFlagDisplay('4'); calculateEmprestimo(); }
 function updateCalcularPorAparelhoUI() {
-    const machine = document.getElementById("machine3").value;
-    document.getElementById("flagDisplayContainer3").style.display = (machine !== "pagbank") ? 'block' : 'none';
+    const machineSelect = document.getElementById("machine3");
+    const brandSelect = document.getElementById("brand3");
+    
+    // --- PASSO 2: RECUPERAR RASCUNHO (Com proteção contra erro) ---
+    // Só carrega se o carrinho estiver vazio (para não sobrescrever trabalho atual)
+    if (carrinhoDeAparelhos.length === 0) {
+        const rascunhoSalvo = safeStorage.getItem('ctwRascunhoAparelho');
+        if (rascunhoSalvo) {
+            try {
+                const estado = JSON.parse(rascunhoSalvo);
+                
+                // 1. Restaura o carrinho
+                if (estado.carrinho && Array.isArray(estado.carrinho) && estado.carrinho.length > 0) {
+                    carrinhoDeAparelhos = estado.carrinho;
+                    renderCarrinho(); // Atualiza visualmente a lista
+                }
+                
+                // 2. Restaura valores numéricos
+                if (estado.entrada) document.getElementById('entradaAparelho').value = estado.entrada;
+                if (estado.extra) document.getElementById('valorExtraAparelho').value = estado.extra;
+                
+                // 3. Restaura Maquininha e Bandeira
+                if (estado.maquininha) {
+                    machineSelect.value = estado.maquininha;
+                    // Força o evento 'change' para atualizar as parcelas
+                    updateInstallmentsOptions(); 
+                }
+                
+                if (estado.bandeira && brandSelect) {
+                    // Pequeno delay para garantir que o select de bandeira apareceu
+                    setTimeout(() => {
+                        brandSelect.value = estado.bandeira;
+                        updateFlagDisplay('3'); // Atualiza o ícone da bandeira
+                    }, 50);
+                }
+                
+                // 4. Recalcula tudo com os dados carregados
+                setTimeout(() => calculateAparelho(), 100);
+
+            } catch (e) {
+                console.error("Erro ao restaurar rascunho. Limpando memória corrompida.", e);
+                safeStorage.removeItem('ctwRascunhoAparelho');
+            }
+        }
+    }
+    // -------------------------------------------------------------
+
+    document.getElementById("flagDisplayContainer3").style.display = (machineSelect.value !== "pagbank") ? 'block' : 'none';
     updateFlagDisplay('3');
     renderAparelhoFavorites();
-    calculateAparelho();
+    // O calculateAparelho já é chamado no timeout acima se carregar rascunho,
+    // mas se não carregar, chamamos aqui para garantir estado inicial
+    if (carrinhoDeAparelhos.length === 0) calculateAparelho(); 
 }
+
 
 function getRate(machine, brand, installments) { 
     if (!areRatesLoaded || !rates[machine]) return undefined; 
@@ -629,6 +683,25 @@ function calculateAparelho() {
     }
     resultDiv.innerHTML = finalHtml;
     exportContainer.style.display = tableRows.trim() !== "" ? 'block' : 'none';
+    
+        // --- PASSO 1: SALVAR RASCUNHO AUTOMÁTICO (Seguro) ---
+    try {
+        // Cria o pacote de dados para salvar
+        const estadoParaSalvar = {
+            carrinho: carrinhoDeAparelhos,
+            entrada: document.getElementById('entradaAparelho').value,
+            extra: document.getElementById('valorExtraAparelho').value,
+            maquininha: document.getElementById('machine3').value,
+            bandeira: document.getElementById('brand3').value
+        };
+        // Grava na memória do navegador
+        safeStorage.setItem('ctwRascunhoAparelho', JSON.stringify(estadoParaSalvar));
+    } catch (e) {
+        console.warn("Não foi possível salvar o rascunho:", e);
+    }
+    // ----------------------------------------------------
+
+    
 }
 
 function handleProductSelectionForAparelho(product) {
@@ -1882,10 +1955,35 @@ async function main() {
                 
                 const loadingOverlay = document.getElementById('loadingOverlay');
                 loadingOverlay.style.opacity = '0';
-                setTimeout(() => {
-                    loadingOverlay.style.display = 'none';
+                // --- CORREÇÃO DO "PISCAR" DO MENU ---
+                
+                // 1. PRIMEIRO decidimos para onde ir (enquanto a tela de carregamento ainda cobre tudo)
+                const lastSection = safeStorage.getItem('ctwLastSection');
+                const lastCalcSub = safeStorage.getItem('ctwLastCalcSub');
+
+                if (lastSection && lastSection !== 'main') {
+                    // Se tinha uma seção salva, vai pra ela IMEDIATAMENTE
+                    showMainSection(lastSection);
+                    
+                    // Se era a calculadora, abre a sub-aba certa
+                    if (lastSection === 'calculator' && lastCalcSub) {
+                        openCalculatorSection(lastCalcSub);
+                    }
+                } else {
+                    // Se não tinha nada, prepara o menu
                     showMainSection('main');
-                }, 500);
+                }
+
+                // 2. SÓ AGORA tiramos a tela de carregamento
+                setTimeout(() => {
+                    const loadingOverlay = document.getElementById('loadingOverlay');
+                    if(loadingOverlay) {
+                        loadingOverlay.style.opacity = '0'; // Começa a desaparecer suave
+                        setTimeout(() => {
+                            loadingOverlay.style.display = 'none'; // Some de vez
+                        }, 500); // Espera a animação de opacidade terminar
+                    }
+                }, 100); // Pequeno delay só para garantir que o navegador desenhou a tela certa
             } else {
                 await signInAnonymously(auth);
             }
@@ -2947,39 +3045,37 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     document.getElementById('cancelColorPicker').addEventListener('click', () => colorPickerModal.classList.remove('active'));
+        // --- CORREÇÃO: SALVAR COR E ATUALIZAR O CARRINHO IMEDIATAMENTE ---
     document.getElementById('saveColorPicker').addEventListener('click', () => {
         if (currentEditingProductId) {
-            // ATUALIZAÇÃO: Salva as cores E a data atual
             const newTimestamp = Date.now();
+            
+            // 1. Atualiza no Banco de Dados (Para o futuro)
             updateProductInDB(currentEditingProductId, { 
                 cores: tempSelectedColors,
                 lastCheckedTimestamp: newTimestamp
             });
             
-            // ATUALIZAÇÃO VISUAL IMEDIATA DA NOTA (Se ela estiver visível para este produto)
-            const infoNoteEl = document.getElementById('aparelhoInfoNote');
-            const shortcutBtn = infoNoteEl.querySelector('.edit-colors-shortcut');
-            
-            // Verifica se a nota que está na tela é do produto que acabamos de editar
-            if (shortcutBtn && shortcutBtn.dataset.id === currentEditingProductId) {
-                const date = new Date(newTimestamp).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-                const colorsString = tempSelectedColors.length > 0 
-                    ? tempSelectedColors.map(c => c.nome).join(', ') 
-                    : 'Nenhuma cor cadastrada';
-                
-                // Reconstrói o HTML da nota com os dados novos
-                const editBtn = `<button class="btn btn-sm text-primary edit-colors-shortcut" style="padding: 0 0 0 8px; border: none; background: none; line-height: 1;" data-id="${currentEditingProductId}" title="Editar cores"><i class="bi bi-pencil-square"></i></button>`;
-                infoNoteEl.innerHTML = `<div class="d-flex align-items-center justify-content-center flex-wrap gap-1"><i class="bi bi-info-circle"></i> <span><strong>Último item:</strong> Checado em ${date} - Cores: ${colorsString}</span> ${editBtn}</div>`;
+            // 2. Atualiza o produto que JÁ ESTÁ no carrinho (Para o presente)
+            // Percorre o carrinho e atualiza todos os itens que têm esse ID
+            let houveMudancaNoCarrinho = false;
+            carrinhoDeAparelhos.forEach(item => {
+                if (item.id === currentEditingProductId) {
+                    item.cores = [...tempSelectedColors]; // Copia as cores novas
+                    item.lastCheckedTimestamp = newTimestamp;
+                    houveMudancaNoCarrinho = true;
+                }
+            });
+
+            // 3. Se mudou algo no carrinho, redesenha a tela e SALVA O RASCUNHO
+            if (houveMudancaNoCarrinho) {
+                renderCarrinho();      // Atualiza o visual (ex: Preto -> Verde)
+                calculateAparelho();   // Força salvar o rascunho novo no navegador
             }
         }
-        colorPickerModal.classList.remove('active');
-    });('click', () => {
-        if (currentEditingProductId) {
-            updateProductInDB(currentEditingProductId, { cores: tempSelectedColors });
-            // A lógica que marcava o item como 'conferido' automaticamente foi removida.
-        }
-        colorPickerModal.classList.remove('active');
+        document.getElementById('colorPickerModalOverlay').classList.remove('active');
     });
+
 
     document.getElementById('boletoModeToggle').addEventListener('change', (e) => {
         const showHistory = e.target.checked;
