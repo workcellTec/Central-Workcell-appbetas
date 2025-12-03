@@ -480,7 +480,7 @@ function renderCarrinho() {
             dateInfo = "Verificado em " + new Date(product.lastCheckedTimestamp).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
         }
 
-        // Lógica das Cores (Gera as pílulas para ficarem lado a lado)
+        // Lógica das Cores
         let colorsHtml = '';
         if (product.cores && product.cores.length > 0) {
             colorsHtml = product.cores.map(c => 
@@ -493,7 +493,7 @@ function renderCarrinho() {
             colorsHtml = '<span class="text-secondary small ms-1">Sem cores definidas</span>';
         }
 
-        // --- ESTRUTURA HTML DO CARD CORRIGIDA ---
+        // HTML do Card Unificado (COM O BOTÃO DE FAVORITAR)
         const cardHtml = `
         <div class="product-action-card">
             
@@ -520,12 +520,19 @@ function renderCarrinho() {
                     <i class="bi bi-palette"></i> Editar Cores
                 </button>
             </div>
+
+            <div class="mt-2 pt-2 border-top border-secondary border-opacity-10 text-center">
+                 <button class="btn btn-sm text-warning w-100 save-favorite-shortcut" data-index="${index}" style="background: transparent; border: none; font-size: 0.9rem;">
+                    <i class="bi bi-star-fill"></i> Salvar este cálculo como atalho
+                </button>
+            </div>
         </div>
         `;
 
         container.insertAdjacentHTML('beforeend', cardHtml);
     });
 }
+
 
 
 
@@ -1974,6 +1981,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // LISTENER PARA O NOVO CARD (Cores e Preço)
         // LISTENER ATUALIZADO PARA O CARRINHO UNIFICADO
     // Mudamos de 'aparelhoInfoNote' para 'carrinhoAparelhosContainer'
+        // LISTENER DO CARRINHO (Editar Valor, Editar Cores E FAVORITAR)
     const carrinhoContainer = document.getElementById('carrinhoAparelhosContainer');
     
     if (carrinhoContainer) {
@@ -1983,7 +1991,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (colorBtn) { 
                 e.preventDefault(); 
                 openColorPicker(colorBtn.dataset.id); 
-                return; // Para a execução aqui
+                return;
             }
 
             // 2. Botão Editar Valor
@@ -1992,21 +2000,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.preventDefault();
                 const index = priceBtn.dataset.index;
                 const item = carrinhoDeAparelhos[index];
-                
-                // Preenche o input com o valor formatado (R$)
                 document.getElementById('editPriceInput').value = item.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-
-                // Guarda qual produto estamos editando
                 document.getElementById('editPriceProductIndex').value = index;
-                
-                // Abre o modal
                 document.getElementById('editPriceModalOverlay').classList.add('active');
-                
-                // Foca no campo para digitar
                 setTimeout(() => document.getElementById('editPriceInput').focus(), 100);
+                return;
+            }
+
+            // 3. NOVO: Botão Salvar Favorito (A Estrelinha)
+            const favBtn = e.target.closest('.save-favorite-shortcut');
+            if (favBtn) {
+                e.preventDefault();
+                const favorites = getAparelhoFavorites();
+                
+                // Limite de favoritos (opcional, mas bom ter)
+                if (Object.keys(favorites).length >= 5) {
+                    showCustomModal({ message: `Limite de 5 favoritos atingido. Remova um antigo para salvar este.` });
+                    return;
+                }
+
+                // Abre o modal para dar nome
+                document.getElementById('favoriteNameInput').value = ''; 
+                document.getElementById('favoriteNameModalOverlay').classList.add('active');
+                setTimeout(() => document.getElementById('favoriteNameInput').focus(), 100);
             }
         });
     }
+
 
 
     // Lógica do Modal de Editar Preço
@@ -2228,7 +2248,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let entradaText = '';
             if (entradaValue > 0) {
                 const entradaFormatted = entradaValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                entradaText = `\n*_+${entradaFormatted} no dinheiro ou pix_*`;
+                entradaText = `\n"+${entradaFormatted} no dinheiro ou pix"`;
             }
 
             // Dados da Etiqueta
@@ -2318,7 +2338,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let entradaText = '';
             if (entradaValue > 0) {
                 const entradaFormatted = entradaValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                entradaText = `\n*_+${entradaFormatted} no dinheiro ou pix_*`;
+                entradaText = `\n"+${entradaFormatted} no dinheiro ou pix"`;
             }
             
             let customText = '';
@@ -2414,28 +2434,49 @@ document.addEventListener('DOMContentLoaded', () => {
         favoriteNameInput.focus();
     });
     
-    confirmSaveFavoriteBtn.addEventListener('click', () => {
-        const favoriteName = favoriteNameInput.value.trim();
+        // --- CORREÇÃO DO BOTÃO SALVAR FAVORITO ---
+    document.getElementById('confirmSaveFavoriteBtn').addEventListener('click', () => {
+        const favoriteName = document.getElementById('favoriteNameInput').value.trim();
         const favorites = getAparelhoFavorites();
+
+        // 1. Validação do Nome
         if (!favoriteName) {
             showCustomModal({ message: "Por favor, digite um nome para o favorito." });
             return;
         }
         if (favorites[favoriteName]) {
-            showCustomModal({ message: "Já existe um favorito com este nome." });
+            showCustomModal({ message: "Já existe um favorito com este nome. Escolha outro." });
             return;
         }
+
+        // 2. Validação do Carrinho (Precisa ter algo na tela pra salvar)
+        if (carrinhoDeAparelhos.length === 0) {
+             showCustomModal({ message: "Não há nenhum produto na tela para salvar." });
+             closeFavoriteNameModal();
+             return;
+        }
+
+        // 3. Monta os dados do Favorito baseados no PRIMEIRO item do carrinho
+        // (Assumindo que o atalho é focado no produto principal)
+        const produtoPrincipal = carrinhoDeAparelhos[0];
+
         const favoriteData = {
-            productName: document.getElementById('aparelhoSearch').value,
+            productName: produtoPrincipal.nome, // Pega o nome real do objeto, não da busca
             entryValue: parseFloat(document.getElementById('entradaAparelho').value) || 0,
             additionalValue: parseFloat(document.getElementById('valorExtraAparelho').value) || 0,
-            quantity: parseInt(document.getElementById('aparelhoQuantity').value) || 1
+            // Salvamos também o preço editado, caso você tenha mudado
+            savedPrice: produtoPrincipal.valor 
         };
+
+        // 4. Salva e Atualiza
         favorites[favoriteName] = favoriteData;
         saveAparelhoFavorites(favorites);
         renderAparelhoFavorites();
+        
         closeFavoriteNameModal();
+        showCustomModal({ message: "Atalho salvo com sucesso!" });
     });
+
     
     cancelSaveFavoriteBtn.addEventListener('click', closeFavoriteNameModal);
     favoriteNameModal.addEventListener('click', (e) => { if (e.target === favoriteNameModal) closeFavoriteNameModal(); });
