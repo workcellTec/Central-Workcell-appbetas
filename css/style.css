@@ -1138,3 +1138,5 @@ input[type="color"]::-moz-color-swatch { border-radius: 50%; border: 1px solid v
     border-color: var(--text-success);
     filter: drop-shadow(0 0 2px rgba(0,255,0,0.5));
 }
+
+    
