@@ -163,6 +163,7 @@
 </style>
 
     
+    
 </head>
 <body>
     <div id="loadingOverlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: var(--tertiary-color); z-index: 10000; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.5s ease;">
@@ -563,6 +564,17 @@
                     <button class="btn btn-info btn-sm" id="generateReportBtn"><i class="bi bi-printer"></i> Relatório</button>
                 </div>
             </div>
+            <div id="stockProgressContainer" class="mb-3" style="background: rgba(0,0,0,0.2); padding: 10px 15px; border-radius: 15px; border: 1px solid var(--glass-border);">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <small class="text-secondary" style="font-weight: 500;"><i class="bi bi-clipboard-check"></i> Progresso da Contagem</small>
+        <small id="stockProgressText" class="fw-bold text-success" style="font-size: 0.9rem;">Calculando...</small>
+    </div>
+    <div class="progress" style="height: 8px; background-color: rgba(255,255,255,0.1); border-radius: 10px; overflow: hidden;">
+        <div id="stockProgressBar" class="progress-bar bg-success" role="progressbar" style="width: 0%; transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 0 10px rgba(74, 222, 128, 0.5);"></div>
+    </div>
+</div>
+
+            
             <div class="stock-list-container" id="stockTableBody"></div>
         </div>
     </div>
