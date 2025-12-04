@@ -353,7 +353,9 @@ function updateCalcularPorAparelhoUI() {
     // mas se não carregar, chamamos aqui para garantir estado inicial
         // CALCULA SEMPRE (para atualizar bandeira, taxas, etc)
     calculateAparelho();
+ 
 }
+
 
 function getRate(machine, brand, installments) { 
     if (!areRatesLoaded || !rates[machine]) return undefined; 
@@ -824,6 +826,17 @@ function loadRatesFromDB() {
             areRatesLoaded = true; 
             updateInstallmentsOptions(); 
             console.log("Taxas carregadas."); 
+            
+            // --- CORREÇÃO: RECALCULAR ASSIM QUE AS TAXAS CHEGAREM ---
+            // Se o usuário estiver na tela de "Calcular por Aparelho", forçamos o cálculo agora
+            // pois antes ele pode ter falhado por falta de taxas.
+            if (currentCalculatorSectionId === 'calcularPorAparelho') {
+                calculateAparelho();
+            }
+            // Se estiver em outras telas que precisam de recálculo imediato
+            if (currentCalculatorSectionId === 'fecharVenda') calculateFecharVenda();
+            // ---------------------------------------------------------
+
             if (currentMainSectionId === 'administracao' && document.getElementById('adminModeToggle')?.checked) renderRatesEditor(); 
         } else { 
             console.error("ERRO: As taxas não foram encontradas."); 
@@ -834,6 +847,7 @@ function loadRatesFromDB() {
         showCustomModal({ message: `Erro ao carregar taxas: ${error.message}` }); 
     }); 
 }
+ //fim da funcao
 
 const getProductsRef = () => ref(db, 'products');
 
