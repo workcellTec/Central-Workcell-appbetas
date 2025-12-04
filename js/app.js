@@ -351,9 +351,9 @@ function updateCalcularPorAparelhoUI() {
     renderAparelhoFavorites();
     // O calculateAparelho já é chamado no timeout acima se carregar rascunho,
     // mas se não carregar, chamamos aqui para garantir estado inicial
-    if (carrinhoDeAparelhos.length === 0) calculateAparelho(); 
+        // CALCULA SEMPRE (para atualizar bandeira, taxas, etc)
+    calculateAparelho();
 }
-
 
 function getRate(machine, brand, installments) { 
     if (!areRatesLoaded || !rates[machine]) return undefined; 
