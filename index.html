@@ -219,7 +219,13 @@
     </div>
     
     <div id="calculatorContainer" class="hidden">
-        <div class="container text-center" id="calculatorHome">
+                <div class="container text-center" id="calculatorHome">
+            <div class="w-100 d-flex justify-content-start mb-2">
+                <button aria-label="Voltar ao Menu" class="btn-back" id="backFromCalculatorHome" style="font-size: 1.5rem; padding: 10px;">
+                    <i class="bi bi-arrow-left"></i>
+                </button>
+            </div>
+
             <h2 class="mb-4">Calculadora de Taxas,<br/>O que você quer fazer?</h2>
             <div class="d-grid gap-2">
                 <button class="btn-menu" id="openFecharVenda"><i class="bi bi-cash-coin"></i> Fechar uma venda</button>
@@ -227,6 +233,8 @@
                 <button class="btn-menu" id="openCalcularEmprestimo"><i class="bi bi-bank"></i> Calcular Empréstimo</button>
                 <button class="btn-menu" id="openCalcularPorAparelho"><i class="bi bi-phone"></i> Calcular por aparelho</button>
             </div>
+        </div>
+
         </div>
         <div class="container" id="fecharVenda" style="display: none;">
             <div class="section-header">
