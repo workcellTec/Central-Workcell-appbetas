@@ -2076,10 +2076,38 @@ function loadTagTexts() {
     }
 }
 
+// --- FUNÇÕES DE TEMA DE COR ---
+function applyColorTheme(color) {
+    // Remove qualquer cor anterior
+    document.body.removeAttribute('data-color');
+    
+    // Se não for 'red' (padrão), aplica a nova cor
+    if (color && color !== 'red') {
+        document.body.setAttribute('data-color', color);
+    }
+    
+    // Salva na memória
+    safeStorage.setItem('ctwColorTheme', color);
+    
+    // Atualiza visual dos botões no modal (Checkmark)
+    document.querySelectorAll('.theme-option-btn').forEach(btn => {
+        btn.innerHTML = ''; // Limpa ícones antigos
+        btn.classList.remove('active');
+        if (btn.dataset.color === color) {
+            btn.classList.add('active');
+            btn.innerHTML = '<i class="bi bi-check-lg"></i>';
+        }
+    });
+}
+
+
 async function main() {
     try {
         setupPWA();
         applyTheme(safeStorage.getItem('theme') || 'dark');
+                // Carrega a cor salva (ou usa vermelho se não tiver)
+        applyColorTheme(safeStorage.getItem('ctwColorTheme') || 'red');
+
         app = initializeApp(firebaseConfig); 
         auth = getAuth(app); 
         db = getDatabase(app);
@@ -3435,4 +3463,33 @@ document.addEventListener('DOMContentLoaded', () => {
     
     setupVisibilityToggles();
     updateMachineVisibility();
+    
+        // --- LÓGICA DO SELETOR DE TEMAS ---
+    const themeModal = document.getElementById('themeSelectorModal');
+    
+    // Abrir Modal
+    const paletteBtn = document.getElementById('theme-palette-btn');
+    if (paletteBtn) {
+        paletteBtn.addEventListener('click', () => {
+            themeModal.classList.add('active');
+        });
+    }
+    
+    // Fechar Modal
+    const closeThemeBtn = document.getElementById('closeThemeModal');
+    if (closeThemeBtn) {
+        closeThemeBtn.addEventListener('click', () => {
+            themeModal.classList.remove('active');
+        });
+    }
+    
+    // Clicar nas cores
+    document.querySelectorAll('.theme-option-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            applyColorTheme(btn.dataset.color);
+            // Pequeno delay para fechar o modal
+            setTimeout(() => themeModal.classList.remove('active'), 200);
+        });
+    });
+
 });
