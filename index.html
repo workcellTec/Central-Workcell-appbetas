@@ -253,7 +253,87 @@
     .theme-option-btn.active { border-color: #FFF; box-shadow: 0 0 15px rgba(255,255,255,0.6); transform: scale(1.1); }
 </style>
 
-    
+        <style>
+        /* 1. BASE DO SISTEMA (PADRÃO VERMELHO) */
+        :root {
+            --primary-color: #EF5350 !important;
+            --primary-color-rgb: 239, 83, 80 !important;
+            --glow-1: #8A2BE2 !important;
+            --glow-2: #B71C1C !important;
+            
+            /* Garante as cores de fundo originais */
+            --tertiary-color: #030303 !important;
+            --glass-bg: rgba(28, 28, 28, 0.65) !important;
+            --input-bg: rgba(44, 44, 46, 0.7) !important;
+        }
+
+        /* 2. VARIAÇÕES (Só ativam se escolher no menu) */
+        
+        /* Azul */
+        body[data-color="blue"] {
+            --primary-color: #2979FF !important;
+            --primary-color-rgb: 41, 121, 255 !important;
+            --glow-1: #00B0FF !important; --glow-2: #2979FF !important;
+        }
+        body[data-color="blue"][data-theme="dark"] {
+            --tertiary-color: #0B1120 !important;
+            --glass-bg: rgba(30, 41, 59, 0.85) !important;
+            --input-bg: rgba(15, 23, 42, 0.7) !important;
+        }
+
+        /* Verde */
+        body[data-color="green"] {
+            --primary-color: #00C853 !important;
+            --primary-color-rgb: 0, 200, 83 !important;
+            --glow-1: #00E676 !important; --glow-2: #FFD600 !important;
+        }
+        body[data-color="green"][data-theme="dark"] {
+            --tertiary-color: #050505 !important;
+            --glass-bg: rgba(20, 20, 20, 0.85) !important;
+        }
+
+        /* Roxo */
+        body[data-color="purple"] {
+            --primary-color: #8B5CF6 !important;
+            --primary-color-rgb: 139, 92, 246 !important;
+            --glow-1: #7C3AED !important; --glow-2: #EC4899 !important;
+        }
+        body[data-color="purple"][data-theme="dark"] {
+            --tertiary-color: #0F0720 !important;
+            --glass-bg: rgba(46, 16, 101, 0.6) !important;
+            --input-bg: rgba(0, 0, 0, 0.4) !important;
+        }
+
+        /* Laranja */
+        body[data-color="orange"] {
+            --primary-color: #FF6D00 !important;
+            --primary-color-rgb: 255, 109, 0 !important;
+            --glow-1: #FFAB00 !important; --glow-2: #FF3D00 !important;
+        }
+
+        /* Visual do Botão Pincel */
+        #theme-palette-btn {
+            width: 45px; height: 45px;
+            border-radius: 50%;
+            background-color: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            color: var(--text-color);
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 4px 15px var(--shadow-color);
+            backdrop-filter: blur(5px);
+            margin-bottom: 10px;
+        }
+        
+        /* Visual das Opções no Modal */
+        .theme-option-btn {
+            width: 50px; height: 50px; border-radius: 50%; border: 2px solid transparent;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            color: white; font-size: 1.4rem; box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        .theme-option-btn.active { border-color: #FFF; box-shadow: 0 0 15px rgba(255,255,255,0.6); transform: scale(1.1); }
+    </style>
+
 </head>
 <body>
     <div id="loadingOverlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: var(--tertiary-color); z-index: 10000; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.5s ease;">
