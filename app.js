@@ -2160,6 +2160,46 @@ function updateNotificationUI(notifications) {
         notificationList.innerHTML = '<div class="list-group-item bg-transparent text-secondary text-center border-0 p-4">Nenhuma notificação pendente.</div>';
     }
 }
+// --- FUNÇÕES RECUPERADAS (ESSENCIAIS PARA O ADMIN) ---
+function getTagList() {
+    return (typeof tags !== 'undefined' && Array.isArray(tags)) ? tags : ['Nenhuma'];
+}
+
+async function saveTagList(newTags) {
+    try {
+        await update(ref(db), { 'tags': newTags });
+        tags = newTags;
+        populateTagSelects();
+        if (typeof renderSearchChips === 'function') renderSearchChips(); 
+    } catch (error) {
+        console.error("Erro ao salvar tags:", error);
+        showCustomModal({ message: "Erro ao salvar etiquetas." });
+    }
+}
+
+function populateTagSelects() {
+    const tagList = getTagList();
+    const newProductSelect = document.getElementById('newProductTag');
+    if (newProductSelect) {
+        const currentVal = newProductSelect.value;
+        newProductSelect.innerHTML = tagList.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+        if (tagList.includes(currentVal)) newProductSelect.value = currentVal;
+    }
+}
+
+async function updateTagNameInProducts(oldName, newName) {
+    if (!products || products.length === 0) return;
+    const updates = {};
+    products.forEach(p => {
+        if (p.tag === oldName) {
+            updates[`products/${p.id}/tag`] = newName;
+        }
+    });
+    if (Object.keys(updates).length > 0) {
+        await update(ref(db), updates);
+    }
+}
+// -----------------------------------------------------
 
 function renderTagManagementUI() {
     const container = document.getElementById('adminTagsContent');
