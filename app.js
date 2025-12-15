@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-auth.js";
-import { getDatabase, ref, push, update, remove, onValue, off } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-database.js";
+import { getDatabase, ref, push, update, remove, onValue, off, get, set } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-database.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyANdJzvmHr8JVqrjveXbP_ZV6ZRR6fcVQk",
@@ -12,9 +12,24 @@ const firebaseConfig = {
     appId: "1:37459949616:web:bf2e722a491f45880a55f5"
 };
 
+// Adicione junto com as outras variáveis globais (perto de userId, products, etc.)
+let currentEditingBookipId = null; // Guarda o ID se estiver editando
+
 let app, db, auth, userId = null, isAuthReady = false, areRatesLoaded = false;
 let products = [], fuse, selectedAparelhoValue = 0, fecharVendaPrecoBase = 0;
 let activeTagFilter = null; // Guarda a etiqueta selecionada (ex: 'Xiaomi')
+// --- CORREÇÃO: ADICIONE ESTA LINHA ---
+let bookipCartList = []; 
+// --- CORREÇÃO: ADICIONE ESTA LINHA ---
+let bookipListener = null; 
+
+
+
+// Adicione esta variável global
+let receiptSettings = {
+    header: "WORKCELL TECNOLOGIA\nCNPJ: 00.000.000/0001-00", 
+    terms: "Garantia legal de 90 dias." 
+};
 
 let currentCalculatorSectionId = 'calculatorHome', productsListener = null, rates = {};
 let boletosListener = null;
@@ -72,54 +87,83 @@ const topRightControls = document.getElementById('top-right-controls');
 
 function showMainSection(sectionId) {
     if (!isAuthReady) return;
+    
+    // Desliga ouvintes antigos para economizar memória
     if (productsListener) { off(getProductsRef(), 'value', productsListener); productsListener = null; }
     if (boletosListener) { off(ref(db, 'boletos'), 'value', boletosListener); boletosListener = null; }
 
+    // 1. Pega o elemento novo (Clientes)
+    const clientsContainer = document.getElementById('clientsContainer');
+
+    // 2. Esconde TUDO (Adiciona classe hidden)
     mainMenu.classList.add('hidden');
     calculatorContainer.classList.add('hidden');
     contractContainer.classList.add('hidden');
     stockContainer.classList.add('hidden');
     adminContainer.classList.add('hidden');
     topRightControls.classList.add('hidden');
+    
+    // Esconde também o container de clientes se ele existir
+    if (clientsContainer) clientsContainer.classList.add('hidden');
 
+    // 3. Garante que o display seja none visualmente
     mainMenu.style.display = 'none';
     calculatorContainer.style.display = 'none';
     contractContainer.style.display = 'none';
     stockContainer.style.display = 'none';
     adminContainer.style.display = 'none';
+    if (clientsContainer) clientsContainer.style.display = 'none';
 
+    // 4. Mostra APENAS a seção escolhida
     if (sectionId === 'main') {
         mainMenu.classList.remove('hidden');
         mainMenu.style.display = 'flex';
         topRightControls.classList.remove('hidden');
-    } else if (sectionId === 'calculator') {
+    } 
+    else if (sectionId === 'calculator') {
         calculatorContainer.classList.remove('hidden');
         calculatorContainer.style.display = 'block';
         openCalculatorSection('calculatorHome');
-    } else if (sectionId === 'contract') {
+    } 
+               else if (sectionId === 'contract') {
         contractContainer.classList.remove('hidden');
-        contractContainer.style.display = 'flex';
-        loadContractDraft();
-        const toggle = document.getElementById('boletoModeToggle');
-        if (toggle.checked) {
-            toggle.checked = false;
-            toggle.dispatchEvent(new Event('change'));
-        }
-    } else if (sectionId === 'stock') {
+        contractContainer.style.display = 'block'; 
+        
+        // CORREÇÃO: Não carregamos o rascunho aqui ainda!
+        // Apenas abrimos o menu de escolha.
+        
+        document.getElementById('documentsHome').style.display = 'flex'; // Garante o display correto
+        document.getElementById('areaContratoWrapper').style.display = 'none';
+        document.getElementById('areaBookipWrapper').style.display = 'none';
+    } 
+
+    else if (sectionId === 'stock') {
         stockContainer.classList.remove('hidden');
         stockContainer.style.display = 'flex';
         loadCheckedItems();
         filterStockProducts();
-    } else if (sectionId === 'administracao') {
+    } 
+    else if (sectionId === 'administracao') {
         adminContainer.classList.remove('hidden');
         adminContainer.style.display = 'flex';
         filterAdminProducts();
     }
+    // --- NOVO: LÓGICA DA TELA DE CLIENTES ---
+    else if (sectionId === 'clients') {
+        if (clientsContainer) {
+            clientsContainer.classList.remove('hidden');
+            clientsContainer.style.display = 'flex';
+            // Chama a função que preenche a tabela (que vamos criar no Bloco 2)
+            if (typeof renderClientsTable === 'function') {
+                renderClientsTable();
+            }
+        }
+    }
+
     currentMainSectionId = sectionId;
-    
-        // --- ADICIONE ESTA LINHA ---
     safeStorage.setItem('ctwLastSection', sectionId);
 }
+
 
 function renderRatesEditor() {
     const accordionContainer = document.getElementById('ratesAccordion');
@@ -832,217 +876,207 @@ function handleProductSelectionForVenda(product) {
     updateFecharVendaUI();
 }
 async function exportResultsToImage(resultsContainerId, fileName = 'calculo-taxas.png', customTitle = '') {
-    const resultsEl = document.getElementById(resultsContainerId);
-    if (!resultsEl || !resultsEl.innerHTML.trim()) {
-        showCustomModal({ message: "Não há resultados para exportar." });
-        return;
-    }
-
-    // 1. Container Principal
-    const exportContainer = document.createElement('div');
-    exportContainer.className = 'export-container-temp';
-    
-    // CONFIGURAÇÃO SAGRADA: 1080 x 1350 (4:5 Portrait)
-    exportContainer.style.position = 'fixed';
-    exportContainer.style.left = '-9999px';
-    exportContainer.style.top = '0';
-    exportContainer.style.width = '1080px';
-    exportContainer.style.height = '1350px'; // Altura FIXA
-    exportContainer.style.padding = '60px';
-    exportContainer.style.boxSizing = 'border-box';
-    
-    // Cores do tema (apenas para detalhes)
-    const style = getComputedStyle(document.body);
-    const primaryColor = style.getPropertyValue('--primary-color').trim() || '#EF5350';
-    
-    // Fundo Branco (Forçado)
-    const bgColor = '#ffffff';
-    const textColor = '#000000';
-    const subTextColor = '#555555';
-    const cardBg = '#f8f9fa';
-    const cardBorder = '#e9ecef';
-
-    exportContainer.style.background = bgColor;
-    exportContainer.style.fontFamily = "'Poppins', sans-serif";
-    exportContainer.style.color = textColor;
-    exportContainer.style.display = 'flex';
-    exportContainer.style.flexDirection = 'column';
-    exportContainer.style.justifyContent = 'space-between';
-
-    // 2. Cabeçalho (COM DESTAQUE NO TÍTULO)
-    const displayTitle = customTitle || "ORÇAMENTO PERSONALIZADO";
-    
-    const headerDiv = document.createElement('div');
-    headerDiv.style.textAlign = 'center';
-    headerDiv.style.marginBottom = '30px';
-    headerDiv.innerHTML = `
-        <div style="display: flex; flex-direction: column; align-items: center;">
-            <div style="font-size: 2.8rem; font-weight: 900; color: ${textColor}; letter-spacing: -1px; text-transform: uppercase; margin-bottom: 15px;">WORKCELL <span style="color:${primaryColor}">TECNOLOGIA</span></div>
-            
-            <div style="
-                background: ${primaryColor}; 
-                color: #fff; 
-                font-size: 1.6rem; 
-                font-weight: 800; 
-                letter-spacing: 1px; 
-                text-transform: uppercase; 
-                padding: 8px 35px; 
-                border-radius: 60px; 
-                box-shadow: 0 8px 20px rgba(0,0,0,0.15);
-                display: inline-block;
-            ">
-                ${displayTitle}
-            </div>
-        </div>
-    `;
-    
-    // 3. Conteúdo (AGORA SIM EM 2 COLUNAS)
-    const contentDiv = document.createElement('div');
-    contentDiv.style.width = '100%';
-    contentDiv.style.flex = '1';
-    contentDiv.style.display = 'flex';
-    contentDiv.style.flexDirection = 'column';
-    contentDiv.style.justifyContent = 'flex-start'; // Alinha ao topo
-    
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = resultsEl.innerHTML;
-    const rows = Array.from(tempDiv.querySelectorAll('tbody tr'));
-    
-    // DIVISÃO EM COLUNAS
-    // Se tiver mais de 6 itens, divide. Senão, uma coluna centralizada.
-    let columnsHtml = '';
-    
-    if (rows.length > 6) {
-        const splitIndex = Math.ceil(rows.length / 2); 
-        const col1Rows = rows.slice(0, splitIndex);
-        const col2Rows = rows.slice(splitIndex);
-
-        // Função interna para gerar HTML dos cards
-        const renderCards = (list) => list.map(row => {
-            const cells = row.querySelectorAll('td');
-            const parcelas = cells[0].innerText;
-            const valorParcela = cells[1].innerText;
-            const total = cells[2].innerText;
-            
-            const isHighlight = parcelas.includes('Débito') || parcelas === '1x';
-            const borderStyle = isHighlight ? `2px solid ${primaryColor}` : `1px solid ${cardBorder}`;
-            const badgeStyle = `background: ${primaryColor}; color: #fff;`;
-
-            return `
-            <div class="list-item" style="border: ${borderStyle}; background: ${cardBg};">
-                <div class="parcela-badge" style="${badgeStyle}">${parcelas}</div>
-                <div class="info-group">
-                    <div class="label" style="color: ${subTextColor}">Parcela</div>
-                    <div class="value-main" style="color: ${textColor}">${valorParcela}</div>
-                </div>
-                <div class="info-group text-end">
-                    <div class="label" style="color: ${subTextColor}">Total</div>
-                    <div class="value-sub" style="color: ${primaryColor}">${total}</div>
-                </div>
-            </div>`;
-        }).join('');
-
-        columnsHtml = `
-        <div class="columns-wrapper">
-            <div class="column">${renderCards(col1Rows)}</div>
-            <div class="column">${renderCards(col2Rows)}</div>
-        </div>`;
-    } else {
-        // Poucos itens: Uma coluna só
-        const renderCards = (list) => list.map(row => {
-            const cells = row.querySelectorAll('td');
-            const parcelas = cells[0].innerText;
-            const valorParcela = cells[1].innerText;
-            const total = cells[2].innerText;
-            const isHighlight = parcelas.includes('Débito') || parcelas === '1x';
-            const borderStyle = isHighlight ? `2px solid ${primaryColor}` : `1px solid ${cardBorder}`;
-            const badgeStyle = `background: ${primaryColor}; color: #fff;`;
-
-            return `
-            <div class="list-item" style="border: ${borderStyle}; background: ${cardBg};">
-                <div class="parcela-badge" style="${badgeStyle}">${parcelas}</div>
-                <div class="info-group">
-                    <div class="label" style="color: ${subTextColor}">Parcela</div>
-                    <div class="value-main" style="color: ${textColor}">${valorParcela}</div>
-                </div>
-                <div class="info-group text-end">
-                    <div class="label" style="color: ${subTextColor}">Total</div>
-                    <div class="value-sub" style="color: ${primaryColor}">${total}</div>
-                </div>
-            </div>`;
-        }).join('');
-        
-        columnsHtml = `<div class="list-container">${renderCards(rows)}</div>`;
-    }
-
-    // Alertas (Nome do produto, Avisos)
-    let alertsAndTitle = '';
-    Array.from(tempDiv.children).forEach(child => {
-        if (child.tagName !== 'DIV' && child.tagName !== 'H4' || (!child.querySelector('table') && child.tagName !== 'H4')) {
-            if(child.classList.contains('alert')) {
-                child.style.background = '#f1f3f5';
-                child.style.borderLeft = `6px solid ${primaryColor}`;
-                child.style.color = textColor;
-                child.style.fontSize = '1.1rem';
-                child.style.padding = '15px';
-                child.style.marginBottom = '25px';
-                child.style.borderRadius = '12px';
-                child.className = '';
-            }
-            alertsAndTitle += child.outerHTML;
-        }
-    });
-
-    const styles = `
-        <style>
-            .columns-wrapper { display: flex; gap: 30px; width: 100%; align-items: flex-start; }
-            .column { flex: 1; display: flex; flex-direction: column; gap: 15px; }
-            .list-container { display: flex; flex-direction: column; gap: 15px; width: 100%; }
-            
-            .list-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-radius: 14px; position: relative; box-shadow: 0 3px 8px rgba(0,0,0,0.04); height: 75px; box-sizing: border-box; }
-            
-            .parcela-badge { position: absolute; top: 50%; left: -10px; transform: translateY(-50%); font-weight: 800; width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.95rem; box-shadow: 0 4px 8px rgba(0,0,0,0.2); z-index: 2; border: 3px solid #fff; }
-            
-            .info-group { display: flex; flex-direction: column; margin-left: 25px; }
-            .text-end { align-items: flex-end; margin-left: 0; }
-            .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 2px; }
-            .value-main { font-size: 1.3rem; font-weight: 700; letter-spacing: -0.5px; }
-            .value-sub { font-size: 1.1rem; font-weight: 600; }
-        </style>
-    `;
-    
-    contentDiv.innerHTML = styles + alertsAndTitle + columnsHtml;
-
-    // 5. Rodapé
-    const footerDiv = document.createElement('div');
-    footerDiv.style.marginTop = '40px';
-    footerDiv.style.textAlign = 'center';
-    footerDiv.innerHTML = `
-        <div style="display: inline-block; background: #000; color: #fff; padding: 12px 35px; border-radius: 50px; font-size: 1.1rem; font-weight: 600; box-shadow: 0 10px 20px rgba(0,0,0,0.1);">Válido por tempo limitado ⚠️</div>
-        <div style="margin-top: 15px; font-size: 0.9rem; color: #aaa;">Gerado via App Central Workcell by Brendon</div>
-    `;
-
-    exportContainer.appendChild(headerDiv);
-    exportContainer.appendChild(contentDiv);
-    exportContainer.appendChild(footerDiv);
-    document.body.appendChild(exportContainer);
-
-    // 6. Gerar Imagem
     try {
-        await new Promise(resolve => setTimeout(resolve, 200)); 
+        const resultsEl = document.getElementById(resultsContainerId);
+        if (!resultsEl || !resultsEl.innerHTML.trim()) {
+            showCustomModal({ message: "Não há resultados para exportar." });
+            return;
+        }
+
+        // 1. Container Principal
+        const exportContainer = document.createElement('div');
+        exportContainer.className = 'export-container-temp';
+        
+        // CONFIGURAÇÃO: 1080 x 1350 (Vertical 4:5)
+        exportContainer.style.position = 'fixed';
+        exportContainer.style.left = '-9999px';
+        exportContainer.style.top = '0';
+        exportContainer.style.width = '1080px';
+        exportContainer.style.minHeight = '1350px';
+        exportContainer.style.padding = '60px';
+        exportContainer.style.boxSizing = 'border-box';
+        
+        // Cores (Fundo Branco Forçado)
+        const style = getComputedStyle(document.body);
+        const primaryColor = style.getPropertyValue('--primary-color').trim() || '#EF5350';
+        const bgColor = '#ffffff';
+        const textColor = '#000000';
+        const subTextColor = '#555555';
+        const cardBg = '#f8f9fa';
+        const cardBorder = '#e9ecef';
+
+        exportContainer.style.background = bgColor;
+        exportContainer.style.fontFamily = "'Poppins', sans-serif";
+        exportContainer.style.color = textColor;
+        exportContainer.style.display = 'flex';
+        exportContainer.style.flexDirection = 'column';
+        exportContainer.style.justifyContent = 'space-between';
+
+        // 2. Processar Entrada e Título
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = resultsEl.innerHTML;
+        
+        let entradaValor = '';
+        let alertsAndTitle = ''; // Conteúdo HTML extra (alertas, etc)
+        
+        // Separa o valor da entrada para colocar no topo
+        Array.from(tempDiv.children).forEach(child => {
+            const text = child.innerText || '';
+            // Se for o alerta de entrada, extrai o valor e não renderiza embaixo
+            if (child.classList.contains('alert') && (text.includes('Entrada') || text.includes('entrada'))) {
+                const match = text.match(/R\$\s?[\d.,]+/);
+                if(match) entradaValor = match[0];
+                return; 
+            }
+            // Outros elementos (Títulos H4 antigos ou Alertas de erro)
+            if (child.tagName !== 'DIV' && child.tagName !== 'H4' || (!child.querySelector('table') && child.tagName !== 'H4')) {
+                // Estiliza alertas restantes
+                if(child.classList.contains('alert')) {
+                    child.style.background = '#f1f3f5';
+                    child.style.borderLeft = `6px solid ${primaryColor}`;
+                    child.style.color = textColor;
+                    child.style.fontSize = '1.2rem';
+                    child.style.padding = '15px';
+                    child.style.marginBottom = '20px';
+                    child.style.borderRadius = '12px';
+                    child.className = '';
+                }
+                alertsAndTitle += child.outerHTML;
+            }
+        });
+
+        // 3. Montar Cabeçalho
+        const displayTitle = customTitle || "ORÇAMENTO PERSONALIZADO";
+        const headerDiv = document.createElement('div');
+        headerDiv.style.textAlign = 'center';
+        headerDiv.style.marginBottom = '30px';
+        
+        let entradaBadge = '';
+        if(entradaValor) {
+            entradaBadge = `
+            <div style="margin-top: 20px; font-size: 1.4rem; color: #fff; background: #222; padding: 8px 30px; border-radius: 50px; display: inline-block; font-weight: 700; box-shadow: 0 5px 15px rgba(0,0,0,0.2);">
+                ENTRADA: <span style="color: ${primaryColor};">${entradaValor}</span>
+            </div>`;
+        }
+
+        headerDiv.innerHTML = `
+            <div style="display: flex; flex-direction: column; align-items: center;">
+                <div style="font-size: 3rem; font-weight: 900; color: ${textColor}; letter-spacing: -1px; text-transform: uppercase; margin-bottom: 10px;">WORKCELL <span style="color:${primaryColor}">TECNOLOGIA</span></div>
+                
+                <div style="
+                    background: ${primaryColor}; 
+                    color: #fff; 
+                    font-size: 1.6rem; 
+                    font-weight: 800; 
+                    letter-spacing: 1px; 
+                    text-transform: uppercase; 
+                    padding: 8px 35px; 
+                    border-radius: 60px; 
+                    box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+                    display: inline-block;
+                ">
+                    ${displayTitle}
+                </div>
+                ${entradaBadge}
+            </div>
+        `;
+        
+        // 4. Montar Tabela (2 Colunas)
+        const contentDiv = document.createElement('div');
+        contentDiv.style.width = '100%';
+        contentDiv.style.flex = '1';
+        
+        const rows = Array.from(tempDiv.querySelectorAll('tbody tr'));
+        let columnsHtml = '';
+        
+        // Função auxiliar para criar os cards
+        const renderCards = (list) => list.map(row => {
+            const cells = row.querySelectorAll('td');
+            const parcelas = cells[0].innerText;
+            const valorParcela = cells[1].innerText;
+            const total = cells[2].innerText;
+            
+            const isHighlight = parcelas.includes('Débito') || parcelas === '1x';
+            const borderStyle = isHighlight ? `2px solid ${primaryColor}` : `1px solid ${cardBorder}`;
+            const badgeStyle = `background: ${primaryColor}; color: #fff;`;
+
+            return `
+            <div class="list-item" style="border: ${borderStyle}; background: ${cardBg};">
+                <div class="parcela-badge" style="${badgeStyle}">${parcelas}</div>
+                <div class="info-group">
+                    <div class="label" style="color: ${subTextColor}">Parcela</div>
+                    <div class="value-main" style="color: ${textColor}">${valorParcela}</div>
+                </div>
+                <div class="info-group text-end">
+                    <div class="label" style="color: ${subTextColor}">Total</div>
+                    <div class="value-sub" style="color: ${primaryColor}">${total}</div>
+                </div>
+            </div>`;
+        }).join('');
+
+        // Divide em 2 colunas se tiver mais de 6 itens
+        if (rows.length > 6) {
+            const splitIndex = Math.ceil(rows.length / 2); 
+            const col1Rows = rows.slice(0, splitIndex);
+            const col2Rows = rows.slice(splitIndex);
+            columnsHtml = `
+            <div class="columns-wrapper">
+                <div class="column">${renderCards(col1Rows)}</div>
+                <div class="column">${renderCards(col2Rows)}</div>
+            </div>`;
+        } else {
+            columnsHtml = `<div class="list-container">${renderCards(rows)}</div>`;
+        }
+
+        const styles = `
+            <style>
+                .columns-wrapper { display: flex; gap: 30px; width: 100%; align-items: flex-start; }
+                .column { flex: 1; display: flex; flex-direction: column; gap: 15px; }
+                .list-container { display: flex; flex-direction: column; gap: 15px; width: 100%; }
+                .list-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-radius: 14px; position: relative; box-shadow: 0 3px 8px rgba(0,0,0,0.04); height: 80px; box-sizing: border-box; }
+                .parcela-badge { position: absolute; top: 50%; left: -15px; transform: translateY(-50%); font-weight: 800; width: 55px; height: 55px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1rem; box-shadow: 0 4px 10px rgba(0,0,0,0.2); z-index: 2; border: 4px solid #fff; }
+                .info-group { display: flex; flex-direction: column; margin-left: 30px; }
+                .text-end { align-items: flex-end; margin-left: 0; }
+                .label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 2px; }
+                .value-main { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.5px; }
+                .value-sub { font-size: 1.1rem; font-weight: 600; }
+            </style>
+        `;
+        
+        contentDiv.innerHTML = styles + alertsAndTitle + columnsHtml;
+
+        // 5. Rodapé
+        const footerDiv = document.createElement('div');
+        footerDiv.style.marginTop = '40px';
+        footerDiv.style.textAlign = 'center';
+        footerDiv.innerHTML = `
+            <div style="display: inline-block; background: #000; color: #fff; padding: 10px 30px; border-radius: 50px; font-size: 1.1rem; font-weight: 600; box-shadow: 0 10px 20px rgba(0,0,0,0.1);">Válido por tempo limitado ⚠️</div>
+            <div style="margin-top: 15px; font-size: 0.9rem; color: #aaa;">Gerado via App Central Workcell</div>
+        `;
+
+        exportContainer.appendChild(headerDiv);
+        exportContainer.appendChild(contentDiv);
+        exportContainer.appendChild(footerDiv);
+        document.body.appendChild(exportContainer);
+
+        // 6. Gerar Imagem
+        await new Promise(resolve => setTimeout(resolve, 300)); // Delay para garantir renderização
         const canvas = await html2canvas(exportContainer, { backgroundColor: null, scale: 1, logging: false });
         const link = document.createElement('a');
         link.download = fileName;
         link.href = canvas.toDataURL("image/png");
         link.click();
-    } catch (error) {
-        console.error('Erro ao exportar:', error);
-        showCustomModal({ message: 'Erro ao gerar imagem.' });
-    } finally {
+        
         document.body.removeChild(exportContainer);
+
+    } catch (error) {
+        console.error('Erro na exportação:', error);
+        showCustomModal({ message: 'Erro ao criar imagem. Tente novamente.' });
+        // Limpeza de emergência
+        const oldContainer = document.querySelector('.export-container-temp');
+        if(oldContainer) document.body.removeChild(oldContainer);
     }
 }
-
 
 
 function showSkeletonLoader(container) {
@@ -1909,6 +1943,40 @@ function populatePreview() {
     document.getElementById('previewLocalData').textContent = `Goiânia, ${today.toLocaleDateString('pt-BR', dateOptions)}`;
 }
 
+// --- CARREGAR CONFIGURAÇÕES (ATUALIZADO) ---
+// --- CARREGAR CONFIGURAÇÕES (ATUALIZADO COM IMAGENS) ---
+function loadSettingsFromDB() {
+    if (!db || !isAuthReady) return;
+    onValue(ref(db, 'settings'), (snapshot) => {
+        if (snapshot.exists()) {
+            receiptSettings = snapshot.val();
+        }
+        
+        // Preenche Texto
+        const headerInput = document.getElementById('settingHeaderInput');
+        const termsInput = document.getElementById('settingTermsInput');
+        const msgInput = document.getElementById('settingEmailMsgInput');
+        
+        if (headerInput) headerInput.value = receiptSettings.header || '';
+        if (termsInput) termsInput.value = receiptSettings.terms || '';
+        if (msgInput) msgInput.value = receiptSettings.emailMessage || '';
+
+        // Preenche Imagens (Preview)
+        const imgLogo = document.getElementById('previewLogo');
+        const imgSig = document.getElementById('previewSignature');
+
+        if (imgLogo && receiptSettings.logoBase64) {
+            imgLogo.src = receiptSettings.logoBase64;
+            imgLogo.style.display = 'block';
+        }
+        if (imgSig && receiptSettings.signatureBase64) {
+            imgSig.src = receiptSettings.signatureBase64;
+            imgSig.style.display = 'block';
+        }
+    });
+}
+
+
 function loadBoletosHistory() {
     if (!db || !isAuthReady) return;
     const boletosRef = ref(db, 'boletos');
@@ -2415,12 +2483,12 @@ function applyColorTheme(color) {
     });
 }
 
-
+//aqui
 async function main() {
     try {
         setupPWA();
         applyTheme(safeStorage.getItem('theme') || 'dark');
-                // Carrega a cor salva (ou usa vermelho se não tiver)
+        // Carrega a cor salva (ou usa vermelho se não tiver)
         applyColorTheme(safeStorage.getItem('ctwColorTheme') || 'red');
 
         app = initializeApp(firebaseConfig); 
@@ -2431,43 +2499,38 @@ async function main() {
             if (user) {
                 userId = user.uid;
                 isAuthReady = true;
+                
+                // CARREGAMENTO DE DADOS
                 loadRatesFromDB();
                 loadProductsFromDB();
                 loadTagsFromDB();
                 loadTagTexts();
+                loadSettingsFromDB(); // <--- Carrega o cabeçalho/termos do recibo
                 setupNotificationListeners();
                 
+                // Remove a tela de carregamento suavemente
                 const loadingOverlay = document.getElementById('loadingOverlay');
-                loadingOverlay.style.opacity = '0';
-                // --- CORREÇÃO DO "PISCAR" DO MENU ---
+                if(loadingOverlay) loadingOverlay.style.opacity = '0';
                 
-                // 1. PRIMEIRO decidimos para onde ir (enquanto a tela de carregamento ainda cobre tudo)
+                // Redireciona para a última seção acessada
                 const lastSection = safeStorage.getItem('ctwLastSection');
                 const lastCalcSub = safeStorage.getItem('ctwLastCalcSub');
 
                 if (lastSection && lastSection !== 'main') {
-                    // Se tinha uma seção salva, vai pra ela IMEDIATAMENTE
                     showMainSection(lastSection);
-                    
-                    // Se era a calculadora, abre a sub-aba certa
                     if (lastSection === 'calculator' && lastCalcSub) {
                         openCalculatorSection(lastCalcSub);
                     }
                 } else {
-                    // Se não tinha nada, prepara o menu
                     showMainSection('main');
                 }
 
-                // 2. SÓ AGORA tiramos a tela de carregamento
+                // Finaliza a animação de loading
                 setTimeout(() => {
-                    const loadingOverlay = document.getElementById('loadingOverlay');
                     if(loadingOverlay) {
-                        loadingOverlay.style.opacity = '0'; // Começa a desaparecer suave
-                        setTimeout(() => {
-                            loadingOverlay.style.display = 'none'; // Some de vez
-                        }, 500); // Espera a animação de opacidade terminar
+                        loadingOverlay.style.display = 'none';
                     }
-                }, 100); // Pequeno delay só para garantir que o navegador desenhou a tela certa
+                }, 500);
             } else {
                 await signInAnonymously(auth);
             }
@@ -2477,6 +2540,10 @@ async function main() {
         document.body.innerHTML = `<h1>Erro ao conectar.</h1><p>${error.message}</p>`; 
     }
 }
+
+        
+        
+        //fim
 
 document.addEventListener('DOMContentLoaded', () => {
     const notificationOffcanvasEl = document.getElementById('notificationPanel');
@@ -2729,9 +2796,57 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     document.getElementById('goToAdmin').addEventListener('click', () => showMainSection('administracao'));
 
-    document.getElementById('backFromContract').addEventListener('click', () => showMainSection('main'));
     document.getElementById('backFromStock').addEventListener('click', () => showMainSection('main'));
     document.getElementById('backFromAdmin').addEventListener('click', () => showMainSection('main'));
+
+    // ... outros botões acima ...
+    document.getElementById('backFromStock').addEventListener('click', () => showMainSection('main'));
+    
+    // ESTA É A LINHA DE REFERÊNCIA 👇
+    document.getElementById('backFromAdmin').addEventListener('click', () => showMainSection('main'));
+
+    // =======================================================
+    // >>> COLE O BLOCO 3 AQUI (NESSE ESPAÇO) <<<
+    // =======================================================
+
+    // --- BOTÕES DA TELA DE CLIENTES ---
+
+    // 1. Botão que está DENTRO da Administração para ir aos Clientes
+    const btnAdminClients = document.getElementById('btnAdminClients');
+    if (btnAdminClients) {
+        btnAdminClients.addEventListener('click', () => {
+            showMainSection('clients');
+        });
+    }
+
+    // 2. Botão Voltar (Da tela de Clientes volta para Administração)
+    const btnBackFromClients = document.getElementById('backFromClients');
+    if (btnBackFromClients) {
+        btnBackFromClients.addEventListener('click', () => {
+            showMainSection('administracao'); 
+        });
+    }
+
+    // 3. Campo de Busca na tabela
+    const clientSearchInput = document.getElementById('clientSearchInput');
+    if (clientSearchInput) {
+        clientSearchInput.addEventListener('input', (e) => {
+            renderClientsTable(e.target.value);
+        });
+    }
+    
+    // 4. Botão Importar (Ainda sem função, só avisa)
+    const btnImport = document.getElementById('btnImportClients');
+    if(btnImport) {
+        btnImport.addEventListener('click', () => {
+            showCustomModal({ message: "Aguarde o próximo passo para importar CSV!" });
+        });
+    }
+    // =======================================================
+
+    // ... o resto do código continua (goToAdminFromEmptyState etc) ...
+    document.getElementById('goToAdminFromEmptyState').addEventListener('click', () => showMainSection('administracao'));
+
     document.getElementById('goToAdminFromEmptyState').addEventListener('click', () => showMainSection('administracao'));
     // Botão Voltar do Sub-menu da Calculadora
     document.getElementById('backFromCalculatorHome').addEventListener('click', () => showMainSection('main'));
@@ -3169,7 +3284,67 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('deleteAllProductsBtn').addEventListener('click', deleteAllProducts);
-    
+        // --- C: SALVAR CONFIGURAÇÕES DE RECIBO ---
+        // --- BOTÃO SALVAR CONFIGURAÇÕES (ATUALIZADO) ---
+        // --- BOTÃO SALVAR CONFIGURAÇÕES (ATUALIZADO COM UPLOAD) ---
+    const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+    if (saveSettingsBtn) {
+        saveSettingsBtn.addEventListener('click', () => {
+            showCustomModal({
+                message: "Senha de Administrador:",
+                showPassword: true,
+                confirmText: "Salvar",
+                onConfirm: async (password) => {
+                    if (password === "220390") {
+                        const btnOriginalText = saveSettingsBtn.innerHTML;
+                        saveSettingsBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Salvando...';
+                        
+                        try {
+                            const header = document.getElementById('settingHeaderInput').value;
+                            const terms = document.getElementById('settingTermsInput').value;
+                            const emailMessage = document.getElementById('settingEmailMsgInput').value;
+                            
+                            // Objeto base de atualização
+                            let updates = { header, terms, emailMessage };
+
+                            // Processa Logo (se tiver selecionado nova)
+                            const logoInput = document.getElementById('uploadLogoInput');
+                            if (logoInput.files && logoInput.files[0]) {
+                                const logoBase64 = await processarImagemParaBase64(logoInput.files[0], 300); // Max 300px
+                                updates.logoBase64 = logoBase64;
+                            }
+
+                            // Processa Assinatura (se tiver selecionado nova)
+                            const sigInput = document.getElementById('uploadSignatureInput');
+                            if (sigInput.files && sigInput.files[0]) {
+                                const sigBase64 = await processarImagemParaBase64(sigInput.files[0], 300); // Max 300px
+                                updates.signatureBase64 = sigBase64;
+                            }
+
+                            // Salva no Firebase
+                            await update(ref(db, 'settings'), updates);
+                            
+                            // Atualiza localmente para ver na hora
+                            receiptSettings = { ...receiptSettings, ...updates };
+                            
+                            showCustomModal({ message: "Configurações e Imagens salvas!" });
+                            saveSettingsBtn.innerHTML = btnOriginalText;
+
+                        } catch (error) {
+                            console.error(error);
+                            showCustomModal({ message: "Erro ao salvar: " + error.message });
+                            saveSettingsBtn.innerHTML = btnOriginalText;
+                        }
+                    } else {
+                        showCustomModal({ message: "Senha incorreta." });
+                    }
+                },
+                onCancel: () => {}
+            });
+        });
+    }
+
+
     const productsListContainer = document.getElementById('productsListContainer');
     productsListContainer.addEventListener('click', e => {
         const header = e.target.closest('.admin-product-header');
@@ -3224,47 +3399,65 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    document.getElementById('admin-nav-buttons').addEventListener('click', e => {
-        if (e.target.tagName !== 'BUTTON') return;
-        const buttonElement = e.target;
-        const targetId = buttonElement.dataset.adminSection;
+    
+    //comeco
+    
+    // --- D: NAVEGAÇÃO DO ADMIN (ATUALIZADA) ---
+document.getElementById('admin-nav-buttons').addEventListener('click', e => {
+    if (e.target.tagName !== 'BUTTON') return;
+    const buttonElement = e.target;
+    const targetId = buttonElement.dataset.adminSection;
 
-        if (buttonElement.classList.contains('active')) return;
+    if (buttonElement.classList.contains('active')) return;
 
-        const switchAdminTab = (id, btn) => {
-            document.getElementById('adminProductsContent').classList.add('hidden');
-            document.getElementById('adminRatesContent').classList.add('hidden');
-            document.getElementById('adminTagsContent').classList.add('hidden');
-            document.getElementById('adminNotificationsContent').classList.add('hidden');
-            document.querySelectorAll('#admin-nav-buttons button').forEach(b => b.classList.remove('active'));
-            
-            document.getElementById(id).classList.remove('hidden');
-            btn.classList.add('active');
+    const switchAdminTab = (id, btn) => {
+        // Esconde todas as abas
+        document.getElementById('adminProductsContent').classList.add('hidden');
+        document.getElementById('adminRatesContent').classList.add('hidden');
+        document.getElementById('adminTagsContent').classList.add('hidden');
+        document.getElementById('adminNotificationsContent').classList.add('hidden');
+        document.getElementById('adminSettingsContent').classList.add('hidden'); // NOVA ABA
 
-            if (id === 'adminRatesContent') renderRatesEditor();
-            if (id === 'adminTagsContent') renderTagManagementUI();
-            if (id === 'adminNotificationsContent') renderScheduledNotificationsAdminList();
-        };
+        // Remove active dos botões
+        document.querySelectorAll('#admin-nav-buttons button').forEach(b => b.classList.remove('active'));
 
-        if (targetId === 'adminNotificationsContent') {
-            showCustomModal({
-                message: "Digite a senha para acessar Notificações:",
-                showPassword: true,
-                confirmText: "Acessar",
-                onConfirm: (password) => {
-                    if (password === "220390") {
-                        switchAdminTab(targetId, buttonElement);
-                    } else {
-                        showCustomModal({ message: "Senha incorreta." });
-                    }
-                },
-                onCancel: () => {}
-            });
-        } else {
-            switchAdminTab(targetId, buttonElement);
+        // Mostra a aba certa
+        document.getElementById(id).classList.remove('hidden');
+        btn.classList.add('active');
+
+        if (id === 'adminRatesContent') renderRatesEditor();
+        if (id === 'adminTagsContent') renderTagManagementUI();
+        if (id === 'adminNotificationsContent') renderScheduledNotificationsAdminList();
+
+        // Se abriu a aba de config, preenche os dados
+        if (id === 'adminSettingsContent') {
+            document.getElementById('settingHeaderInput').value = receiptSettings.header || '';
+            document.getElementById('settingTermsInput').value = receiptSettings.terms || '';
         }
-    });
+    };
 
+    if (targetId === 'adminNotificationsContent' || targetId === 'adminSettingsContent') {
+        // Pede senha para Notificações E Configurações
+        showCustomModal({
+            message: "Acesso Restrito. Senha:",
+            showPassword: true,
+            confirmText: "Acessar",
+            onConfirm: (password) => {
+                if (password === "220390") {
+                    switchAdminTab(targetId, buttonElement);
+                } else {
+                    showCustomModal({ message: "Senha incorreta." });
+                }
+            },
+            onCancel: () => {}
+        });
+    } else {
+        switchAdminTab(targetId, buttonElement);
+    }
+});
+
+    
+    
     document.getElementById('scheduleNotificationForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const text = document.getElementById('notificationText').value.trim();
@@ -3809,5 +4002,1710 @@ document.addEventListener('DOMContentLoaded', () => {
             setTimeout(() => themeModal.classList.remove('active'), 200);
         });
     });
+    
+    
+    //logica book
+    
+        // --- LÓGICA DE ABAS (CONTRATO vs BOOKIP) ---
+    
 
+
+
+    // --- TOGGLE NOVO / HISTÓRICO DO BOOKIP ---
+        // --- TOGGLE NOVO / HISTÓRICO DO BOOKIP (CORRIGIDO) ---
+    const bookipToggle = document.getElementById('bookipModeToggle');
+    // Pegamos o novo container de busca que criamos no HTML
+    const searchContainer = document.getElementById('bookipSearchContainer');
+
+    if(bookipToggle) {
+        bookipToggle.addEventListener('change', (e) => {
+            const showHistory = e.target.checked;
+            
+            // Alterna as telas principais
+            document.getElementById('newBookipContent').classList.toggle('hidden', showHistory);
+            document.getElementById('historyBookipContent').classList.toggle('hidden', !showHistory);
+            
+            // Alterna a barra de busca separadamente (Segurança contra erro de impressão)
+            if (searchContainer) {
+                searchContainer.classList.toggle('hidden', !showHistory);
+            }
+
+            if (showHistory) {
+                loadBookipHistory();
+            }
+        });
+    }
+
+
+
+    // ============================================================
+    // CORREÇÃO: LÓGICA DE BUSCA E ADIÇÃO DE ITENS NO BOOKIP
+    // ============================================================
+    
+    const inputBuscaBookip = document.getElementById('bookipProductSearch');
+    const containerResultados = document.getElementById('bookipSearchResults');
+    const btnAddLista = document.getElementById('btnAdicionarItemLista');
+    const listaVisual = document.getElementById('bookipListaItens');
+    const totalDisplay = document.getElementById('bookipTotalDisplay');
+
+    // 1. Lógica da Busca (Consertada)
+    if (inputBuscaBookip && containerResultados) {
+        inputBuscaBookip.addEventListener('input', (e) => {
+            const termo = e.target.value.toLowerCase();
+            
+            // Se digitar, já joga pro nome do produto caso não selecione nada
+            document.getElementById('bookipProdNomeTemp').value = e.target.value;
+            
+            containerResultados.innerHTML = '';
+            
+            if (termo.length < 1) {
+                containerResultados.style.display = 'none';
+                return;
+            }
+
+            // Filtra os produtos salvos
+            const filtrados = products.filter(p => p.nome.toLowerCase().includes(termo));
+
+            if (filtrados.length > 0) {
+                containerResultados.style.display = 'block';
+                                filtrados.slice(0, 5).forEach(p => { 
+                    const item = document.createElement('a');
+                    item.className = 'list-group-item list-group-item-action';
+                    // AQUI A CORREÇÃO: Força usar as cores do tema (Fundo do input e Cor do texto)
+                    item.style.cssText = "cursor: pointer; background-color: var(--input-bg); color: var(--text-color); border-color: var(--glass-border);";
+                    
+                    item.innerHTML = `
+                        <div class="d-flex justify-content-between align-items-center">
+                            <strong>${p.nome}</strong>
+                            <span class="fw-bold text-success">R$ ${parseFloat(p.valor).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span>
+                        </div>`;
+                    
+                    item.addEventListener('click', () => {
+                        document.getElementById('bookipProdNomeTemp').value = p.nome;
+                        document.getElementById('bookipProdValorTemp').value = p.valor;
+                        const cor = (p.cores && p.cores.length > 0) ? p.cores[0].nome : '';
+                        document.getElementById('bookipProdCorTemp').value = cor;
+                        
+                        inputBuscaBookip.value = p.nome;
+                        containerResultados.style.display = 'none';
+                    });
+                    
+                    containerResultados.appendChild(item);
+                });
+
+
+
+            } else {
+                containerResultados.style.display = 'none';
+            }
+        });
+
+        // Fecha a busca se clicar fora
+        document.addEventListener('click', (e) => {
+            if (!inputBuscaBookip.contains(e.target) && !containerResultados.contains(e.target)) {
+                containerResultados.style.display = 'none';
+            }
+        });
+    }
+
+    // 2. Lógica do Botão "Adicionar à Lista" (Não existia antes)
+    if (btnAddLista) {
+        btnAddLista.addEventListener('click', (e) => {
+            e.preventDefault(); // Evita recarregar página
+
+            // Pega os valores dos inputs pequenos
+            const nome = document.getElementById('bookipProdNomeTemp').value;
+            const qtd = parseInt(document.getElementById('bookipProdQtdTemp').value) || 1;
+            const valor = parseFloat(document.getElementById('bookipProdValorTemp').value) || 0;
+            const cor = document.getElementById('bookipProdCorTemp').value;
+            const obs = document.getElementById('bookipProdObsTemp').value;
+
+            if (!nome) {
+                showCustomModal({ message: "Digite ou busque o nome do produto." });
+                return;
+            }
+
+            // Adiciona ao carrinho global (bookipCartList)
+            bookipCartList.push({
+                nome: nome,
+                qtd: qtd,
+                valor: valor,
+                cor: cor,
+                obs: obs
+            });
+
+            // Limpa os campos para o próximo
+            inputBuscaBookip.value = '';
+            document.getElementById('bookipProdNomeTemp').value = '';
+            document.getElementById('bookipProdValorTemp').value = '';
+            document.getElementById('bookipProdCorTemp').value = '';
+            document.getElementById('bookipProdObsTemp').value = '';
+            document.getElementById('bookipProdQtdTemp').value = '1';
+
+            // Atualiza o visual da lista
+            atualizarListaVisualBookip();
+        });
+    }
+
+    // 3. Função para Atualizar a Lista Visual na Tela (CORRIGIDA - MODO CLARO)
+    function atualizarListaVisualBookip() {
+        if (!listaVisual) return;
+        
+        listaVisual.innerHTML = ''; 
+        let total = 0;
+
+        if (bookipCartList.length === 0) {
+            // Ajustei aqui também para usar a cor do texto padrão
+            listaVisual.innerHTML = '<li class="list-group-item text-center small bg-transparent" style="color: var(--text-secondary);">Nenhum item adicionado.</li>';
+        } else {
+            bookipCartList.forEach((item, index) => {
+                const subtotal = item.valor * item.qtd;
+                total += subtotal;
+
+                const li = document.createElement('li');
+                // REMOVI O 'text-light' e adicionei o style com var(--text-color)
+                li.className = 'list-group-item d-flex justify-content-between align-items-center bg-transparent border-secondary border-opacity-25';
+                li.style.color = 'var(--text-color)'; 
+                
+                li.innerHTML = `
+                    <div>
+                        <div class="fw-bold">${item.nome} <small style="color: var(--text-secondary);">x${item.qtd}</small></div>
+                        <div class="small" style="color: var(--text-secondary);">${item.cor} ${item.obs}</div>
+                    </div>
+                    <div class="text-end">
+                        <div class="fw-bold text-success">R$ ${subtotal.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</div>
+                        <button class="btn btn-sm btn-link text-danger p-0 text-decoration-none remove-item-bookip" data-index="${index}" style="font-size: 0.8rem;">Remover</button>
+                    </div>
+                `;
+                listaVisual.appendChild(li);
+            });
+        }
+
+        if (totalDisplay) {
+            totalDisplay.innerText = total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        }
+
+        document.querySelectorAll('.remove-item-bookip').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const idx = parseInt(e.target.dataset.index);
+                bookipCartList.splice(idx, 1);
+                atualizarListaVisualBookip();
+            });
+        });
+    }
+
+    // --- E: FUNÇÃO DE IMPRESSÃO BOOKIP (LAYOUT ESTILO REFERÊNCIA) ---
+         // --- FUNÇÃO DE IMPRESSÃO BOOKIP (LAYOUT IDENTICO À REFERÊNCIA) ---
+        function printBookip(dados) {
+        try {
+            if (!dados) { alert("Erro: Sem dados."); return; }
+
+            // 1. Processa Lista de Itens (Compatibilidade com antigo e novo)
+            let lista = (dados.items && Array.isArray(dados.items)) ? dados.items : [{
+                nome: dados.prodNome || 'Produto', qtd: parseInt(dados.prodQtd)||1, valor: parseFloat(dados.prodValor)||0, cor: dados.prodCor||'', obs: dados.obs||''
+            }];
+            
+            const totalGeral = lista.reduce((acc, i) => acc + (i.valor * i.qtd), 0);
+
+            // 2. Datas e Garantia Manual
+            const hoje = new Date();
+            const dataCompra = hoje.toLocaleDateString('pt-BR');
+            const diasGarantia = (dados.diasGarantia !== undefined) ? parseInt(dados.diasGarantia) : 90;
+            
+            let dataVencimento = "S/ Garantia";
+            if (diasGarantia > 0) {
+                const validade = new Date();
+                validade.setDate(hoje.getDate() + diasGarantia);
+                dataVencimento = validade.toLocaleDateString('pt-BR');
+            }
+            const txtGarantia = diasGarantia > 0 ? `${diasGarantia} Dias` : "Sem Garantia";
+
+            // 3. Monta Linhas da Tabela
+            const linhas = lista.map(item => `
+                <tr>
+                    <td><strong>${item.nome}</strong><br><span style="font-size:8.5pt;color:#666;">${item.cor} ${item.obs}</span></td>
+                    <td style="text-align:center;">${item.qtd}</td>
+                    <td style="text-align:right;">R$ ${item.valor.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+                    <td style="text-align:right;">R$ ${(item.valor*item.qtd).toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+                </tr>`).join('');
+
+            // Textos
+            const settings = (typeof receiptSettings !== 'undefined' && receiptSettings) ? receiptSettings : {};
+            const headerHtml = (settings.header || "WORKCELL TECNOLOGIA").replace(/\n/g, '<br>');
+            const termsHtml = (settings.terms || "Garantia legal.").replace(/\n/g, '<br>');
+            const logoUrl = "https://i.imgur.com/H6BjyBS.png";
+
+            // Pagamento
+            const pgtoHtml = dados.pagamento ? `<div style="font-size:9pt; margin-top:5px;"><strong>Forma de Pagamento:</strong> ${dados.pagamento}</div>` : '';
+
+            const htmlRecibo = `
+                <div class="bk-header">
+                    <div class="bk-logo-area"><img src="${logoUrl}" class="bk-logo-img" onerror="this.style.display='none'"></div>
+                    <div class="bk-company-info"><div class="bk-title-main">Comprovante de</div><div class="bk-title-sub">compra / Garantia</div>${headerHtml}</div>
+                </div>
+                <div class="bk-info-grid">
+                    <div class="bk-col-client"><span class="bk-label-bold">Para</span><div class="bk-text"><strong>${dados.nome}</strong><br>${dados.cpf}<br>${dados.tel}<br>${dados.end}</div></div>
+                    <div class="bk-col-dates">
+                        <div class="bk-date-row"><span class="bk-date-label">Recibo #</span><span>${dados.id ? dados.id.substring(1,6).toUpperCase() : 'NOVO'}</span></div>
+                        <div class="bk-date-row"><span class="bk-date-label">Data</span><span>${dataCompra}</span></div>
+                        <div class="bk-date-row"><span class="bk-date-label">Garantia</span><span>${txtGarantia}</span></div>
+                        <div class="bk-date-row"><span class="bk-date-label">Vence</span><span>${dataVencimento}</span></div>
+                    </div>
+                </div>
+                               <table class="bk-table">
+                    <thead>
+                        <tr>
+                            <th>Item</th>
+                            <th style="text-align:center;">Qtd</th>
+                            <th style="text-align:right;">Preço</th>
+                            <th style="text-align:right;">Valor</th>
+                        </tr>
+                    </thead>
+                    <tbody>${linhas}</tbody>
+                </table>
+
+                <div class="bk-totals-area"><div class="bk-totals-box">
+                    ${pgtoHtml}
+                    <div class="bk-total-final"><span>Total Pago</span><span class="bk-total-highlight">R$ ${totalGeral.toLocaleString('pt-BR',{minimumFractionDigits:2})}</span></div>
+                </div></div>
+                <div class="bk-section-title">Termos de Garantia</div><div class="bk-terms-text">${termsHtml}</div>
+                <br><br><div style="border-top:1px solid #000;width:100%;text-align:center;font-size:9pt;padding-top:5px;">Assinatura do Cliente</div>
+            `;
+
+            const preview = document.getElementById('bookipPreview');
+            if(preview) {
+                preview.innerHTML = htmlRecibo;
+                document.body.classList.add('print-bookip');
+                setTimeout(() => { window.print(); setTimeout(() => document.body.classList.remove('print-bookip'), 1500); }, 300);
+            }
+        } catch (e) { alert("Erro: " + e.message); document.body.classList.remove('print-bookip'); }
+    }
+
+    
+    
+    
+    // --- CARREGAR HISTÓRICO DE BOOKIPS ---
+        // --- CARREGAR HISTÓRICO DE BOOKIPS (CORRIGIDO) ---
+// ============================================================
+// CARREGAR HISTÓRICO OTIMIZADO (COM PAGINAÇÃO "CARREGAR MAIS")
+// ============================================================
+function loadBookipHistory() {
+    if (!db || !isAuthReady) return;
+    
+    const bookipsRef = ref(db, 'bookips');
+    const container = document.getElementById('historyBookipContent');
+    const searchInput = document.getElementById('bookipHistorySearch');
+    
+    // Variáveis de Controle da Paginação
+    let listaCompletaCache = []; // Guarda todos os 17.000 na memória (leve)
+    let listaFiltradaCache = []; // Guarda o resultado da busca
+    let itensVisiveis = 50;      // Começa mostrando 50
+    const incremento = 50;       // Carrega +50 por vez
+
+    container.innerHTML = '<div class="text-center p-4"><div class="spinner-border text-primary"></div><p class="mt-2 text-secondary">Carregando histórico...</p></div>';
+
+    if (bookipListener) off(bookipsRef, 'value', bookipListener);
+
+    bookipListener = onValue(bookipsRef, (snapshot) => {
+        if (snapshot.exists()) {
+            const data = snapshot.val();
+            // Transforma em lista e ordena por data (Mais recente primeiro)
+            listaCompletaCache = Object.keys(data).map(key => ({ id: key, ...data[key] }));
+            listaCompletaCache.sort((a, b) => new Date(b.criadoEm) - new Date(a.criadoEm));
+            
+            // Inicializa a lista filtrada com tudo
+            listaFiltradaCache = listaCompletaCache;
+            
+            // Reseta a contagem e desenha
+            itensVisiveis = 50;
+            renderizarLote();
+        } else {
+            container.innerHTML = '<p class="text-center text-secondary mt-4">Nenhum recibo salvo.</p>';
+        }
+    });
+
+    // --- FUNÇÃO QUE DESENHA NA TELA (LOTE POR LOTE) ---
+    function renderizarLote() {
+        // Pega apenas a fatia que deve ser mostrada (Ex: 0 a 50)
+        const fatia = listaFiltradaCache.slice(0, itensVisiveis);
+        const temMais = listaFiltradaCache.length > itensVisiveis;
+
+        if (fatia.length === 0) {
+            container.innerHTML = '<p class="text-center text-secondary mt-4">Nenhum documento encontrado na busca.</p>';
+            return;
+        }
+
+        // Gera o HTML
+        let html = `<div class="accordion w-100 history-accordion" id="bookipAccordion">` + 
+        fatia.map(item => {
+            let dataFormatada = 'Data desc.';
+            if (item.dataVenda) {
+                 const partes = item.dataVenda.split('-'); 
+                 dataFormatada = `${partes[2]}/${partes[1]}/${partes[0]}`;
+            } else if (item.criadoEm) {
+                 dataFormatada = new Date(item.criadoEm).toLocaleDateString('pt-BR');
+            }
+            
+            const docNum = item.docNumber || '---';
+
+            return `
+            <div class="accordion-item">
+                <h2 class="accordion-header" id="head-bk-${item.id}">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-bk-${item.id}">
+                        <span class="badge bg-primary me-2">Doc ${docNum}</span> 
+                        <span class="text-truncate" style="max-width: 180px;">${item.nome}</span> 
+                        <span class="ms-auto small text-secondary">${dataFormatada}</span>
+                    </button>
+                </h2>
+                <div id="collapse-bk-${item.id}" class="accordion-collapse collapse" data-bs-parent="#bookipAccordion">
+                    <div class="accordion-body">
+                        <p><strong>Cliente:</strong> ${item.nome} <br> <small class="text-secondary">${item.cpf || 'Sem CPF'}</small></p>
+                        <hr>
+                        <p class="mb-1"><strong>Itens:</strong></p>
+                        <ul class="list-unstyled small mb-3">
+                            ${(item.items || []).map(i => `<li>${i.qtd}x ${i.nome} - R$ ${parseFloat(i.valor).toFixed(2)}</li>`).join('')}
+                        </ul>
+                        <div class="d-flex justify-content-end gap-2 mt-2">
+                            <button class="btn btn-sm btn-info edit-bookip-btn" data-id="${item.id}" title="Editar Recibo">
+                                <i class="bi bi-pencil-square"></i>
+                            </button>
+                            <button class="btn btn-sm btn-warning email-history-btn" data-id="${item.id}" title="PDF/Email"><i class="bi bi-envelope-at-fill"></i></button>
+                            <button class="btn btn-sm btn-primary print-old-bookip" data-id="${item.id}"><i class="bi bi-printer"></i></button>
+                            <button class="btn btn-sm btn-outline-danger delete-bookip-btn" data-id="${item.id}"><i class="bi bi-trash"></i></button>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        }).join('') + `</div>`;
+
+        // Adiciona botão "Carregar Mais" se tiver mais itens
+        if (temMais) {
+            html += `
+            <div class="text-center py-3">
+                <button id="btnLoadMoreBookip" class="btn btn-outline-primary rounded-pill px-4">
+                    <i class="bi bi-arrow-down-circle"></i> Ver Mais Antigos (${listaFiltradaCache.length - itensVisiveis} restantes)
+                </button>
+            </div>`;
+        }
+
+        container.innerHTML = html;
+
+        // --- REATIVA OS EVENTOS DOS BOTÕES ---
+        reativarListeners();
+        
+        // Listener do botão "Carregar Mais"
+        const btnMore = document.getElementById('btnLoadMoreBookip');
+        if (btnMore) {
+            btnMore.addEventListener('click', () => {
+                itensVisiveis += incremento; // Aumenta o limite
+                renderizarLote(); // Redesenha com mais itens
+            });
+        }
+    }
+
+    // --- FUNÇÃO PARA REATIVAR OS BOTÕES DE AÇÃO ---
+    function reativarListeners() {
+        container.querySelectorAll('.edit-bookip-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const id = e.target.closest('button').dataset.id;
+                const item = listaCompletaCache.find(i => i.id === id);
+                if (typeof carregarDadosParaEdicao === 'function') carregarDadosParaEdicao(item);
+            });
+        });
+
+        container.querySelectorAll('.email-history-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const id = e.target.closest('button').dataset.id;
+                const item = listaCompletaCache.find(i => i.id === id);
+                if(item && typeof gerarPdfDoHistorico === 'function') gerarPdfDoHistorico(item, e.target.closest('button'));
+            });
+        });
+
+        container.querySelectorAll('.print-old-bookip').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const id = e.target.closest('button').dataset.id;
+                const item = listaCompletaCache.find(i => i.id === id);
+                if(item && typeof printBookip === 'function') printBookip(item);
+            });
+        });
+
+        container.querySelectorAll('.delete-bookip-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const id = e.target.closest('button').dataset.id;
+                showCustomModal({
+                    message: "Apagar este recibo?",
+                    confirmText: "Apagar",
+                    onConfirm: async () => {
+                        await remove(ref(db, `bookips/${id}`));
+                        showCustomModal({ message: "Apagado." });
+                    },
+                    onCancel: () => {}
+                });
+            });
+        });
+    }
+
+    // --- LÓGICA DE BUSCA (FILTRA NA MEMÓRIA) ---
+        // --- LÓGICA DE BUSCA (ATUALIZADA: C/ CELULAR E EMAIL) ---
+    if (searchInput) {
+        // Clone para limpar listeners antigos e evitar duplicação
+        const newSearchInput = searchInput.cloneNode(true);
+        searchInput.parentNode.replaceChild(newSearchInput, searchInput);
+        
+        newSearchInput.addEventListener('input', (e) => {
+            const termo = e.target.value.toLowerCase().trim();
+            
+            // Filtra a lista completa (Memória)
+            listaFiltradaCache = listaCompletaCache.filter(item => {
+                // 1. Pega os dados existentes
+                const nDoc = (item.docNumber || '').toLowerCase();
+                const nome = (item.nome || '').toLowerCase();
+                const cpf = (item.cpf || '').toLowerCase();
+                
+                // 2. NOVOS CAMPOS ADICIONADOS (Telefone e Email)
+                // Removemos espaços do telefone para facilitar a busca (ex: achar 9988 dentro de 9 988)
+                const telLimpo = (item.tel || '').toLowerCase().replace(/\s/g, ''); 
+                const telOriginal = (item.tel || '').toLowerCase();
+                const email = (item.email || '').toLowerCase();
+
+                // 3. A Lógica Inteligente (OU || OU || OU)
+                return nDoc.includes(termo) || 
+                       nome.includes(termo) || 
+                       cpf.includes(termo) || 
+                       telOriginal.includes(termo) || 
+                       telLimpo.includes(termo) || // Acha mesmo se digitar tudo junto
+                       email.includes(termo);
+            });
+
+            // Reseta a visualização e desenha de novo
+            itensVisiveis = 50;
+            renderizarLote();
+        });
+    }
+
+}
+
+
+    // --- FUNÇÃO AUXILIAR: CARREGAR DADOS NO FORMULÁRIO ---
+    function carregarDadosParaEdicao(item) {
+        if(!item) return;
+
+        // 1. Marca que estamos editando
+        currentEditingBookipId = item.id;
+
+        // 2. Muda visualmente para a aba "Novo"
+        document.getElementById('bookipModeToggle').checked = false;
+        document.getElementById('bookipModeToggle').dispatchEvent(new Event('change'));
+
+        // 3. Preenche os campos
+        document.getElementById('bookipNome').value = item.nome || '';
+        document.getElementById('bookipCpf').value = item.cpf || '';
+        document.getElementById('bookipTelefone').value = item.tel || '';
+        document.getElementById('bookipEndereco').value = item.end || '';
+        document.getElementById('bookipEmail').value = item.email || '';
+        document.getElementById('bookipDataManual').value = item.dataVenda || '';
+
+        // 4. Preenche a lista de itens
+        bookipCartList = item.items || [];
+        atualizarListaVisualBookip(); // (Essa função já existe no seu código, do passo anterior)
+
+        // 5. Pagamento (Checkboxes)
+        document.querySelectorAll('.check-pagamento').forEach(chk => chk.checked = false); // Reseta
+        if(item.pagamento) {
+            const formas = item.pagamento.split(', ');
+            formas.forEach(forma => {
+                const chk = Array.from(document.querySelectorAll('.check-pagamento')).find(c => c.value === forma);
+                if(chk) chk.checked = true;
+            });
+        }
+
+        // 6. Garantia
+        const selectGarantia = document.getElementById('bookipGarantiaSelect');
+        const inputGarantia = document.getElementById('bookipGarantiaCustomInput');
+        const dias = parseInt(item.diasGarantia);
+        
+        // Verifica se é um dos valores padrão
+        const isPadrao = [30, 120, 180, 365].includes(dias);
+        if(isPadrao) {
+            selectGarantia.value = dias;
+            inputGarantia.classList.add('hidden');
+        } else {
+            selectGarantia.value = 'custom';
+            inputGarantia.value = dias;
+            inputGarantia.classList.remove('hidden');
+        }
+
+        // 7. Muda o texto do botão salvar para avisar
+        const btnSalvar = document.getElementById('btnGerarBookip');
+        btnSalvar.innerHTML = `<i class="bi bi-pencil-square"></i> Atualizar Recibo (Doc ${item.docNumber || '---'})`;
+        btnSalvar.classList.remove('btn-success');
+        btnSalvar.classList.add('btn-info');
+
+        showCustomModal({ message: "Dados carregados! Faça as alterações e clique em Atualizar." });
+    }
+
+
+
+
+    // --- LÓGICA DE SALVAR E GARANTIA (NOVO) ---
+        // --- LÓGICA DE SALVAR E GARANTIA (NOVO) ---
+    const garantiaSelect = document.getElementById('bookipGarantiaSelect');
+    const garantiaInput = document.getElementById('bookipGarantiaCustomInput');
+    
+    if (garantiaSelect && garantiaInput) {
+        garantiaSelect.addEventListener('change', () => {
+            if (garantiaSelect.value === 'custom') {
+                // Remove a classe 'hidden' para mostrar o campo
+                garantiaInput.classList.remove('hidden');
+                garantiaInput.focus();
+            } else {
+                // Adiciona a classe 'hidden' para esconder
+                garantiaInput.classList.add('hidden');
+                garantiaInput.value = ''; // Limpa se esconder
+            }
+        });
+    }
+
+
+    // --- FUNÇÃO DE IMPRESSÃO BOOKIP (ATUALIZADA: Doc Nº e Layout) ---
+        // --- FUNÇÃO DE IMPRESSÃO BOOKIP (ATUALIZADA: Com Assinatura Digital) ---
+    function printBookip(dados) {
+        try {
+            if (!dados) { alert("Erro: Sem dados."); return; }
+
+            // ==============================================================================
+            // ÁREA DE CONFIGURAÇÃO DAS IMAGENS
+            // ==============================================================================
+            const logoUrl = "https://i.imgur.com/H6BjyBS.png"; // Sua Logo atual
+
+            // ---> COLE O LINK DA SUA ASSINATURA AQUI EMBAIXO (DENTRO DAS ASPAS) <---
+            const signatureUrl = "https://i.imgur.com/Bh3fVLM.jpeg";
+
+            // ==============================================================================
+
+            // Lista de Itens
+            let lista = (dados.items && Array.isArray(dados.items)) ? dados.items : [{
+                nome: dados.prodNome || 'Produto', qtd: parseInt(dados.prodQtd)||1, valor: parseFloat(dados.prodValor)||0, cor: dados.prodCor||'', obs: dados.obs||''
+            }];
+            
+            const totalGeral = lista.reduce((acc, i) => acc + (i.valor * i.qtd), 0);
+
+            // --- CÓDIGO CORRIGIDO PARA O PASSO 2 ---
+
+            // Datas e Garantia
+            let hoje;
+            let dataCompra;
+
+            // Se existir uma data manual salva no banco (dados.dataVenda), usamos ela
+            if (dados.dataVenda) {
+                // O formato vem como YYYY-MM-DD (ex: 2023-12-08)
+                // Precisamos quebrar para garantir que não haja erro de fuso horário
+                const partes = dados.dataVenda.split('-'); 
+                // Cria a data usando Ano, Mês (começa em 0), Dia
+                hoje = new Date(partes[0], partes[1] - 1, partes[2]);
+                dataCompra = `${partes[2]}/${partes[1]}/${partes[0]}`; // Formata para PT-BR (08/12/2023)
+            } else {
+                // Se for um recibo antigo que não tinha data salva, usa hoje
+                hoje = new Date();
+                dataCompra = hoje.toLocaleDateString('pt-BR');
+            }
+
+            const diasGarantia = (dados.diasGarantia !== undefined) ? parseInt(dados.diasGarantia) : 365;
+
+            let dataVencimento = "S/ Garantia";
+            if (diasGarantia > 0) {
+                const validade = new Date();
+                validade.setDate(hoje.getDate() + diasGarantia);
+                dataVencimento = validade.toLocaleDateString('pt-BR');
+            }
+            
+            // Texto da Garantia
+            let txtGarantia = "Sem Garantia";
+            if (diasGarantia === 365) txtGarantia = "1 Ano";
+            else if (diasGarantia === 180) txtGarantia = "6 Meses";
+            else if (diasGarantia === 120) txtGarantia = "4 Meses";
+            else if (diasGarantia === 30) txtGarantia = "30 Dias";
+            else if (diasGarantia > 0) txtGarantia = `${diasGarantia} Dias`;
+
+            // Linhas da Tabela
+            const linhas = lista.map(item => `
+                <tr>
+                    <td><strong>${item.nome}</strong><br><span style="font-size:8.5pt;color:#666;">${item.cor} ${item.obs}</span></td>
+                    <td style="text-align:center;">${item.qtd}</td>
+                    <td style="text-align:right;">R$ ${item.valor.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+                    <td style="text-align:right;">R$ ${(item.valor*item.qtd).toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+                </tr>`).join('');
+
+            // Configurações e Textos
+            const settings = (typeof receiptSettings !== 'undefined' && receiptSettings) ? receiptSettings : {};
+            const headerHtml = (settings.header || "WORKCELL TECNOLOGIA").replace(/\n/g, '<br>');
+            const termsHtml = (settings.terms || "Garantia legal.").replace(/\n/g, '<br>');
+            const pgtoHtml = dados.pagamento ? `<div style="font-size:9pt; margin-top:5px;"><strong>Forma de Pagamento:</strong> ${dados.pagamento}</div>` : '';
+            const numeroDoc = dados.docNumber ? dados.docNumber : '---';
+
+            // Montagem do HTML do Recibo
+            const htmlRecibo = `
+                <div class="bk-header">
+                    <div class="bk-logo-area"><img src="${logoUrl}" class="bk-logo-img" onerror="this.style.display='none'"></div>
+                    <div class="bk-company-info"><div class="bk-title-main">Comprovante de</div><div class="bk-title-sub">Compra &  Garantia</div>${headerHtml}</div>
+                </div>
+                <div class="bk-info-grid">
+                    <div class="bk-col-client"><span class="bk-label-bold">Para</span><div class="bk-text"><strong>${dados.nome}</strong><br>${dados.cpf}<br>${dados.tel}<br>${dados.end}</div></div>
+                    <div class="bk-col-dates">
+                        <div class="bk-date-row"><span class="bk-date-label">Doc Nº</span><span style="font-size: 11pt; font-weight: bold;">${numeroDoc}</span></div>
+                        <div class="bk-date-row"><span class="bk-date-label">Data</span><span>${dataCompra}</span></div>
+                        <div class="bk-date-row"><span class="bk-date-label">Garantia de </span><span>${txtGarantia}</span></div>
+                        <div class="bk-date-row"><span class="bk-date-label">Vencimento da Garantia:</span><span>${dataVencimento}</span></div>
+                    </div>
+                </div>
+                <table class="bk-table">
+                    <thead><tr><th style="width:50%;">Item</th><th style="width:10%;text-align:center;">Qtd</th><th style="width:20%;text-align:right;">Unit</th><th style="width:20%;text-align:right;">Total</th></tr></thead>
+                    <tbody>${linhas}</tbody>
+                </table>
+                <div class="bk-totals-area"><div class="bk-totals-box">
+                    ${pgtoHtml}
+                    <div class="bk-total-final"><span>Total Pago</span><span class="bk-total-highlight">R$ ${totalGeral.toLocaleString('pt-BR',{minimumFractionDigits:2})}</span></div>
+                </div></div>
+                <div class="bk-section-title">Termos de Garantia</div><div class="bk-terms-text">${termsHtml}</div>
+                
+                <div style="display: flex; justify-content: flex-end; margin-top: 30px; padding-right: 10px;">
+                     <img src="${signatureUrl}" style="width: 300px; height: auto;" alt="Assinatura Responsável" onerror="this.style.display='none'">
+                </div>
+            `;
+
+            const preview = document.getElementById('bookipPreview');
+            if(preview) {
+                preview.innerHTML = htmlRecibo;
+                document.body.classList.add('print-bookip');
+                setTimeout(() => { window.print(); setTimeout(() => document.body.classList.remove('print-bookip'), 1500); }, 300);
+            }
+        } catch (e) { alert("Erro: " + e.message); document.body.classList.remove('print-bookip'); }
+    }
+
+
+    // ============================================================
+    // FUNÇÃO NOVA: GERAR PDF E COMPARTILHAR (GMAIL/WHATSAPP)
+    // ============================================================
+
+        // ============================================================
+    // VERSÃO FINAL 2.0: PDF + TRUQUE DE COPIAR E-MAIL
+    // ============================================================
+
+    // ============================================================
+// FLUXO DE GARANTIA LAPIDADO (SALVAR -> DEPOIS OPÇÕES)
+// ============================================================
+
+let lastSavedBookipData = null; // Guarda os dados na memória após salvar
+
+// 1. AÇÃO: CLICAR EM "FINALIZAR E SALVAR"
+const btnSave = document.getElementById('btnSaveBookip');
+if (btnSave) {
+    btnSave.addEventListener('click', async () => {
+        // Validação Básica
+        if (bookipCartList.length === 0) {
+            showCustomModal({ message: "A lista está vazia! Adicione itens primeiro." });
+            return;
+        }
+
+        // Feedback visual
+        const originalText = btnSave.innerHTML;
+        btnSave.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Salvando...';
+        btnSave.disabled = true;
+
+        try {
+            // Prepara Dados (Igual antes)
+            const pags = [];
+            document.querySelectorAll('.check-pagamento:checked').forEach(c => pags.push(c.value));
+            const txtPag = pags.length > 0 ? pags.join(', ') : '';
+
+            let dias = 365;
+            const sel = document.getElementById('bookipGarantiaSelect').value;
+            if (sel === 'custom') dias = parseInt(document.getElementById('bookipGarantiaCustomInput').value) || 0;
+            else dias = parseInt(sel);
+
+            const dataManualInput = document.getElementById('bookipDataManual').value;
+            const dataFinalVenda = dataManualInput ? dataManualInput : new Date().toISOString().split('T')[0];
+
+            // Gera Número Doc
+            const snapshot = await get(ref(db, 'bookips'));
+            let count = 0;
+            if (snapshot.exists()) count = Object.keys(snapshot.val()).length;
+            const docNumberFormatted = String(count + 1).padStart(3, '0');
+
+            // Objeto Final
+            const dados = {
+                docNumber: docNumberFormatted,
+                nome: document.getElementById('bookipNome').value || 'Consumidor',
+                cpf: document.getElementById('bookipCpf').value || '',
+                tel: document.getElementById('bookipTelefone').value || '',
+                end: document.getElementById('bookipEndereco').value || '',
+                email: document.getElementById('bookipEmail').value || '',
+                items: bookipCartList,
+                pagamento: txtPag,
+                diasGarantia: dias,
+                dataVenda: dataFinalVenda,
+                criadoEm: new Date().toISOString()
+            };
+
+            // SALVA NO FIREBASE
+            if (currentEditingBookipId) {
+                // Atualiza existente
+                await update(ref(db, `bookips/${currentEditingBookipId}`), dados);
+                dados.id = currentEditingBookipId;
+            } else {
+                // Cria novo
+                const newRef = await push(ref(db, 'bookips'), dados);
+                dados.id = newRef.key;
+            }
+
+            // SALVA CLIENTE (ROBÔ)
+            await salvarClienteAutomatico({
+                nome: dados.nome, cpf: dados.cpf, tel: dados.tel, end: dados.end, email: dados.email
+            });
+
+            // SUCESSO!
+            lastSavedBookipData = dados; // Guarda na memória
+
+            // Toca vibração se tiver no celular
+            if (navigator.vibrate) navigator.vibrate(50);
+
+            // ALTERA A TELA (Esconde Salvar -> Mostra Opções)
+            document.getElementById('saveActionContainer').classList.add('hidden');
+            document.getElementById('postSaveOptions').classList.remove('hidden');
+            
+            // Restaura botão salvar
+            btnSave.innerHTML = originalText;
+            btnSave.disabled = false;
+
+        } catch (error) {
+            console.error(error);
+            showCustomModal({ message: "Erro ao salvar: " + error.message });
+            btnSave.innerHTML = originalText;
+            btnSave.disabled = false;
+        }
+    });
+}
+
+// 2. AÇÃO: CLICAR EM "IMPRIMIR" (PÓS-SALVO)
+const btnPostPrint = document.getElementById('btnPostPrint');
+if (btnPostPrint) {
+    btnPostPrint.addEventListener('click', () => {
+        if (lastSavedBookipData) {
+            printBookip(lastSavedBookipData);
+        } else {
+            showCustomModal({ message: "Erro: Nenhum dado salvo encontrado." });
+        }
+    });
+}
+
+// 3. AÇÃO: CLICAR EM "COMPARTILHAR / PDF" (PÓS-SALVO)
+const btnPostShare = document.getElementById('btnPostShare');
+if (btnPostShare) {
+    btnPostShare.addEventListener('click', () => {
+        if (lastSavedBookipData) {
+            // Truque de copiar e-mail antes
+            if (lastSavedBookipData.email) {
+                navigator.clipboard.writeText(lastSavedBookipData.email).catch(()=>{});
+                showCustomModal({ message: "E-mail copiado! Gerando PDF..." });
+            }
+            
+            // Usa a função existente de PDF do histórico
+            gerarPdfDoHistorico(lastSavedBookipData, btnPostShare);
+        }
+    });
+}
+
+// 4. AÇÃO: CLICAR EM "COMEÇAR NOVA GARANTIA" (RESETAR)
+const btnNewCycle = document.getElementById('btnNewBookipCycle');
+if (btnNewCycle) {
+    btnNewCycle.addEventListener('click', () => {
+        // 1. ESCONDE O POP-UP (Adiciona a classe hidden)
+        const popup = document.getElementById('postSaveOptions');
+        if(popup) popup.classList.add('hidden');
+
+        // 2. MOSTRA O BOTÃO DE SALVAR DE VOLTA
+        const saveContainer = document.getElementById('saveActionContainer');
+        if(saveContainer) saveContainer.classList.remove('hidden');
+
+        // 3. LIMPA OS CAMPOS DO FORMULÁRIO
+        document.getElementById('bookipNome').value = '';
+        document.getElementById('bookipCpf').value = '';
+        document.getElementById('bookipTelefone').value = '';
+        document.getElementById('bookipEndereco').value = '';
+        document.getElementById('bookipEmail').value = '';
+        document.getElementById('bookipProductSearch').value = '';
+        // Limpa campos temporários de produto também
+        document.getElementById('bookipProdNomeTemp').value = '';
+        document.getElementById('bookipProdValorTemp').value = '';
+        document.getElementById('bookipProdQtdTemp').value = '1';
+        
+        // 4. LIMPA A LISTA DE PRODUTOS
+        bookipCartList = [];
+        if(typeof atualizarListaVisualBookip === 'function') atualizarListaVisualBookip();
+        
+        // 5. RESETA OS CHECKBOXES DE PAGAMENTO
+        document.querySelectorAll('.check-pagamento').forEach(c => c.checked = false);
+        
+        // 6. RESETA VARIÁVEIS INTERNAS
+        lastSavedBookipData = null;
+        currentEditingBookipId = null; // Sai do modo de edição
+        
+        // 7. RESETA O TEXTO DO BOTÃO SALVAR (Caso estivesse editando antes)
+        const btnSave = document.getElementById('btnSaveBookip');
+        if(btnSave) {
+            btnSave.innerHTML = '<i class="bi bi-check-circle-fill"></i> Finalizar e Salvar Documento';
+            btnSave.classList.remove('btn-info'); // Remove cor azul de edição
+            btnSave.classList.add('btn-success'); // Volta para verde
+            btnSave.disabled = false;
+        }
+
+        // 8. ROLA A TELA SUAVEMENTE PARA O TOPO (Para começar de novo)
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+}
+
+
+// ============================================================
+// FUNÇÃO EXTRA: GERAR PDF A PARTIR DO HISTÓRICO
+// ============================================================
+// ============================================================
+// FUNÇÃO EXTRA: GERAR PDF (VERSÃO FINAL COM CSS FIX)
+// ============================================================
+// ============================================================
+// FUNÇÃO EXTRA: GERAR PDF (MÉTODO TELA DEDICADA + IGNORE)
+// ============================================================
+async function gerarPdfDoHistorico(dados, botao) {
+    // 1. Trava o botão para não clicar duas vezes
+    const textoOriginal = botao.innerHTML;
+    botao.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    botao.disabled = true;
+
+    // 2. Cria uma TELA TEMPORÁRIA (Container) que fica por cima de tudo
+    // Isso garante que o recibo tenha espaço para ser desenhado sem bugar o layout do app
+    const containerTemp = document.createElement('div');
+    containerTemp.id = 'temp-pdf-container';
+    containerTemp.style.cssText = `
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background-color: #ffffff; z-index: 99999; 
+        overflow-y: auto; padding: 0; margin: 0;
+    `;
+
+    // 3. Cria o AVISO DE CARREGAMENTO (O usuário vê isso)
+    // O atributo 'data-html2canvas-ignore' faz o PDF ignorar isso aqui!
+    const loadingOverlay = document.createElement('div');
+    loadingOverlay.setAttribute('data-html2canvas-ignore', 'true');
+    loadingOverlay.style.cssText = `
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background-color: rgba(255, 255, 255, 0.95); 
+        z-index: 100000; display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+    `;
+    loadingOverlay.innerHTML = `
+        <div class="spinner-border text-primary" style="width: 4rem; height: 4rem;" role="status"></div>
+        <h4 class="mt-3" style="color: #333; font-weight:bold;">Gerando PDF...</h4>
+        <p style="color: #666;">Aguarde, preparando documento.</p>
+    `;
+    
+    // Adiciona o aviso na tela temporária
+    containerTemp.appendChild(loadingOverlay);
+
+    // 4. Monta o HTML do Recibo (Mesma lógica de sempre)
+    const lista = (dados.items && Array.isArray(dados.items)) ? dados.items : [];
+    const totalGeral = lista.reduce((acc, i) => acc + (i.valor * i.qtd), 0);
+    
+    // Datas
+    let hoje, dataCompra;
+    if (dados.dataVenda) {
+        const partes = dados.dataVenda.split('-');
+        hoje = new Date(partes[0], partes[1] - 1, partes[2]);
+        dataCompra = `${partes[2]}/${partes[1]}/${partes[0]}`;
+    } else {
+        hoje = dados.criadoEm ? new Date(dados.criadoEm) : new Date();
+        dataCompra = hoje.toLocaleDateString('pt-BR');
+    }
+
+    let dias = parseInt(dados.diasGarantia) || 0;
+    let dataVencimento = "S/ Garantia";
+    if (dias > 0) {
+        const validade = new Date(hoje);
+        validade.setDate(hoje.getDate() + dias);
+        dataVencimento = validade.toLocaleDateString('pt-BR');
+    }
+    let txtGarantia = dias === 365 ? "1 Ano" : (dias + " Dias");
+
+    // Itens
+    const linhas = lista.map(item => `
+        <tr>
+            <td><strong>${item.nome}</strong><br><span style="font-size:8.5pt;color:#666;">${item.cor || ''} ${item.obs || ''}</span></td>
+            <td style="text-align:center;">${item.qtd}</td>
+            <td style="text-align:right;">R$ ${parseFloat(item.valor).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+            <td style="text-align:right;">R$ ${(item.valor * item.qtd).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+        </tr>`).join('');
+
+    // Configurações
+    const headerHtml = (typeof receiptSettings !== 'undefined' ? receiptSettings.header : "WORKCELL").replace(/\n/g, '<br>');
+    const rawTerms = (typeof receiptSettings !== 'undefined' ? receiptSettings.terms : "Garantia.");
+    const termsHtml = rawTerms.split('\n').map(line => {
+        if(line.trim() === '') return '<div style="height: 10px;"></div>'; 
+        return `<div class="bk-term-paragraph">${line}</div>`;
+    }).join('');
+
+    const logoUrl = (typeof receiptSettings !== 'undefined' && receiptSettings.logoBase64) ? receiptSettings.logoBase64 : "https://i.imgur.com/H6BjyBS.png";
+    const signatureUrl = (typeof receiptSettings !== 'undefined' && receiptSettings.signatureBase64) ? receiptSettings.signatureBase64 : "https://i.imgur.com/Bh3fVLM.jpeg";
+    const docNum = dados.docNumber || '---';
+
+    // Cria o elemento do recibo
+    const reciboDiv = document.createElement('div');
+    reciboDiv.id = 'recibo-para-pdf';
+    // Importante: Fundo branco e sem transparências para não bugar o PDF
+    reciboDiv.style.cssText = `
+        background: white; color: black; font-family: Arial, sans-serif;
+        width: 100%; max-width: 800px; margin: 0 auto; padding: 20px;
+    `;
+    
+                    reciboDiv.innerHTML = `
+        <div class="bk-header">
+            <div class="bk-logo-area" style="width: auto; max-width: 280px;">
+
+                <img src="${logoUrl}" class="bk-logo-img" style="width: 100%; max-width: 200px; height: auto;"> 
+            </div>
+        
+
+            <div class="bk-company-info"><div class="bk-title-main">Comprovante de</div><div class="bk-title-sub">compra / Garantia</div>${headerHtml}</div>
+        </div>
+
+        <div class="bk-info-grid" style="display:flex; justify-content:space-between; margin:20px 0; border-top:1px solid #ccc; padding-top:15px;"><div class="bk-col-client" style="flex:2;"><strong>Para</strong><br>${dados.nome}<br>${dados.cpf || ''}<br>${dados.tel || ''}<br>${dados.end || ''}</div><div class="bk-col-dates" style="flex:1; text-align:right;"><div><strong>Doc Nº:</strong> ${docNum}</div><div><strong>Data:</strong> ${dataCompra}</div><div><strong>Garantia:</strong> ${txtGarantia}</div><div><strong>Vence:</strong> ${dataVencimento}</div></div></div>
+        
+        <table class="bk-table" style="width:100%; border-collapse:collapse; margin-bottom:5px;">
+            <thead>
+                <tr style="background-color: #6da037 !important;">
+                    <th style="background-color: #6da037 !important; color: #ffffff !important; padding:8px; text-align:left; border:none;">Item</th>
+                    <th style="background-color: #6da037 !important; color: #ffffff !important; padding:8px; text-align:center; border:none;">Qtd</th>
+                    <th style="background-color: #6da037 !important; color: #ffffff !important; padding:8px; text-align:right; border:none;">Unit</th>
+                    <th style="background-color: #6da037 !important; color: #ffffff !important; padding:8px; text-align:right; border:none;">Total</th>
+                </tr>
+            </thead>
+            <tbody>${linhas}</tbody>
+        </table>
+
+        ${dados.pagamento ? `<div style="width:100%; text-align:left; font-size:10pt; margin-top:5px; padding-left:5px; color:#444;"><strong>Pago via:</strong> ${dados.pagamento}</div>` : ''}
+
+        <div class="bk-totals-area" style="text-align:right; margin-bottom:20px;">
+            <div style="font-size:14pt; font-weight:bold; margin-top:10px;">Total: R$ ${totalGeral.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</div>
+        </div>
+        <div class="bk-section-title" style="font-weight:bold; border-bottom:1px solid #000; margin-bottom:10px;">Termos de Garantia</div>
+        <div class="bk-terms-text" style="font-size:10pt; text-align:justify;">${termsHtml}</div>
+        <div class="bk-signature-box" style="width: 100%; text-align: right; margin-top: 40px; page-break-inside: avoid;">
+            <img src="${signatureUrl}" style="width: 200px; height: auto; display: inline-block;">
+        </div>
+    `;
+
+
+
+
+
+    // Coloca o recibo dentro da tela temporária (atrás do aviso de loading)
+    containerTemp.appendChild(reciboDiv);
+    document.body.appendChild(containerTemp);
+
+    // 5. Gera o PDF
+    try {
+        // Rola pro topo para garantir captura
+        window.scrollTo(0,0);
+        
+        // Pequeno delay para garantir que imagens carregaram
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+                const opt = {
+            margin:       [10, 10, 10, 10],
+            // AQUI ESTÁ O NOVO NOME DO ARQUIVO:
+            filename:     `DocGarantia&comprovante_${(dados.nome || 'Cliente').split(' ')[0]}_${docNum}.pdf`,
+            image:        { type: 'jpeg', quality: 0.98 },
+            html2canvas:  { scale: 2, useCORS: true, scrollY: 0, backgroundColor: '#ffffff' },
+            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+
+
+        // GERAÇÃO
+        const blob = await html2pdf().set(opt).from(reciboDiv).output('blob');
+
+          // 6. Compartilha
+        const file = new File([blob], opt.filename, { type: 'application/pdf' });
+        
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({
+                files: [file],
+                // AQUI: Mudei o Título (Assunto do E-mail)
+                title: 'Documento Workcell Tecnologia',
+                // AQUI: Voltei a puxar sua mensagem configurada no Admin
+                text: `Olá ${dados.nome}, ${receiptSettings.emailMessage || 'segue em anexo seu documento.'}`
+            });
+        } else {
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = opt.filename;
+            link.click();
+            showCustomModal({ message: "PDF Baixado!" });
+        }
+
+
+    } catch (e) {
+        console.error(e);
+        showCustomModal({ message: "Erro ao gerar PDF: " + e.message });
+    } finally {
+        // 7. LIMPEZA TOTAL (Remove a tela temporária)
+        if(document.body.contains(containerTemp)) {
+            document.body.removeChild(containerTemp);
+        }
+        botao.innerHTML = textoOriginal;
+        botao.disabled = false;
+    }
+}
+
+ // --- FUNÇÃO AUXILIAR: REDIMENSIONAR IMAGEM PARA BASE64 ---
+function processarImagemParaBase64(file, maxWidth = 300) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target.result;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const scaleSize = maxWidth / img.width;
+                canvas.width = maxWidth;
+                canvas.height = img.height * scaleSize;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                // Converte para texto (Base64) com qualidade 0.7 para ficar leve
+                resolve(canvas.toDataURL('image/png', 0.7)); 
+            };
+            img.onerror = (err) => reject(err);
+        };
+        reader.onerror = (err) => reject(err);
+    });
+}
+
+// --- FUNÇÃO INTELIGENTE: SALVAR/ATUALIZAR CLIENTE ---
+// --- FUNÇÃO DEPURADORA: SALVAR CLIENTE COM ALERTAS ---
+async function salvarClienteAutomatico(dados) {
+    // Alerta 1: Saber se a função foi chamada
+    // alert("ROBÔ INICIADO: " + dados.nome); 
+
+    if (!dados.nome) {
+        alert("ROBÔ ERRO: Nome vazio!");
+        return;
+    }
+
+    // 1. Cria ID
+    let clienteId = '';
+    const cpfLimpo = (dados.cpf || '').replace(/\D/g, '');
+
+    if (cpfLimpo.length > 5) {
+        clienteId = cpfLimpo;
+    } else {
+        const nomeLimpo = dados.nome.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const telLimpo = (dados.tel || '').replace(/\D/g, '');
+        clienteId = `${nomeLimpo}_${telLimpo}`;
+    }
+
+    if (!clienteId) {
+        alert("ROBÔ ERRO: Não consegui criar ID (faltou nome/tel/cpf)");
+        return;
+    }
+
+    // 2. Dados
+    const dadosCliente = {
+        id: clienteId,
+        nome: dados.nome,
+        cpf: dados.cpf || '',
+        tel: dados.tel || '',
+        end: dados.end || '',
+        email: dados.email || '',
+        ultimoCompra: new Date().toISOString()
+    };
+
+    // 3. Tenta Salvar
+    try {
+        // Usando SET em vez de UPDATE para garantir (força bruta)
+        await set(ref(db, `clientes/${clienteId}`), dadosCliente);
+        // alert("ROBÔ SUCESSO! Cliente salvo na pasta: " + clienteId); 
+        console.log("Cliente salvo: " + clienteId);
+    } catch (e) {
+        alert("ROBÔ FALHOU AO GRAVAR NO BANCO: " + e.message);
+    }
+}
+
+// ============================================================
+// ============================================================
+// ============================================================
+// ============================================================
+// AUTOCOMPLETE DE CLIENTES (VERSÃO FINAL LIMPA)
+// ============================================================
+let dbClientsCache = []; 
+
+/// 1. Carrega os clientes do Banco e Atualiza a Tabela
+if (typeof db !== 'undefined') {
+    const clientsRef = ref(db, 'clientes');
+    onValue(clientsRef, (snapshot) => {
+        if (snapshot.exists()) {
+            // Transforma o objeto do banco em uma lista
+            const dados = snapshot.val();
+            dbClientsCache = Object.values(dados);
+        } else {
+            dbClientsCache = [];
+        }
+
+        // --- A MÁGICA ACONTECE AQUI ---
+        // Verifica se a tela de Clientes está aberta. Se estiver, atualiza a tabela agora!
+        const container = document.getElementById('clientsContainer');
+        if (container && !container.classList.contains('hidden') && typeof renderClientsTable === 'function') {
+            renderClientsTable();
+        }
+    });
+}
+
+
+// 2. Lógica de Pesquisa
+function ativarAutocomplete() {
+    const inputNome = document.getElementById('bookipNome');
+    const boxSugestoes = document.getElementById('clientSuggestionsList');
+
+    if (!inputNome || !boxSugestoes) return;
+
+    // Garante estilo visual correto (Fundo branco e borda suave)
+    boxSugestoes.style.zIndex = "9999";
+    boxSugestoes.style.background = "white";
+    boxSugestoes.style.border = "1px solid #ddd";
+
+    inputNome.addEventListener('input', (e) => {
+        const termo = e.target.value.toLowerCase();
+        
+        boxSugestoes.style.display = 'none';
+        boxSugestoes.innerHTML = '';
+
+        if (termo.length < 1) return;
+
+        // Busca por Nome ou CPF
+        const encontrados = dbClientsCache.filter(c => {
+            const n = (c.nome || '').toLowerCase();
+            const cpf = (c.cpf || '').toLowerCase();
+            return n.includes(termo) || cpf.includes(termo);
+        });
+
+        if (encontrados.length > 0) {
+            boxSugestoes.innerHTML = encontrados.slice(0, 5).map(c => `
+                <li class="list-group-item list-group-item-action" 
+                    style="cursor: pointer;"
+                    onclick='preencherCliente("${c.id}")'>
+                    <div class="fw-bold">${c.nome}</div>
+                    <small class="text-muted">${c.cpf || 'Sem CPF'}</small>
+                </li>
+            `).join('');
+            
+            boxSugestoes.style.display = 'block';
+        }
+    });
+
+    // Fecha ao clicar fora
+    document.addEventListener('click', (e) => {
+        if (e.target !== inputNome && e.target !== boxSugestoes) {
+            boxSugestoes.style.display = 'none';
+        }
+    });
+}
+
+// Inicia a função
+ativarAutocomplete();
+
+// 3. Função de Preencher
+window.preencherCliente = function(id) {
+    const cliente = dbClientsCache.find(c => c.id === id);
+    if (cliente) {
+        document.getElementById('bookipNome').value = cliente.nome || '';
+        document.getElementById('bookipCpf').value = cliente.cpf || '';
+        document.getElementById('bookipTelefone').value = cliente.tel || '';
+        document.getElementById('bookipEndereco').value = cliente.end || '';
+        document.getElementById('bookipEmail').value = cliente.email || '';
+        
+        // Esconde a lista
+        document.getElementById('clientSuggestionsList').style.display = 'none';
+        
+        // Faz o campo piscar verde rapidinho pra confirmar
+        const inputNome = document.getElementById('bookipNome');
+        inputNome.classList.add('is-valid');
+        setTimeout(() => inputNome.classList.remove('is-valid'), 1000);
+    }
+};
+
+// ============================================================
+// LÓGICA DA TELA DE CLIENTES (TABELA E EXCLUSÃO)
+// ============================================================
+
+// ============================================================
+// MÓDULO DE CLIENTES (FINAL - PROTEGIDO CONTRA ERROS)
+// ============================================================
+
+// 1. Variável Global (Janela para os dados)
+window.dbClientsCache = []; 
+
+// 2. Conexão com o Banco (Atualiza lista automaticamente)
+if (typeof db !== 'undefined') {
+    const clientsRef = ref(db, 'clientes');
+    onValue(clientsRef, (snapshot) => {
+        if (snapshot.exists()) {
+            const dados = snapshot.val();
+            window.dbClientsCache = Object.values(dados);
+        } else {
+            window.dbClientsCache = [];
+        }
+        // Se a tela estiver aberta, atualiza visualmente
+        const container = document.getElementById('clientsContainer');
+        if (container && !container.classList.contains('hidden')) {
+            if(typeof renderClientsTable === 'function') renderClientsTable();
+        }
+    });
+}
+
+// 3. Função Visual: Desenhar Tabela
+// 3. Função Visual OTIMIZADA (Para listas gigantes)
+window.renderClientsTable = function(filterText = '') {
+    const tbody = document.getElementById('clientsTableBody');
+    const countEl = document.getElementById('totalClientsCount');
+    
+    if (!tbody) return;
+
+    let lista = window.dbClientsCache || [];
+
+    // 1. Filtra (A busca continua rápida na memória)
+    if (filterText) {
+        const term = filterText.toLowerCase();
+        lista = lista.filter(c => 
+            (c.nome && c.nome.toLowerCase().includes(term)) || 
+            (c.cpf && c.cpf.includes(term))
+        );
+    }
+
+    // 2. Ordena
+    lista.sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+
+    // Atualiza contador (Mostra o total real)
+    if (countEl) countEl.innerText = `${lista.length} clientes`;
+
+    // Se vazio
+    if (lista.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="2" class="text-center py-5"><i class="bi bi-person-x" style="font-size: 2rem; color: var(--text-secondary); opacity: 0.5;"></i><p class="text-secondary mt-2 mb-0 small">Nenhum cliente encontrado.</p></td></tr>`;
+        return;
+    }
+
+    // === O SEGREDO DA PERFORMANCE AQUI ===
+    // Só desenha os primeiros 50 itens para não travar o celular
+    const limiteVisual = 50;
+    const listaVisivel = lista.slice(0, limiteVisual);
+    const temMais = lista.length > limiteVisual;
+
+    // Gera HTML só do que é visível
+    let html = listaVisivel.map(c => `
+        <tr>
+            <td class="ps-2">
+                <div style="font-weight: 600; font-size: 1rem;">${c.nome}</div>
+                <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 3px; display: flex; align-items: center; gap: 8px;">
+                    <span><i class="bi bi-card-heading"></i> ${c.cpf || '---'}</span>
+                    <span style="opacity: 0.3;">|</span>
+                    <span><i class="bi bi-whatsapp"></i> ${c.tel || '---'}</span>
+                </div>
+            </td>
+            <td class="text-end pe-2" style="white-space: nowrap; width: 1px;">
+                <div class="d-flex justify-content-end gap-2">
+                    <button class="client-action-btn btn-edit-theme" onclick="editarCliente('${c.id}')" title="Editar"><i class="bi bi-pencil-fill"></i></button>
+                    <button class="client-action-btn btn-delete-theme" onclick="excluirCliente('${c.id}')" title="Excluir"><i class="bi bi-trash-fill"></i></button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+
+    // Se tiver mais de 50, adiciona um aviso no final da tabela
+    if (temMais) {
+        html += `
+        <tr>
+            <td colspan="2" class="text-center py-3 text-secondary" style="font-size: 0.85rem; border: none;">
+                <i class="bi bi-info-circle"></i> Exibindo os primeiros ${limiteVisual} resultados. <br>
+                <strong>Use a busca para encontrar o resto.</strong>
+            </td>
+        </tr>`;
+    }
+
+    tbody.innerHTML = html;
+};
+
+// 4. Ações: Excluir e Editar
+window.excluirCliente = function(id) {
+    showCustomModal({
+        message: "Apagar este cliente?",
+        confirmText: "Apagar",
+        onConfirm: async () => {
+            try { await remove(ref(db, `clientes/${id}`)); showCustomModal({ message: "Apagado!" }); } 
+            catch (e) { showCustomModal({ message: "Erro: " + e.message }); }
+        },
+        onCancel: () => {}
+    });
+};
+
+window.editarCliente = function(id) {
+    const cliente = window.dbClientsCache.find(c => c.id === id);
+    if (!cliente) return;
+    document.getElementById('editClientId').value = cliente.id;
+    document.getElementById('editClientName').value = cliente.nome || '';
+    document.getElementById('editClientCpf').value = cliente.cpf || '';
+    document.getElementById('editClientTel').value = cliente.tel || '';
+    document.getElementById('editClientAddress').value = cliente.end || '';
+    document.getElementById('editClientEmail').value = cliente.email || '';
+    document.getElementById('editClientModalOverlay').classList.add('active');
+};
+
+// 5. ATIVAÇÃO DOS BOTÕES (COM PROTEÇÃO DE ESCOPO {})
+// O uso de { } evita o erro "Identifier already declared"
+{
+    // Botão Fechar Modal
+    const btnClose = document.getElementById('closeEditClientModal');
+    if (btnClose) {
+        const newBtn = btnClose.cloneNode(true);
+        btnClose.parentNode.replaceChild(newBtn, btnClose);
+        newBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            document.getElementById('editClientModalOverlay').classList.remove('active');
+        });
+    }
+
+    // Botão Salvar Edição
+    const form = document.getElementById('formEditClient');
+    if (form) {
+        const newForm = form.cloneNode(true);
+        form.parentNode.replaceChild(newForm, form);
+        newForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('editClientId').value;
+            const btn = newForm.querySelector('button[type="submit"]');
+            const txt = btn.innerHTML;
+            btn.innerHTML = 'Salvando...'; btn.disabled = true;
+
+            const novosDados = {
+                id: id, 
+                nome: document.getElementById('editClientName').value,
+                cpf: document.getElementById('editClientCpf').value,
+                tel: document.getElementById('editClientTel').value,
+                end: document.getElementById('editClientAddress').value,
+                email: document.getElementById('editClientEmail').value,
+                ultimoCompra: new Date().toISOString()
+            };
+
+            try {
+                await update(ref(db, `clientes/${id}`), novosDados);
+                showCustomModal({ message: "Atualizado!" });
+                document.getElementById('editClientModalOverlay').classList.remove('active');
+            } catch (err) { showCustomModal({ message: "Erro: " + err.message }); } 
+            finally { btn.innerHTML = txt; btn.disabled = false; }
+        });
+    }
+}
+
+// 6. LÓGICA DE IMPORTAÇÃO CSV (PROTEGIDA)
+{
+    const btnImport = document.getElementById('btnImportClients');
+    const fileInput = document.getElementById('csvFileInput');
+
+    if (btnImport && fileInput) {
+        // Limpa listeners antigos
+        const newBtn = btnImport.cloneNode(true);
+        btnImport.parentNode.replaceChild(newBtn, btnImport);
+        
+        newBtn.addEventListener('click', () => {
+            fileInput.value = ''; 
+            fileInput.click();
+        });
+
+        fileInput.onchange = (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (evt) => processarCSV(evt.target.result);
+                reader.readAsText(file);
+            }
+        };
+    }
+
+    async function processarCSV(csvText) {
+        const linhas = csvText.split('\n');
+        // Remove cabeçalho e linhas vazias
+        const dados = linhas.slice(1).filter(l => l.trim() !== '');
+        
+        if (dados.length === 0) {
+            showCustomModal({ message: "Arquivo vazio." });
+            return;
+        }
+
+        // Detecta separador (; ou ,)
+        const sep = dados[0].includes(';') ? ';' : ',';
+        const updates = {};
+        let count = 0;
+
+        showCustomModal({ message: `Processando ${dados.length} linhas...` });
+
+        dados.forEach(linha => {
+            const cols = linha.split(sep);
+            // Mapeamento: 0=Name, 1=Email, 2=Phone, 3=Tax(CPF), 4=Address
+            if (cols.length >= 4) {
+                const clean = (t) => t ? t.replace(/["\r]/g, '').trim() : '';
+                
+                const nome = clean(cols[0]);
+                const email = clean(cols[1]);
+                let tel = clean(cols[2]).replace(/\D/g, ''); // Limpa tel
+                const cpfOrig = clean(cols[3]);
+                const end = clean(cols[4]);
+
+                if (nome) {
+                    // Cria ID: Se tiver CPF válido (>5 dígitos), usa ele. Senão Nome+Tel
+                    const cpfLimpo = cpfOrig.replace(/\D/g, '');
+                    let id = (cpfLimpo.length > 5) ? cpfLimpo : `${nome.toLowerCase().replace(/[^a-z0-9]/g, '')}_${tel}`;
+
+                    if (id) {
+                        updates[`clientes/${id}`] = {
+                            id: id, nome: nome, email: email, tel: tel, cpf: cpfOrig, end: end,
+                            origem: 'CSV', ultimoCompra: new Date().toISOString()
+                        };
+                        count++;
+                    }
+                }
+            }
+        });
+
+        if (count > 0) {
+            try {
+                await update(ref(db), updates);
+                showCustomModal({ message: `${count} clientes importados!` });
+            } catch (e) { showCustomModal({ message: "Erro: " + e.message }); }
+        } else {
+            showCustomModal({ message: "Nenhum dado válido." });
+        }
+    }
+}
+
+
+// ============================================================
+// CORREÇÃO FINAL: AÇÃO DO BOTÃO "COMEÇAR NOVA GARANTIA"
+// ============================================================
+// CORREÇÃO FINAL: AÇÃO DO BOTÃO "COMEÇAR NOVA GARANTIA"
+// (Substitua o bloco anterior no final do app.js por este)
+// ============================================================
+document.addEventListener('click', function(e) {
+    const btn = e.target.closest('#btnNewBookipCycle');
+    
+    if (btn) {
+        e.preventDefault(); 
+
+        // 1. ESCONDE O POP-UP
+        const popup = document.getElementById('postSaveOptions');
+        if(popup) popup.classList.add('hidden');
+
+        // 2. MOSTRA O BOTÃO DE SALVAR DE VOLTA
+        const saveContainer = document.getElementById('saveActionContainer');
+        if(saveContainer) saveContainer.classList.remove('hidden');
+
+        // 3. LIMPA OS CAMPOS
+        const campos = ['bookipNome', 'bookipCpf', 'bookipTelefone', 'bookipEndereco', 'bookipEmail', 'bookipProductSearch', 'bookipProdNomeTemp', 'bookipProdValorTemp'];
+        campos.forEach(id => {
+            const el = document.getElementById(id);
+            if(el) el.value = '';
+        });
+        
+        const qtdInput = document.getElementById('bookipProdQtdTemp');
+        if(qtdInput) qtdInput.value = '1';
+        
+        // 4. LIMPA A LISTA DE PRODUTOS
+        if(typeof bookipCartList !== 'undefined') {
+            bookipCartList.length = 0;
+        }
+        if(typeof atualizarListaVisualBookip === 'function') {
+            atualizarListaVisualBookip();
+        }
+        
+        // 5. RESETA OS CHECKBOXES
+        document.querySelectorAll('.check-pagamento').forEach(c => c.checked = false);
+        
+        // 6. RESETA VARIÁVEIS
+        if(typeof lastSavedBookipData !== 'undefined') lastSavedBookipData = null;
+        if(typeof currentEditingBookipId !== 'undefined') currentEditingBookipId = null;
+        
+        // 7. RESETA O TEXTO DO BOTÃO SALVAR
+        const btnSave = document.getElementById('btnSaveBookip');
+        if(btnSave) {
+            btnSave.innerHTML = '<i class="bi bi-check-circle-fill"></i> Finalizar e Salvar Documento';
+            btnSave.classList.remove('btn-info');
+            btnSave.classList.add('btn-success');
+            btnSave.disabled = false;
+        }
+
+        // 8. SOBE A TELA (CORREÇÃO DE ROLAGEM)
+        // Rola a janela principal
+        window.scrollTo(0, 0);
+        
+        // Rola os containers internos do App (é aqui que o celular "engasgava")
+        document.querySelectorAll('.container').forEach(el => {
+            el.scrollTop = 0; // Força subir instantaneamente
+        });
+    }
 });
+
+// ============================================================
+// LÓGICA DOS ATALHOS (NOVO / SEMINOVO)
+// ============================================================
+// ============================================================
+// LÓGICA DOS ATALHOS (INTELIGENTE E EXCLUSIVA)
+// ============================================================
+const setupProductTags = () => {
+    const btnNovo = document.getElementById('tagAddNovo');
+    const btnSemi = document.getElementById('tagAddSeminovo');
+    const inputNome = document.getElementById('bookipProdNomeTemp');
+
+    const suffixNovo = ' - Novo / Lacrado';
+    const suffixSemi = ' - Seminovo';
+
+    // Função que atualiza as cores dos botões
+    const updateVisuals = () => {
+        const val = inputNome.value;
+        
+        // Se tiver o texto Novo, acende o botão Novo
+        if (val.includes(suffixNovo)) {
+            btnNovo.classList.add('active');
+            btnNovo.innerHTML = '<i class="bi bi-check"></i> Novo / Lacrado'; // Adiciona check
+        } else {
+            btnNovo.classList.remove('active');
+            btnNovo.innerHTML = '+ Novo / Lacrado';
+        }
+
+        // Se tiver o texto Seminovo, acende o botão Seminovo
+        if (val.includes(suffixSemi)) {
+            btnSemi.classList.add('active');
+            btnSemi.innerHTML = '<i class="bi bi-check"></i> Seminovo'; // Adiciona check
+        } else {
+            btnSemi.classList.remove('active');
+            btnSemi.innerHTML = '+ Seminovo';
+        }
+    };
+
+    // Ação ao clicar no NOVO
+    if (btnNovo && inputNome) {
+        btnNovo.addEventListener('click', () => {
+            let text = inputNome.value;
+            // 1. Remove SEMINOVO se existir (limpa o rival)
+            text = text.replace(suffixSemi, '');
+            
+            // 2. Se já tem NOVO, remove (desmarca). Se não tem, adiciona.
+            if (text.includes(suffixNovo)) {
+                text = text.replace(suffixNovo, '');
+            } else {
+                text += suffixNovo;
+            }
+            
+            inputNome.value = text;
+            updateVisuals();
+        });
+    }
+
+    // Ação ao clicar no SEMINOVO
+    if (btnSemi && inputNome) {
+        btnSemi.addEventListener('click', () => {
+            let text = inputNome.value;
+            // 1. Remove NOVO se existir (limpa o rival)
+            text = text.replace(suffixNovo, '');
+
+            // 2. Se já tem SEMINOVO, remove (desmarca). Se não tem, adiciona.
+            if (text.includes(suffixSemi)) {
+                text = text.replace(suffixSemi, '');
+            } else {
+                text += suffixSemi;
+            }
+
+            inputNome.value = text;
+            updateVisuals();
+        });
+    }
+    
+    // Ouve se o usuário digitar manualmente para atualizar os botões
+    if(inputNome) {
+        inputNome.addEventListener('input', updateVisuals);
+    }
+};
+// Inicia a função
+setupProductTags();
+
+
+    // ============================================================
+    // NOVA LÓGICA: SUB-MENU DE DOCUMENTOS
+    // ============================================================
+
+    // ============================================================
+    // CÓDIGO NOVO: SUB-MENU DE DOCUMENTOS
+    // ============================================================
+
+    // 1. Função que troca as telas (Menu -> Contrato -> Garantia)
+    window.openDocumentsSection = function(subSectionId) {
+        // Pega os elementos da tela
+        const docHome = document.getElementById('documentsHome');
+        const areaContrato = document.getElementById('areaContratoWrapper');
+        const areaBookip = document.getElementById('areaBookipWrapper');
+
+        // Esconde tudo primeiro (para não ficar um em cima do outro)
+        if(docHome) docHome.style.display = 'none';
+        if(areaContrato) areaContrato.style.display = 'none';
+        if(areaBookip) areaBookip.style.display = 'none';
+
+        // Mostra só o que você escolheu
+        if (subSectionId === 'home') {
+            if(docHome) docHome.style.display = 'flex'; // Mostra o Menu
+        } 
+        else if (subSectionId === 'contrato') {
+            if(areaContrato) {
+                areaContrato.style.display = 'block';
+                // Carrega o rascunho (se tiver)
+                if(typeof loadContractDraft === 'function') loadContractDraft(); 
+            }
+        } 
+        else if (subSectionId === 'bookip') {
+            if(areaBookip) areaBookip.style.display = 'block';
+        }
+    };
+
+    // 2. Faz os botões clicarem de verdade
+    
+    // Botão Voltar (Seta) -> Vai para o Menu Principal
+    const btnBackDoc = document.getElementById('backFromDocumentsHome');
+    if (btnBackDoc) {
+        btnBackDoc.onclick = function() { showMainSection('main'); };
+    }
+
+    // Botão "Contrato de Venda"
+    const btnOpenContrato = document.getElementById('openContratoView');
+    if (btnOpenContrato) {
+        btnOpenContrato.onclick = function() { window.openDocumentsSection('contrato'); };
+    }
+
+    // Botão "Garantia (Bookip)"
+    const btnOpenBookip = document.getElementById('openBookipView');
+    if (btnOpenBookip) {
+        btnOpenBookip.onclick = function() { window.openDocumentsSection('bookip'); };
+    }
+
+    // Botão Voltar (dentro do Contrato) -> Volta pro Menu Doc
+    const btnBackFromContrato = document.getElementById('backFromContratoView');
+    if (btnBackFromContrato) {
+        btnBackFromContrato.onclick = function() { window.openDocumentsSection('home'); };
+    }
+
+    // Botão Voltar (dentro da Garantia) -> Volta pro Menu Doc
+    const btnBackFromBookip = document.getElementById('backFromBookipView');
+    if (btnBackFromBookip) {
+        btnBackFromBookip.onclick = function() { window.openDocumentsSection('home'); };
+    }
+
+        });
