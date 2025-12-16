@@ -5823,17 +5823,53 @@ function getReciboHTML(dados) {
 // 3. FUNÇÃO PDF FINAL (COM CÓPIA DE E-MAIL AUTOMÁTICA)
 // ============================================================
 async function gerarPdfDoHistorico(dados, botao) {
-    // --- 0. O RETORNO DO COPY & PASTE (RESTAURADO) ---
-    // Copia o e-mail assim que clica no botão, antes de começar a carregar
+    // ============================================================
+    // 0. CÓPIA DE E-MAIL BLINDADA (COM FALLBACK) 🛡️
+    // ============================================================
     if (dados.email && dados.email.trim() !== '') {
-        try {
-            await navigator.clipboard.writeText(dados.email);
-            // Se quiser dar um feedback visual, pode descomentar a linha abaixo:
-            // if(typeof showCustomModal === 'function') showCustomModal({ message: "E-mail do cliente copiado!" });
-        } catch (err) {
-            console.error('Erro ao copiar e-mail automaticamente:', err);
+        const textToCopy = dados.email.trim();
+
+        // 🔧 Função de emergência: Usa o método antigo (execCommand) 
+        // que funciona mesmo quando o navegador bloqueia o clipboard moderno.
+        const copiarJeitoAntigo = (texto) => {
+            try {
+                const textArea = document.createElement("textarea");
+                textArea.value = texto;
+                
+                // Esconde o elemento mas mantém ele "visível" pro sistema selecionar
+                textArea.style.position = "fixed";
+                textArea.style.left = "-9999px";
+                textArea.style.top = "0";
+                
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                
+                const successful = document.execCommand('copy');
+                document.body.removeChild(textArea);
+                // console.log('Cópia via fallback:', successful);
+            } catch (e) {
+                console.error("Erro no método antigo:", e);
+            }
+        };
+
+        // Tenta o jeito moderno primeiro
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            try {
+                await navigator.clipboard.writeText(textToCopy);
+            } catch (err) {
+                // Se der erro (bloqueio de segurança), aciona o plano B
+                copiarJeitoAntigo(textToCopy);
+            }
+        } else {
+            // Se o navegador for velho e nem tiver clipboard, vai direto no plano B
+            copiarJeitoAntigo(textToCopy);
         }
     }
+
+    // ============================================================
+    // INÍCIO DA GERAÇÃO DO PDF
+    // ============================================================
 
     const textoOriginal = botao.innerHTML;
     botao.innerHTML = 'Aguarde...';
@@ -5899,9 +5935,9 @@ async function gerarPdfDoHistorico(dados, botao) {
     const tituloCompartilhamento = "Documento Workcell Tecnologia";
 
     // --- GERAÇÃO HTML ---
- const containerTemp = document.createElement('div');
-// MUDANÇA: 'left: -9999px' joga para fora da tela e 'position: fixed' evita esticar o site
-containerTemp.style.cssText = `position: fixed; top: 0; left: -9999px; width: 794px; background: white; z-index: -100; margin: 0; padding: 0;`;
+    const containerTemp = document.createElement('div');
+    // MUDANÇA: 'left: -9999px' joga para fora da tela e 'position: fixed' evita esticar o site
+    containerTemp.style.cssText = `position: fixed; top: 0; left: -9999px; width: 794px; background: white; z-index: -100; margin: 0; padding: 0;`;
 
     
     if (typeof getReciboHTML === 'function') {
