@@ -23,6 +23,9 @@ let bookipCartList = [];
 // --- CORREÇÃO: ADICIONE ESTA LINHA ---
 let bookipListener = null; 
 
+// ADICIONE ESTA LINHA NOVA:
+let editingItemIndex = null; // Controla qual item está sendo editado (null = nenhum)
+
 
 
 // Adicione esta variável global
@@ -3303,9 +3306,10 @@ document.addEventListener('DOMContentLoaded', () => {
                             const header = document.getElementById('settingHeaderInput').value;
                             const terms = document.getElementById('settingTermsInput').value;
                             const emailMessage = document.getElementById('settingEmailMsgInput').value;
-                            
-                            // Objeto base de atualização
-                            let updates = { header, terms, emailMessage };
+
+// LINHA NOVA CORRIGIDA:
+let updates = { header, terms, emailMessage, shareMessage: emailMessage };
+
 
                             // Processa Logo (se tiver selecionado nova)
                             const logoInput = document.getElementById('uploadLogoInput');
@@ -4108,12 +4112,19 @@ document.getElementById('admin-nav-buttons').addEventListener('click', e => {
         });
     }
 
-    // 2. Lógica do Botão "Adicionar à Lista" (Não existia antes)
+    // ============================================================
+    // ============================================================
+    // 2. LÓGICA DE ADICIONAR / EDITAR PRODUTO NA LISTA (FINAL)
+    // ============================================================
+    
+    // Variável para controlar a edição (null = criando novo)
+    // Nota: editingItemIndex já foi declarado lá no topo, então usamos ele direto.
+
     if (btnAddLista) {
         btnAddLista.addEventListener('click', (e) => {
-            e.preventDefault(); // Evita recarregar página
+            e.preventDefault(); 
 
-            // Pega os valores dos inputs pequenos
+            // Pega os valores dos inputs
             const nome = document.getElementById('bookipProdNomeTemp').value;
             const qtd = parseInt(document.getElementById('bookipProdQtdTemp').value) || 1;
             const valor = parseFloat(document.getElementById('bookipProdValorTemp').value) || 0;
@@ -4125,16 +4136,25 @@ document.getElementById('admin-nav-buttons').addEventListener('click', e => {
                 return;
             }
 
-            // Adiciona ao carrinho global (bookipCartList)
-            bookipCartList.push({
-                nome: nome,
-                qtd: qtd,
-                valor: valor,
-                cor: cor,
-                obs: obs
-            });
+            const itemObjeto = { nome, qtd, valor, cor, obs };
 
-            // Limpa os campos para o próximo
+            if (editingItemIndex !== null) {
+                // --- MODO EDIÇÃO: Atualiza o existente ---
+                bookipCartList[editingItemIndex] = itemObjeto;
+                editingItemIndex = null; // Sai do modo edição
+                
+                // Volta o botão para "Adicionar" (Azul)
+                btnAddLista.innerHTML = '<i class="bi bi-plus-lg"></i> Adicionar o Produto';
+                btnAddLista.classList.remove('btn-warning');
+                btnAddLista.classList.add('btn-primary');
+                
+                showCustomModal({ message: "Item atualizado!" });
+            } else {
+                // --- MODO NOVO: Adiciona ao final ---
+                bookipCartList.push(itemObjeto);
+            }
+
+            // Limpa os campos
             inputBuscaBookip.value = '';
             document.getElementById('bookipProdNomeTemp').value = '';
             document.getElementById('bookipProdValorTemp').value = '';
@@ -4142,12 +4162,11 @@ document.getElementById('admin-nav-buttons').addEventListener('click', e => {
             document.getElementById('bookipProdObsTemp').value = '';
             document.getElementById('bookipProdQtdTemp').value = '1';
 
-            // Atualiza o visual da lista
             atualizarListaVisualBookip();
         });
     }
 
-    // 3. Função para Atualizar a Lista Visual na Tela (CORRIGIDA - MODO CLARO)
+    // 3. Função para Atualizar a Lista Visual (USANDO SEU CSS NOVO)
     function atualizarListaVisualBookip() {
         if (!listaVisual) return;
         
@@ -4155,26 +4174,45 @@ document.getElementById('admin-nav-buttons').addEventListener('click', e => {
         let total = 0;
 
         if (bookipCartList.length === 0) {
-            // Ajustei aqui também para usar a cor do texto padrão
-            listaVisual.innerHTML = '<li class="list-group-item text-center small bg-transparent" style="color: var(--text-secondary);">Nenhum item adicionado.</li>';
+            listaVisual.innerHTML = `
+                <div class="text-center p-4" style="opacity: 0.6;">
+                    <i class="bi bi-cart-x" style="font-size: 2rem;"></i>
+                    <p class="mb-0 small text-secondary">Lista vazia.</p>
+                </div>`;
         } else {
             bookipCartList.forEach((item, index) => {
                 const subtotal = item.valor * item.qtd;
                 total += subtotal;
 
-                const li = document.createElement('li');
-                // REMOVI O 'text-light' e adicionei o style com var(--text-color)
-                li.className = 'list-group-item d-flex justify-content-between align-items-center bg-transparent border-secondary border-opacity-25';
-                li.style.color = 'var(--text-color)'; 
+                // Cria o elemento usando as classes do CSS que você acabou de colar
+                const li = document.createElement('div');
+                li.className = 'bookip-item-card'; 
                 
+                // Formatação dos detalhes
+                let detalhes = [];
+                if(item.qtd > 1) detalhes.push(`x${item.qtd}`);
+                if(item.cor) detalhes.push(item.cor);
+                if(item.obs) detalhes.push(item.obs);
+                const detalhesTexto = detalhes.join(' | ');
+
                 li.innerHTML = `
-                    <div>
-                        <div class="fw-bold">${item.nome} <small style="color: var(--text-secondary);">x${item.qtd}</small></div>
-                        <div class="small" style="color: var(--text-secondary);">${item.cor} ${item.obs}</div>
+                    <div class="bk-info">
+                        <div class="bk-title">${item.nome}</div>
+                        <div class="bk-details">${detalhesTexto}</div>
                     </div>
-                    <div class="text-end">
-                        <div class="fw-bold text-success">R$ ${subtotal.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</div>
-                        <button class="btn btn-sm btn-link text-danger p-0 text-decoration-none remove-item-bookip" data-index="${index}" style="font-size: 0.8rem;">Remover</button>
+
+                    <div class="bk-actions-area">
+                        <div class="bk-price">R$ ${subtotal.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</div>
+                        
+                        <div class="bk-buttons">
+                            <button class="btn-icon-circle btn-edit-c edit-item-bookip" data-index="${index}" title="Editar">
+                                <i class="bi bi-pencil-fill" style="font-size: 0.8rem;"></i>
+                            </button>
+
+                            <button class="btn-icon-circle btn-del-c remove-item-bookip" data-index="${index}" title="Remover">
+                                <i class="bi bi-trash-fill" style="font-size: 0.8rem;"></i>
+                            </button>
+                        </div>
                     </div>
                 `;
                 listaVisual.appendChild(li);
@@ -4185,109 +4223,63 @@ document.getElementById('admin-nav-buttons').addEventListener('click', e => {
             totalDisplay.innerText = total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
         }
 
+        // --- ATIVAR BOTÕES ---
+
+        // 1. Remover
         document.querySelectorAll('.remove-item-bookip').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                const idx = parseInt(e.target.dataset.index);
+                const idx = parseInt(e.currentTarget.dataset.index);
+                // Se estava editando esse, cancela a edição
+                if (editingItemIndex === idx) {
+                    editingItemIndex = null;
+                    btnAddLista.innerHTML = '<i class="bi bi-plus-lg"></i> Adicionar o Produto';
+                    btnAddLista.classList.remove('btn-warning');
+                    btnAddLista.classList.add('btn-primary');
+                    document.getElementById('bookipProdNomeTemp').value = '';
+                    document.getElementById('bookipProdValorTemp').value = '';
+                }
+                
                 bookipCartList.splice(idx, 1);
                 atualizarListaVisualBookip();
             });
         });
+
+        // 2. Editar (A Lógica do Lápis)
+        document.querySelectorAll('.edit-item-bookip').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const idx = parseInt(e.currentTarget.dataset.index);
+                const item = bookipCartList[idx];
+
+                // Devolve os dados para os campos de cima
+                document.getElementById('bookipProdNomeTemp').value = item.nome;
+                document.getElementById('bookipProdQtdTemp').value = item.qtd;
+                document.getElementById('bookipProdValorTemp').value = item.valor;
+                document.getElementById('bookipProdCorTemp').value = item.cor;
+                document.getElementById('bookipProdObsTemp').value = item.obs;
+
+                editingItemIndex = idx; // Marca qual estamos mexendo
+
+                // Muda o botão principal para "Salvar Alteração" (Amarelo)
+                btnAddLista.innerHTML = '<i class="bi bi-check-lg"></i> Salvar Alteração';
+                btnAddLista.classList.remove('btn-primary');
+                btnAddLista.classList.add('btn-warning');
+
+                // Rola a tela para cima suavemente
+                document.getElementById('bookipProdNomeTemp').scrollIntoView({ behavior: 'smooth', block: 'center' });
+            });
+        });
     }
 
-    // --- E: FUNÇÃO DE IMPRESSÃO BOOKIP (LAYOUT ESTILO REFERÊNCIA) ---
-         // --- FUNÇÃO DE IMPRESSÃO BOOKIP (LAYOUT IDENTICO À REFERÊNCIA) ---
-        function printBookip(dados) {
-        try {
-            if (!dados) { alert("Erro: Sem dados."); return; }
 
-            // 1. Processa Lista de Itens (Compatibilidade com antigo e novo)
-            let lista = (dados.items && Array.isArray(dados.items)) ? dados.items : [{
-                nome: dados.prodNome || 'Produto', qtd: parseInt(dados.prodQtd)||1, valor: parseFloat(dados.prodValor)||0, cor: dados.prodCor||'', obs: dados.obs||''
-            }];
-            
-            const totalGeral = lista.reduce((acc, i) => acc + (i.valor * i.qtd), 0);
+    // ============================================================
 
-            // 2. Datas e Garantia Manual
-            const hoje = new Date();
-            const dataCompra = hoje.toLocaleDateString('pt-BR');
-            const diasGarantia = (dados.diasGarantia !== undefined) ? parseInt(dados.diasGarantia) : 90;
-            
-            let dataVencimento = "S/ Garantia";
-            if (diasGarantia > 0) {
-                const validade = new Date();
-                validade.setDate(hoje.getDate() + diasGarantia);
-                dataVencimento = validade.toLocaleDateString('pt-BR');
-            }
-            const txtGarantia = diasGarantia > 0 ? `${diasGarantia} Dias` : "Sem Garantia";
 
-            // 3. Monta Linhas da Tabela
-            const linhas = lista.map(item => `
-                <tr>
-                    <td><strong>${item.nome}</strong><br><span style="font-size:8.5pt;color:#666;">${item.cor} ${item.obs}</span></td>
-                    <td style="text-align:center;">${item.qtd}</td>
-                    <td style="text-align:right;">R$ ${item.valor.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
-                    <td style="text-align:right;">R$ ${(item.valor*item.qtd).toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
-                </tr>`).join('');
 
-            // Textos
-            const settings = (typeof receiptSettings !== 'undefined' && receiptSettings) ? receiptSettings : {};
-            const headerHtml = (settings.header || "WORKCELL TECNOLOGIA").replace(/\n/g, '<br>');
-            const termsHtml = (settings.terms || "Garantia legal.").replace(/\n/g, '<br>');
-            const logoUrl = "https://i.imgur.com/H6BjyBS.png";
-
-            // Pagamento
-            const pgtoHtml = dados.pagamento ? `<div style="font-size:9pt; margin-top:5px;"><strong>Forma de Pagamento:</strong> ${dados.pagamento}</div>` : '';
-
-            const htmlRecibo = `
-                <div class="bk-header">
-                    <div class="bk-logo-area"><img src="${logoUrl}" class="bk-logo-img" onerror="this.style.display='none'"></div>
-                    <div class="bk-company-info"><div class="bk-title-main">Comprovante de</div><div class="bk-title-sub">compra / Garantia</div>${headerHtml}</div>
-                </div>
-                <div class="bk-info-grid">
-                    <div class="bk-col-client"><span class="bk-label-bold">Para</span><div class="bk-text"><strong>${dados.nome}</strong><br>${dados.cpf}<br>${dados.tel}<br>${dados.end}</div></div>
-                    <div class="bk-col-dates">
-                        <div class="bk-date-row"><span class="bk-date-label">Recibo #</span><span>${dados.id ? dados.id.substring(1,6).toUpperCase() : 'NOVO'}</span></div>
-                        <div class="bk-date-row"><span class="bk-date-label">Data</span><span>${dataCompra}</span></div>
-                        <div class="bk-date-row"><span class="bk-date-label">Garantia</span><span>${txtGarantia}</span></div>
-                        <div class="bk-date-row"><span class="bk-date-label">Vence</span><span>${dataVencimento}</span></div>
-                    </div>
-                </div>
-                               <table class="bk-table">
-                    <thead>
-                        <tr>
-                            <th>Item</th>
-                            <th style="text-align:center;">Qtd</th>
-                            <th style="text-align:right;">Preço</th>
-                            <th style="text-align:right;">Valor</th>
-                        </tr>
-                    </thead>
-                    <tbody>${linhas}</tbody>
-                </table>
-
-                <div class="bk-totals-area"><div class="bk-totals-box">
-                    ${pgtoHtml}
-                    <div class="bk-total-final"><span>Total Pago</span><span class="bk-total-highlight">R$ ${totalGeral.toLocaleString('pt-BR',{minimumFractionDigits:2})}</span></div>
-                </div></div>
-                <div class="bk-section-title">Termos de Garantia</div><div class="bk-terms-text">${termsHtml}</div>
-                <br><br><div style="border-top:1px solid #000;width:100%;text-align:center;font-size:9pt;padding-top:5px;">Assinatura do Cliente</div>
-            `;
-
-            const preview = document.getElementById('bookipPreview');
-            if(preview) {
-                preview.innerHTML = htmlRecibo;
-                document.body.classList.add('print-bookip');
-                setTimeout(() => { window.print(); setTimeout(() => document.body.classList.remove('print-bookip'), 1500); }, 300);
-            }
-        } catch (e) { alert("Erro: " + e.message); document.body.classList.remove('print-bookip'); }
-    }
-
-    
-    
-    
-    // --- CARREGAR HISTÓRICO DE BOOKIPS ---
-        // --- CARREGAR HISTÓRICO DE BOOKIPS (CORRIGIDO) ---
-// ============================================================
 // CARREGAR HISTÓRICO OTIMIZADO (COM PAGINAÇÃO "CARREGAR MAIS")
+// ============================================================
+// ============================================================
+// ============================================================
+// CARREGAR HISTÓRICO (ORDENADO POR DATA DA GARANTIA)
 // ============================================================
 function loadBookipHistory() {
     if (!db || !isAuthReady) return;
@@ -4297,21 +4289,32 @@ function loadBookipHistory() {
     const searchInput = document.getElementById('bookipHistorySearch');
     
     // Variáveis de Controle da Paginação
-    let listaCompletaCache = []; // Guarda todos os 17.000 na memória (leve)
-    let listaFiltradaCache = []; // Guarda o resultado da busca
-    let itensVisiveis = 50;      // Começa mostrando 50
-    const incremento = 50;       // Carrega +50 por vez
+    let listaCompletaCache = []; 
+    let listaFiltradaCache = []; 
+    let itensVisiveis = 50;      
+    const incremento = 50;       
 
-    container.innerHTML = '<div class="text-center p-4"><div class="spinner-border text-primary"></div><p class="mt-2 text-secondary">Carregando histórico...</p></div>';
+    container.innerHTML = '<div class="text-center p-4"><div class="spinner-border text-primary"></div><p class="mt-2 text-secondary">Organizando por data...</p></div>';
 
     if (bookipListener) off(bookipsRef, 'value', bookipListener);
 
     bookipListener = onValue(bookipsRef, (snapshot) => {
         if (snapshot.exists()) {
             const data = snapshot.val();
-            // Transforma em lista e ordena por data (Mais recente primeiro)
+            // Transforma em lista
             listaCompletaCache = Object.keys(data).map(key => ({ id: key, ...data[key] }));
-            listaCompletaCache.sort((a, b) => new Date(b.criadoEm) - new Date(a.criadoEm));
+            
+            // --- A MÁGICA DA ORDENAÇÃO (DATA DA GARANTIA) 📅 ---
+            listaCompletaCache.sort((a, b) => {
+                // Pega a data da venda (garantia) ou usa a de criação se não tiver
+                const dataA = a.dataVenda || (a.criadoEm ? a.criadoEm.split('T')[0] : '0000-00-00');
+                const dataB = b.dataVenda || (b.criadoEm ? b.criadoEm.split('T')[0] : '0000-00-00');
+                
+                // Compara as datas (Decrescente: Mais novo no topo)
+                if (dataB > dataA) return 1;
+                if (dataB < dataA) return -1;
+                return 0;
+            });
             
             // Inicializa a lista filtrada com tudo
             listaFiltradaCache = listaCompletaCache;
@@ -4326,7 +4329,6 @@ function loadBookipHistory() {
 
     // --- FUNÇÃO QUE DESENHA NA TELA (LOTE POR LOTE) ---
     function renderizarLote() {
-        // Pega apenas a fatia que deve ser mostrada (Ex: 0 a 50)
         const fatia = listaFiltradaCache.slice(0, itensVisiveis);
         const temMais = listaFiltradaCache.length > itensVisiveis;
 
@@ -4390,20 +4392,18 @@ function loadBookipHistory() {
 
         container.innerHTML = html;
 
-        // --- REATIVA OS EVENTOS DOS BOTÕES ---
+        // Reativa os botões
         reativarListeners();
         
-        // Listener do botão "Carregar Mais"
         const btnMore = document.getElementById('btnLoadMoreBookip');
         if (btnMore) {
             btnMore.addEventListener('click', () => {
-                itensVisiveis += incremento; // Aumenta o limite
-                renderizarLote(); // Redesenha com mais itens
+                itensVisiveis += incremento; 
+                renderizarLote(); 
             });
         }
     }
 
-    // --- FUNÇÃO PARA REATIVAR OS BOTÕES DE AÇÃO ---
     function reativarListeners() {
         container.querySelectorAll('.edit-bookip-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -4445,46 +4445,35 @@ function loadBookipHistory() {
         });
     }
 
-    // --- LÓGICA DE BUSCA (FILTRA NA MEMÓRIA) ---
-        // --- LÓGICA DE BUSCA (ATUALIZADA: C/ CELULAR E EMAIL) ---
     if (searchInput) {
-        // Clone para limpar listeners antigos e evitar duplicação
+        // Clone para limpar listeners antigos
         const newSearchInput = searchInput.cloneNode(true);
         searchInput.parentNode.replaceChild(newSearchInput, searchInput);
         
         newSearchInput.addEventListener('input', (e) => {
             const termo = e.target.value.toLowerCase().trim();
             
-            // Filtra a lista completa (Memória)
             listaFiltradaCache = listaCompletaCache.filter(item => {
-                // 1. Pega os dados existentes
                 const nDoc = (item.docNumber || '').toLowerCase();
                 const nome = (item.nome || '').toLowerCase();
                 const cpf = (item.cpf || '').toLowerCase();
-                
-                // 2. NOVOS CAMPOS ADICIONADOS (Telefone e Email)
-                // Removemos espaços do telefone para facilitar a busca (ex: achar 9988 dentro de 9 988)
                 const telLimpo = (item.tel || '').toLowerCase().replace(/\s/g, ''); 
                 const telOriginal = (item.tel || '').toLowerCase();
                 const email = (item.email || '').toLowerCase();
 
-                // 3. A Lógica Inteligente (OU || OU || OU)
                 return nDoc.includes(termo) || 
                        nome.includes(termo) || 
                        cpf.includes(termo) || 
                        telOriginal.includes(termo) || 
-                       telLimpo.includes(termo) || // Acha mesmo se digitar tudo junto
+                       telLimpo.includes(termo) || 
                        email.includes(termo);
             });
 
-            // Reseta a visualização e desenha de novo
             itensVisiveis = 50;
             renderizarLote();
         });
     }
-
 }
-
 
     // --- FUNÇÃO AUXILIAR: CARREGAR DADOS NO FORMULÁRIO ---
     function carregarDadosParaEdicao(item) {
@@ -4567,129 +4556,8 @@ function loadBookipHistory() {
     }
 
 
-    // --- FUNÇÃO DE IMPRESSÃO BOOKIP (ATUALIZADA: Doc Nº e Layout) ---
-        // --- FUNÇÃO DE IMPRESSÃO BOOKIP (ATUALIZADA: Com Assinatura Digital) ---
-    function printBookip(dados) {
-        try {
-            if (!dados) { alert("Erro: Sem dados."); return; }
-
-            // ==============================================================================
-            // ÁREA DE CONFIGURAÇÃO DAS IMAGENS
-            // ==============================================================================
-            const logoUrl = "https://i.imgur.com/H6BjyBS.png"; // Sua Logo atual
-
-            // ---> COLE O LINK DA SUA ASSINATURA AQUI EMBAIXO (DENTRO DAS ASPAS) <---
-            const signatureUrl = "https://i.imgur.com/Bh3fVLM.jpeg";
-
-            // ==============================================================================
-
-            // Lista de Itens
-            let lista = (dados.items && Array.isArray(dados.items)) ? dados.items : [{
-                nome: dados.prodNome || 'Produto', qtd: parseInt(dados.prodQtd)||1, valor: parseFloat(dados.prodValor)||0, cor: dados.prodCor||'', obs: dados.obs||''
-            }];
-            
-            const totalGeral = lista.reduce((acc, i) => acc + (i.valor * i.qtd), 0);
-
-            // --- CÓDIGO CORRIGIDO PARA O PASSO 2 ---
-
-            // Datas e Garantia
-            let hoje;
-            let dataCompra;
-
-            // Se existir uma data manual salva no banco (dados.dataVenda), usamos ela
-            if (dados.dataVenda) {
-                // O formato vem como YYYY-MM-DD (ex: 2023-12-08)
-                // Precisamos quebrar para garantir que não haja erro de fuso horário
-                const partes = dados.dataVenda.split('-'); 
-                // Cria a data usando Ano, Mês (começa em 0), Dia
-                hoje = new Date(partes[0], partes[1] - 1, partes[2]);
-                dataCompra = `${partes[2]}/${partes[1]}/${partes[0]}`; // Formata para PT-BR (08/12/2023)
-            } else {
-                // Se for um recibo antigo que não tinha data salva, usa hoje
-                hoje = new Date();
-                dataCompra = hoje.toLocaleDateString('pt-BR');
-            }
-
-            const diasGarantia = (dados.diasGarantia !== undefined) ? parseInt(dados.diasGarantia) : 365;
-
-            let dataVencimento = "S/ Garantia";
-            if (diasGarantia > 0) {
-                const validade = new Date();
-                validade.setDate(hoje.getDate() + diasGarantia);
-                dataVencimento = validade.toLocaleDateString('pt-BR');
-            }
-            
-            // Texto da Garantia
-            let txtGarantia = "Sem Garantia";
-            if (diasGarantia === 365) txtGarantia = "1 Ano";
-            else if (diasGarantia === 180) txtGarantia = "6 Meses";
-            else if (diasGarantia === 120) txtGarantia = "4 Meses";
-            else if (diasGarantia === 30) txtGarantia = "30 Dias";
-            else if (diasGarantia > 0) txtGarantia = `${diasGarantia} Dias`;
-
-            // Linhas da Tabela
-            const linhas = lista.map(item => `
-                <tr>
-                    <td><strong>${item.nome}</strong><br><span style="font-size:8.5pt;color:#666;">${item.cor} ${item.obs}</span></td>
-                    <td style="text-align:center;">${item.qtd}</td>
-                    <td style="text-align:right;">R$ ${item.valor.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
-                    <td style="text-align:right;">R$ ${(item.valor*item.qtd).toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
-                </tr>`).join('');
-
-            // Configurações e Textos
-            const settings = (typeof receiptSettings !== 'undefined' && receiptSettings) ? receiptSettings : {};
-            const headerHtml = (settings.header || "WORKCELL TECNOLOGIA").replace(/\n/g, '<br>');
-            const termsHtml = (settings.terms || "Garantia legal.").replace(/\n/g, '<br>');
-            const pgtoHtml = dados.pagamento ? `<div style="font-size:9pt; margin-top:5px;"><strong>Forma de Pagamento:</strong> ${dados.pagamento}</div>` : '';
-            const numeroDoc = dados.docNumber ? dados.docNumber : '---';
-
-            // Montagem do HTML do Recibo
-            const htmlRecibo = `
-                <div class="bk-header">
-                    <div class="bk-logo-area"><img src="${logoUrl}" class="bk-logo-img" onerror="this.style.display='none'"></div>
-                    <div class="bk-company-info"><div class="bk-title-main">Comprovante de</div><div class="bk-title-sub">Compra &  Garantia</div>${headerHtml}</div>
-                </div>
-                <div class="bk-info-grid">
-                    <div class="bk-col-client"><span class="bk-label-bold">Para</span><div class="bk-text"><strong>${dados.nome}</strong><br>${dados.cpf}<br>${dados.tel}<br>${dados.end}</div></div>
-                    <div class="bk-col-dates">
-                        <div class="bk-date-row"><span class="bk-date-label">Doc Nº</span><span style="font-size: 11pt; font-weight: bold;">${numeroDoc}</span></div>
-                        <div class="bk-date-row"><span class="bk-date-label">Data</span><span>${dataCompra}</span></div>
-                        <div class="bk-date-row"><span class="bk-date-label">Garantia de </span><span>${txtGarantia}</span></div>
-                        <div class="bk-date-row"><span class="bk-date-label">Vencimento da Garantia:</span><span>${dataVencimento}</span></div>
-                    </div>
-                </div>
-                <table class="bk-table">
-                    <thead><tr><th style="width:50%;">Item</th><th style="width:10%;text-align:center;">Qtd</th><th style="width:20%;text-align:right;">Unit</th><th style="width:20%;text-align:right;">Total</th></tr></thead>
-                    <tbody>${linhas}</tbody>
-                </table>
-                <div class="bk-totals-area"><div class="bk-totals-box">
-                    ${pgtoHtml}
-                    <div class="bk-total-final"><span>Total Pago</span><span class="bk-total-highlight">R$ ${totalGeral.toLocaleString('pt-BR',{minimumFractionDigits:2})}</span></div>
-                </div></div>
-                <div class="bk-section-title">Termos de Garantia</div><div class="bk-terms-text">${termsHtml}</div>
-                
-                <div style="display: flex; justify-content: flex-end; margin-top: 30px; padding-right: 10px;">
-                     <img src="${signatureUrl}" style="width: 300px; height: auto;" alt="Assinatura Responsável" onerror="this.style.display='none'">
-                </div>
-            `;
-
-            const preview = document.getElementById('bookipPreview');
-            if(preview) {
-                preview.innerHTML = htmlRecibo;
-                document.body.classList.add('print-bookip');
-                setTimeout(() => { window.print(); setTimeout(() => document.body.classList.remove('print-bookip'), 1500); }, 300);
-            }
-        } catch (e) { alert("Erro: " + e.message); document.body.classList.remove('print-bookip'); }
-    }
 
 
-    // ============================================================
-    // FUNÇÃO NOVA: GERAR PDF E COMPARTILHAR (GMAIL/WHATSAPP)
-    // ============================================================
-
-        // ============================================================
-    // VERSÃO FINAL 2.0: PDF + TRUQUE DE COPIAR E-MAIL
-    // ============================================================
 
     // ============================================================
 // FLUXO DE GARANTIA LAPIDADO (SALVAR -> DEPOIS OPÇÕES)
@@ -4867,200 +4735,7 @@ if (btnNewCycle) {
 
 // ============================================================
 // FUNÇÃO EXTRA: GERAR PDF A PARTIR DO HISTÓRICO
-// ============================================================
-// ============================================================
-// FUNÇÃO EXTRA: GERAR PDF (VERSÃO FINAL COM CSS FIX)
-// ============================================================
-// ============================================================
-// FUNÇÃO EXTRA: GERAR PDF (MÉTODO TELA DEDICADA + IGNORE)
-// ============================================================
-async function gerarPdfDoHistorico(dados, botao) {
-    // 1. Trava o botão para não clicar duas vezes
-    const textoOriginal = botao.innerHTML;
-    botao.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
-    botao.disabled = true;
 
-    // 2. Cria uma TELA TEMPORÁRIA (Container) que fica por cima de tudo
-    // Isso garante que o recibo tenha espaço para ser desenhado sem bugar o layout do app
-    const containerTemp = document.createElement('div');
-    containerTemp.id = 'temp-pdf-container';
-    containerTemp.style.cssText = `
-        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-        background-color: #ffffff; z-index: 99999; 
-        overflow-y: auto; padding: 0; margin: 0;
-    `;
-
-    // 3. Cria o AVISO DE CARREGAMENTO (O usuário vê isso)
-    // O atributo 'data-html2canvas-ignore' faz o PDF ignorar isso aqui!
-    const loadingOverlay = document.createElement('div');
-    loadingOverlay.setAttribute('data-html2canvas-ignore', 'true');
-    loadingOverlay.style.cssText = `
-        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-        background-color: rgba(255, 255, 255, 0.95); 
-        z-index: 100000; display: flex; flex-direction: column;
-        align-items: center; justify-content: center;
-    `;
-    loadingOverlay.innerHTML = `
-        <div class="spinner-border text-primary" style="width: 4rem; height: 4rem;" role="status"></div>
-        <h4 class="mt-3" style="color: #333; font-weight:bold;">Gerando PDF...</h4>
-        <p style="color: #666;">Aguarde, preparando documento.</p>
-    `;
-    
-    // Adiciona o aviso na tela temporária
-    containerTemp.appendChild(loadingOverlay);
-
-    // 4. Monta o HTML do Recibo (Mesma lógica de sempre)
-    const lista = (dados.items && Array.isArray(dados.items)) ? dados.items : [];
-    const totalGeral = lista.reduce((acc, i) => acc + (i.valor * i.qtd), 0);
-    
-    // Datas
-    let hoje, dataCompra;
-    if (dados.dataVenda) {
-        const partes = dados.dataVenda.split('-');
-        hoje = new Date(partes[0], partes[1] - 1, partes[2]);
-        dataCompra = `${partes[2]}/${partes[1]}/${partes[0]}`;
-    } else {
-        hoje = dados.criadoEm ? new Date(dados.criadoEm) : new Date();
-        dataCompra = hoje.toLocaleDateString('pt-BR');
-    }
-
-    let dias = parseInt(dados.diasGarantia) || 0;
-    let dataVencimento = "S/ Garantia";
-    if (dias > 0) {
-        const validade = new Date(hoje);
-        validade.setDate(hoje.getDate() + dias);
-        dataVencimento = validade.toLocaleDateString('pt-BR');
-    }
-    let txtGarantia = dias === 365 ? "1 Ano" : (dias + " Dias");
-
-    // Itens
-    const linhas = lista.map(item => `
-        <tr>
-            <td><strong>${item.nome}</strong><br><span style="font-size:8.5pt;color:#666;">${item.cor || ''} ${item.obs || ''}</span></td>
-            <td style="text-align:center;">${item.qtd}</td>
-            <td style="text-align:right;">R$ ${parseFloat(item.valor).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
-            <td style="text-align:right;">R$ ${(item.valor * item.qtd).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
-        </tr>`).join('');
-
-    // Configurações
-    const headerHtml = (typeof receiptSettings !== 'undefined' ? receiptSettings.header : "WORKCELL").replace(/\n/g, '<br>');
-    const rawTerms = (typeof receiptSettings !== 'undefined' ? receiptSettings.terms : "Garantia.");
-    const termsHtml = rawTerms.split('\n').map(line => {
-        if(line.trim() === '') return '<div style="height: 10px;"></div>'; 
-        return `<div class="bk-term-paragraph">${line}</div>`;
-    }).join('');
-
-    const logoUrl = (typeof receiptSettings !== 'undefined' && receiptSettings.logoBase64) ? receiptSettings.logoBase64 : "https://i.imgur.com/H6BjyBS.png";
-    const signatureUrl = (typeof receiptSettings !== 'undefined' && receiptSettings.signatureBase64) ? receiptSettings.signatureBase64 : "https://i.imgur.com/Bh3fVLM.jpeg";
-    const docNum = dados.docNumber || '---';
-
-    // Cria o elemento do recibo
-    const reciboDiv = document.createElement('div');
-    reciboDiv.id = 'recibo-para-pdf';
-    // Importante: Fundo branco e sem transparências para não bugar o PDF
-    reciboDiv.style.cssText = `
-        background: white; color: black; font-family: Arial, sans-serif;
-        width: 100%; max-width: 800px; margin: 0 auto; padding: 20px;
-    `;
-    
-                    reciboDiv.innerHTML = `
-        <div class="bk-header">
-            <div class="bk-logo-area" style="width: auto; max-width: 280px;">
-
-                <img src="${logoUrl}" class="bk-logo-img" style="width: 100%; max-width: 200px; height: auto;"> 
-            </div>
-        
-
-            <div class="bk-company-info"><div class="bk-title-main">Comprovante de</div><div class="bk-title-sub">compra / Garantia</div>${headerHtml}</div>
-        </div>
-
-        <div class="bk-info-grid" style="display:flex; justify-content:space-between; margin:20px 0; border-top:1px solid #ccc; padding-top:15px;"><div class="bk-col-client" style="flex:2;"><strong>Para</strong><br>${dados.nome}<br>${dados.cpf || ''}<br>${dados.tel || ''}<br>${dados.end || ''}</div><div class="bk-col-dates" style="flex:1; text-align:right;"><div><strong>Doc Nº:</strong> ${docNum}</div><div><strong>Data:</strong> ${dataCompra}</div><div><strong>Garantia:</strong> ${txtGarantia}</div><div><strong>Vence:</strong> ${dataVencimento}</div></div></div>
-        
-        <table class="bk-table" style="width:100%; border-collapse:collapse; margin-bottom:5px;">
-            <thead>
-                <tr style="background-color: #6da037 !important;">
-                    <th style="background-color: #6da037 !important; color: #ffffff !important; padding:8px; text-align:left; border:none;">Item</th>
-                    <th style="background-color: #6da037 !important; color: #ffffff !important; padding:8px; text-align:center; border:none;">Qtd</th>
-                    <th style="background-color: #6da037 !important; color: #ffffff !important; padding:8px; text-align:right; border:none;">Unit</th>
-                    <th style="background-color: #6da037 !important; color: #ffffff !important; padding:8px; text-align:right; border:none;">Total</th>
-                </tr>
-            </thead>
-            <tbody>${linhas}</tbody>
-        </table>
-
-        ${dados.pagamento ? `<div style="width:100%; text-align:left; font-size:10pt; margin-top:5px; padding-left:5px; color:#444;"><strong>Pago via:</strong> ${dados.pagamento}</div>` : ''}
-
-        <div class="bk-totals-area" style="text-align:right; margin-bottom:20px;">
-            <div style="font-size:14pt; font-weight:bold; margin-top:10px;">Total: R$ ${totalGeral.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</div>
-        </div>
-        <div class="bk-section-title" style="font-weight:bold; border-bottom:1px solid #000; margin-bottom:10px;">Termos de Garantia</div>
-        <div class="bk-terms-text" style="font-size:10pt; text-align:justify;">${termsHtml}</div>
-        <div class="bk-signature-box" style="width: 100%; text-align: right; margin-top: 40px; page-break-inside: avoid;">
-            <img src="${signatureUrl}" style="width: 200px; height: auto; display: inline-block;">
-        </div>
-    `;
-
-
-
-
-
-    // Coloca o recibo dentro da tela temporária (atrás do aviso de loading)
-    containerTemp.appendChild(reciboDiv);
-    document.body.appendChild(containerTemp);
-
-    // 5. Gera o PDF
-    try {
-        // Rola pro topo para garantir captura
-        window.scrollTo(0,0);
-        
-        // Pequeno delay para garantir que imagens carregaram
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-                const opt = {
-            margin:       [10, 10, 10, 10],
-            // AQUI ESTÁ O NOVO NOME DO ARQUIVO:
-            filename:     `DocGarantia&comprovante_${(dados.nome || 'Cliente').split(' ')[0]}_${docNum}.pdf`,
-            image:        { type: 'jpeg', quality: 0.98 },
-            html2canvas:  { scale: 2, useCORS: true, scrollY: 0, backgroundColor: '#ffffff' },
-            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
-        };
-
-
-        // GERAÇÃO
-        const blob = await html2pdf().set(opt).from(reciboDiv).output('blob');
-
-          // 6. Compartilha
-        const file = new File([blob], opt.filename, { type: 'application/pdf' });
-        
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            await navigator.share({
-                files: [file],
-                // AQUI: Mudei o Título (Assunto do E-mail)
-                title: 'Documento Workcell Tecnologia',
-                // AQUI: Voltei a puxar sua mensagem configurada no Admin
-                text: `Olá ${dados.nome}, ${receiptSettings.emailMessage || 'segue em anexo seu documento.'}`
-            });
-        } else {
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = opt.filename;
-            link.click();
-            showCustomModal({ message: "PDF Baixado!" });
-        }
-
-
-    } catch (e) {
-        console.error(e);
-        showCustomModal({ message: "Erro ao gerar PDF: " + e.message });
-    } finally {
-        // 7. LIMPEZA TOTAL (Remove a tela temporária)
-        if(document.body.contains(containerTemp)) {
-            document.body.removeChild(containerTemp);
-        }
-        botao.innerHTML = textoOriginal;
-        botao.disabled = false;
-    }
-}
 
  // --- FUNÇÃO AUXILIAR: REDIMENSIONAR IMAGEM PARA BASE64 ---
 function processarImagemParaBase64(file, maxWidth = 300) {
@@ -5136,10 +4811,7 @@ async function salvarClienteAutomatico(dados) {
     }
 }
 
-// ============================================================
-// ============================================================
-// ============================================================
-// ============================================================
+//=======================================
 // AUTOCOMPLETE DE CLIENTES (VERSÃO FINAL LIMPA)
 // ============================================================
 let dbClientsCache = []; 
@@ -5167,53 +4839,121 @@ if (typeof db !== 'undefined') {
 
 
 // 2. Lógica de Pesquisa
+// ============================================================
+// 🕵️‍♂️ AUTOCOMPLETE UNIVERSAL (NOME, CPF, TELEFONE)
+// ============================================================
 function ativarAutocomplete() {
-    const inputNome = document.getElementById('bookipNome');
-    const boxSugestoes = document.getElementById('clientSuggestionsList');
+    // Configuração dos campos que queremos monitorar
+    const campos = [
+        { idInput: 'bookipNome',     tipo: 'nome' },
+        { idInput: 'bookipCpf',      tipo: 'cpf' },
+        { idInput: 'bookipTelefone', tipo: 'tel' }
+    ];
 
-    if (!inputNome || !boxSugestoes) return;
+    campos.forEach(campo => {
+        const input = document.getElementById(campo.idInput);
+        if (!input) return;
 
-    // Garante estilo visual correto (Fundo branco e borda suave)
-    boxSugestoes.style.zIndex = "9999";
-    boxSugestoes.style.background = "white";
-    boxSugestoes.style.border = "1px solid #ddd";
+        // 1. Cria a lista de sugestões dinamicamente (sem mexer no HTML)
+        let listaUl = document.getElementById(`sugestao-${campo.idInput}`);
+        if (!listaUl) {
+            listaUl = document.createElement('ul');
+            listaUl.id = `sugestao-${campo.idInput}`;
+            listaUl.className = "list-group position-absolute w-100 shadow";
+            listaUl.style.zIndex = "9999";
+            listaUl.style.display = "none";
+            listaUl.style.maxHeight = "200px";
+            listaUl.style.overflowY = "auto";
+            // Adiciona a lista logo depois do input
+            input.parentNode.appendChild(listaUl);
+            // Garante que o pai tenha posição relativa para a lista ficar embaixo
+            input.parentNode.style.position = "relative"; 
+        }
 
-    inputNome.addEventListener('input', (e) => {
-        const termo = e.target.value.toLowerCase();
-        
-        boxSugestoes.style.display = 'none';
-        boxSugestoes.innerHTML = '';
+        // 2. Ouve o que você digita
+        input.addEventListener('input', (e) => {
+            const termo = e.target.value.toLowerCase().trim();
+            const termoLimpo = termo.replace(/[^a-z0-9]/g, ''); // Tira pontos e traços para comparar
 
-        if (termo.length < 1) return;
+            listaUl.style.display = 'none';
+            listaUl.innerHTML = '';
 
-        // Busca por Nome ou CPF
-        const encontrados = dbClientsCache.filter(c => {
-            const n = (c.nome || '').toLowerCase();
-            const cpf = (c.cpf || '').toLowerCase();
-            return n.includes(termo) || cpf.includes(termo);
+            if (termoLimpo.length < 2) return; // Só busca se tiver 2+ caracteres/números
+
+            // 3. Filtra a base de clientes (dbClientsCache)
+            const encontrados = window.dbClientsCache.filter(c => {
+                const nomeDb = (c.nome || '').toLowerCase();
+                const cpfDb = (c.cpf || '').replace(/[^a-z0-9]/g, '');
+                const telDb = (c.tel || '').replace(/[^a-z0-9]/g, '');
+
+                // Lógica de Busca Inteligente
+                if (campo.tipo === 'nome') {
+                    return nomeDb.includes(termo);
+                } else if (campo.tipo === 'cpf') {
+                    return cpfDb.includes(termoLimpo);
+                } else if (campo.tipo === 'tel') {
+                    return telDb.includes(termoLimpo);
+                }
+                return false;
+            });
+
+            // 4. Mostra os resultados
+            if (encontrados.length > 0) {
+                listaUl.innerHTML = encontrados.slice(0, 5).map(c => `
+                    <li class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" 
+                        style="cursor: pointer;"
+                        onclick='preencherCliente("${c.id}", "sugestao-${campo.idInput}")'>
+                        <div>
+                            <strong>${c.nome}</strong><br>
+                            <small class="text-secondary">${c.cpf || 'S/ CPF'} - ${c.tel || 'S/ Tel'}</small>
+                        </div>
+                        <i class="bi bi-box-arrow-in-down-left text-primary"></i>
+                    </li>
+                `).join('');
+                listaUl.style.display = 'block';
+            }
         });
 
-        if (encontrados.length > 0) {
-            boxSugestoes.innerHTML = encontrados.slice(0, 5).map(c => `
-                <li class="list-group-item list-group-item-action" 
-                    style="cursor: pointer;"
-                    onclick='preencherCliente("${c.id}")'>
-                    <div class="fw-bold">${c.nome}</div>
-                    <small class="text-muted">${c.cpf || 'Sem CPF'}</small>
-                </li>
-            `).join('');
-            
-            boxSugestoes.style.display = 'block';
-        }
-    });
-
-    // Fecha ao clicar fora
-    document.addEventListener('click', (e) => {
-        if (e.target !== inputNome && e.target !== boxSugestoes) {
-            boxSugestoes.style.display = 'none';
-        }
+        // Fecha se clicar fora
+        document.addEventListener('click', (e) => {
+            if (e.target !== input && e.target !== listaUl) {
+                listaUl.style.display = 'none';
+            }
+        });
     });
 }
+
+// Inicia a função assim que o código carrega
+ativarAutocomplete();
+
+// 3. Função de Preencher (Pequeno ajuste para fechar a lista certa)
+window.preencherCliente = function(id, idListaParaFechar) {
+    const cliente = window.dbClientsCache.find(c => c.id === id);
+    
+    if (cliente) {
+        // Preenche os campos se estiverem vazios ou substitui (decisão de UX)
+        // Aqui vou mandar substituir tudo para garantir os dados certos
+        document.getElementById('bookipNome').value = cliente.nome || '';
+        document.getElementById('bookipCpf').value = cliente.cpf || '';
+        document.getElementById('bookipTelefone').value = cliente.tel || '';
+        document.getElementById('bookipEndereco').value = cliente.end || '';
+        document.getElementById('bookipEmail').value = cliente.email || '';
+        
+        // Esconde a lista que foi clicada
+        if(idListaParaFechar) {
+            document.getElementById(idListaParaFechar).style.display = 'none';
+        }
+        
+        // Feedback Visual (Piscadinha verde em todos os campos preenchidos)
+        ['bookipNome', 'bookipCpf', 'bookipTelefone'].forEach(id => {
+            const el = document.getElementById(id);
+            if(el) {
+                el.classList.add('is-valid');
+                setTimeout(() => el.classList.remove('is-valid'), 1000);
+            }
+        });
+    }
+};
 
 // Inicia a função
 ativarAutocomplete();
@@ -5707,5 +5447,816 @@ setupProductTags();
     if (btnBackFromBookip) {
         btnBackFromBookip.onclick = function() { window.openDocumentsSection('home'); };
     }
+
+// ============================================================
+
+
+// ============================================================
+// ============================================================
+// ============================================================
+// 1. FÁBRICA DE RECIBOS (CORREÇÃO DE ALINHAMENTO FORÇADA)
+// ============================================================
+function getReciboHTML(dados) {
+    // 1. Configurações
+    const settings = (typeof receiptSettings !== 'undefined' && receiptSettings) ? receiptSettings : {};
+    const headerHtml = (settings.header || "WORKCELL TECNOLOGIA").replace(/\n/g, '<br>');
+    const rawTerms = (settings.terms || "Garantia legal de 90 dias.");
+    
+    const termsHtml = rawTerms.split('\n').map(line => {
+        if(!line || line.trim() === '') return '<div style="height: 5px;"></div>'; 
+        return `<div style="margin-bottom: 3px; text-align: justify; page-break-inside: avoid;">${line}</div>`;
+    }).join('');
+    
+    const logoUrl = settings.logoBase64 || "https://i.imgur.com/H6BjyBS.png"; 
+    const signatureUrl = settings.signatureBase64 || "https://i.imgur.com/Bh3fVLM.jpeg";
+
+    // 2. Dados da Lista
+    let lista = (dados.items && Array.isArray(dados.items)) ? dados.items : [];
+    if (lista.length === 0) {
+        if (dados.prodNome) {
+            lista = [{ 
+                nome: dados.prodNome, 
+                qtd: parseInt(dados.prodQtd) || 1, 
+                valor: parseFloat(dados.prodValor) || 0, 
+                cor: dados.prodCor || '', 
+                obs: dados.obs || '' 
+            }];
+        } else {
+            lista = [];
+        }
+    }
+    
+    const totalGeral = lista.reduce((acc, i) => acc + (parseFloat(i.valor || 0) * (parseInt(i.qtd) || 1)), 0);
+
+    // 3. Datas
+    let hoje, dataCompra;
+    if (dados.dataVenda) {
+        try {
+            const partes = dados.dataVenda.split('-');
+            hoje = new Date(partes[0], partes[1] - 1, partes[2]);
+            dataCompra = `${partes[2]}/${partes[1]}/${partes[0]}`;
+        } catch (e) {
+            hoje = new Date();
+            dataCompra = hoje.toLocaleDateString('pt-BR');
+        }
+    } else {
+        hoje = dados.criadoEm ? new Date(dados.criadoEm) : new Date();
+        dataCompra = hoje.toLocaleDateString('pt-BR');
+    }
+
+    // 4. Garantia
+    const dias = parseInt(dados.diasGarantia) || 0;
+    let dataVencimento = "S/ Garantia";
+    let txtGarantia = "Sem Garantia";
+    
+    if (dias > 0) {
+        const validade = new Date(hoje);
+        validade.setDate(hoje.getDate() + dias);
+        dataVencimento = validade.toLocaleDateString('pt-BR');
+        
+        if (dias === 365) txtGarantia = "1 Ano";
+        else if (dias === 180) txtGarantia = "6 Meses";
+        else if (dias === 120) txtGarantia = "4 Meses";
+        else if (dias === 30) txtGarantia = "30 Dias";
+        else txtGarantia = `${dias} Dias`;
+    }
+
+    const docNum = dados.docNumber || '---';
+
+    // 5. Linhas da Tabela
+    const linhas = lista.map(item => `
+        <tr style="page-break-inside: avoid;">
+            <td style="padding: 8px; border-bottom: 1px solid #eee; font-size: 10pt; vertical-align: top;">
+                <strong style="color: #000;">${item.nome}</strong><br>
+                <span style="font-size: 8.5pt; color: #666;">${item.cor || ''} ${item.obs || ''}</span>
+            </td>
+            <td style="padding: 8px; border-bottom: 1px solid #eee; font-size: 10pt; text-align: center; vertical-align: top;">${item.qtd}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #eee; font-size: 10pt; text-align: right; vertical-align: top;">R$ ${parseFloat(item.valor).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #eee; font-size: 10pt; text-align: right; vertical-align: top;">R$ ${(item.valor * item.qtd).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+        </tr>`).join('');
+
+    const infoPagamento = dados.pagamento ? 
+        `<div style="text-align: right; font-size: 9pt; color: #444; margin-top: 5px; padding-right: 5px;">
+            <strong>Forma de Pagamento:</strong> ${dados.pagamento}
+         </div>` : '';
+
+    return `
+        <div style="font-family: 'Segoe UI', Arial, sans-serif; color: #000; background: #fff; padding: 20px 30px; width: 750px; margin: 0 auto; box-sizing: border-box;">
+            
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+                <tr>
+                    <td style="width: 30%; vertical-align: top;">
+                        <img src="${logoUrl}" style="width: 160px; height: auto; object-fit: contain;" onerror="this.style.display='none'">
+                    </td>
+                    <td style="width: 70%; text-align: right; vertical-align: top; font-size: 9pt; color: #444;">
+                        <div style="font-size: 20pt; color: #000; line-height: 1.1;">Comprovante de</div>
+                        <div style="font-size: 20pt; font-weight: bold; color: #000; margin-bottom: 8px; line-height: 1.1;">compra / Garantia</div>
+                        ${headerHtml}
+                    </td>
+                </tr>
+            </table>
+
+            <table style="width: 100%; border-top: 1px solid #ccc; margin-bottom: 20px; border-collapse: collapse;">
+                <tr>
+                    <td style="width: 60%; vertical-align: top; padding-top: 15px; padding-right: 15px;">
+                        <div style="font-size: 11pt; margin-bottom: 2px;"><strong>Para</strong></div>
+                        <div style="font-size: 11pt; font-weight: bold; margin-bottom: 5px;">${dados.nome}</div>
+                        <div style="font-size: 10pt; line-height: 1.4;">
+                            <strong>CPF:</strong> ${dados.cpf || 'Não inf.'}<br>
+                            <strong>Número:</strong> ${dados.tel || 'Não inf.'}<br>
+                            <strong>Endereço:</strong> ${dados.end || 'Não inf.'}
+                        </div>
+                    </td>
+
+                    <td style="width: 40%; vertical-align: top; padding-top: 15px; text-align: right;">
+                        <div style="display: inline-block; text-align: right;">
+                            <table style="width: auto; border-collapse: collapse; font-size: 10pt;">
+                                <tr>
+                                    <td style="text-align: right; padding-right: 8px; padding-bottom: 4px; white-space: nowrap;"><strong>Doc Nº:</strong></td>
+                                    <td style="text-align: left; padding-bottom: 4px; font-weight: bold; white-space: nowrap;">${docNum}</td>
+                                </tr>
+                                <tr>
+                                    <td style="text-align: right; padding-right: 8px; padding-bottom: 4px; white-space: nowrap;"><strong>Data:</strong></td>
+                                    <td style="text-align: left; padding-bottom: 4px; white-space: nowrap;">${dataCompra}</td>
+                                </tr>
+                                <tr>
+                                    <td style="text-align: right; padding-right: 8px; padding-bottom: 4px; white-space: nowrap;"><strong>Garantia:</strong></td>
+                                    <td style="text-align: left; padding-bottom: 4px; white-space: nowrap;">${txtGarantia}</td>
+                                </tr>
+                                <tr>
+                                    <td style="text-align: right; padding-right: 8px; white-space: nowrap;"><strong>Vence:</strong></td>
+                                    <td style="text-align: left; white-space: nowrap;">${dataVencimento}</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </td>
+                </tr>
+            </table>
+
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 5px;">
+                <thead>
+                    <tr style="background-color: #6da037 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
+                        <th style="padding: 8px; text-align: left; color: #ffffff !important; font-size: 10pt; font-weight: bold;">Item</th>
+                        <th style="padding: 8px; text-align: center; color: #ffffff !important; font-size: 10pt; font-weight: bold;">Qtd</th>
+                        <th style="padding: 8px; text-align: right; color: #ffffff !important; font-size: 10pt; font-weight: bold;">Unit</th>
+                        <th style="padding: 8px; text-align: right; color: #ffffff !important; font-size: 10pt; font-weight: bold;">Total</th>
+                    </tr>
+                </thead>
+                <tbody>${linhas}</tbody>
+            </table>
+
+            ${infoPagamento}
+
+            <div style="text-align: right; margin-top: 15px; margin-bottom: 25px;">
+                <div style="display: inline-block; background-color: #f2f2f2; padding: 10px 20px; font-size: 12pt; font-weight: bold; border-radius: 4px; -webkit-print-color-adjust: exact;">
+                    Total: <span style="color: #2e7d32;">R$ ${totalGeral.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span>
+                </div>
+            </div>
+
+            <div style="border-bottom: 1px solid #000; margin-bottom: 10px;">
+                <strong style="font-size: 10pt; text-transform: uppercase;">Termos de Garantia</strong>
+            </div>
+            <div style="font-size: 9pt; line-height: 1.3; color: #333; text-align: justify;">${termsHtml}</div>
+
+            <div style="width: 100%; text-align: right; margin-top: 40px; page-break-inside: avoid;">
+                <img src="${signatureUrl}" style="width: 200px; height: auto; display: inline-block;" onerror="this.style.display='none'">
+            </div>
+        </div>
+    `;
+}
+
+// ============================================================
+// 2. FUNÇÃO IMPRIMIR
+// ============================================================
+function printBookip(dados) {
+    try {
+        if (!dados) { alert("Erro: Sem dados."); return; }
+        const htmlRecibo = getReciboHTML(dados);
+        const preview = document.getElementById('bookipPreview');
+        if(preview) {
+            preview.innerHTML = htmlRecibo;
+            document.body.classList.add('print-bookip');
+            
+            // Delay maior para garantir que imagens carreguem antes de imprimir
+            setTimeout(() => { 
+                window.print(); 
+                setTimeout(() => document.body.classList.remove('print-bookip'), 1500); 
+            }, 600);
+        }
+    } catch (e) { alert("Erro: " + e.message); document.body.classList.remove('print-bookip'); }
+}
+
+// ============================================================
+// ============================================================
+// ============================================================
+// 1. FÁBRICA DE RECIBOS (CORREÇÃO DE ALINHAMENTO FORÇADA)
+// ============================================================
+function getReciboHTML(dados) {
+    // 1. Configurações
+    const settings = (typeof receiptSettings !== 'undefined' && receiptSettings) ? receiptSettings : {};
+    const headerHtml = (settings.header || "WORKCELL TECNOLOGIA").replace(/\n/g, '<br>');
+    const rawTerms = (settings.terms || "Garantia legal de 90 dias.");
+    
+    const termsHtml = rawTerms.split('\n').map(line => {
+        if(!line || line.trim() === '') return '<div style="height: 5px;"></div>'; 
+        return `<div style="margin-bottom: 3px; text-align: justify; page-break-inside: avoid;">${line}</div>`;
+    }).join('');
+    
+    const logoUrl = settings.logoBase64 || "https://i.imgur.com/H6BjyBS.png"; 
+    const signatureUrl = settings.signatureBase64 || "https://i.imgur.com/Bh3fVLM.jpeg";
+
+    // 2. Dados da Lista
+    let lista = (dados.items && Array.isArray(dados.items)) ? dados.items : [];
+    if (lista.length === 0) {
+        if (dados.prodNome) {
+            lista = [{ 
+                nome: dados.prodNome, 
+                qtd: parseInt(dados.prodQtd) || 1, 
+                valor: parseFloat(dados.prodValor) || 0, 
+                cor: dados.prodCor || '', 
+                obs: dados.obs || '' 
+            }];
+        } else {
+            lista = [];
+        }
+    }
+    
+    const totalGeral = lista.reduce((acc, i) => acc + (parseFloat(i.valor || 0) * (parseInt(i.qtd) || 1)), 0);
+
+    // 3. Datas
+    let hoje, dataCompra;
+    if (dados.dataVenda) {
+        try {
+            const partes = dados.dataVenda.split('-');
+            hoje = new Date(partes[0], partes[1] - 1, partes[2]);
+            dataCompra = `${partes[2]}/${partes[1]}/${partes[0]}`;
+        } catch (e) {
+            hoje = new Date();
+            dataCompra = hoje.toLocaleDateString('pt-BR');
+        }
+    } else {
+        hoje = dados.criadoEm ? new Date(dados.criadoEm) : new Date();
+        dataCompra = hoje.toLocaleDateString('pt-BR');
+    }
+
+    // 4. Garantia
+    const dias = parseInt(dados.diasGarantia) || 0;
+    let dataVencimento = "S/ Garantia";
+    let txtGarantia = "Sem Garantia";
+    
+    if (dias > 0) {
+        const validade = new Date(hoje);
+        validade.setDate(hoje.getDate() + dias);
+        dataVencimento = validade.toLocaleDateString('pt-BR');
+        
+        if (dias === 365) txtGarantia = "1 Ano";
+        else if (dias === 180) txtGarantia = "6 Meses";
+        else if (dias === 120) txtGarantia = "4 Meses";
+        else if (dias === 30) txtGarantia = "30 Dias";
+        else txtGarantia = `${dias} Dias`;
+    }
+
+    const docNum = dados.docNumber || '---';
+
+    // 5. Linhas da Tabela
+    const linhas = lista.map(item => `
+        <tr style="page-break-inside: avoid;">
+            <td style="padding: 8px; border-bottom: 1px solid #eee; font-size: 10pt; vertical-align: top;">
+                <strong style="color: #000;">${item.nome}</strong><br>
+                <span style="font-size: 8.5pt; color: #666;">${item.cor || ''} ${item.obs || ''}</span>
+            </td>
+            <td style="padding: 8px; border-bottom: 1px solid #eee; font-size: 10pt; text-align: center; vertical-align: top;">${item.qtd}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #eee; font-size: 10pt; text-align: right; vertical-align: top;">R$ ${parseFloat(item.valor).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #eee; font-size: 10pt; text-align: right; vertical-align: top;">R$ ${(item.valor * item.qtd).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+        </tr>`).join('');
+
+    const infoPagamento = dados.pagamento ? 
+        `<div style="text-align: right; font-size: 9pt; color: #444; margin-top: 5px; padding-right: 5px;">
+            <strong>Forma de Pagamento:</strong> ${dados.pagamento}
+         </div>` : '';
+
+    return `
+        <div style="font-family: 'Segoe UI', Arial, sans-serif; color: #000; background: #fff; padding: 20px 30px; width: 750px; margin: 0 auto; box-sizing: border-box;">
+            
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+                <tr>
+                    <td style="width: 30%; vertical-align: top;">
+                        <img src="${logoUrl}" style="width: 160px; height: auto; object-fit: contain;" onerror="this.style.display='none'">
+                    </td>
+                    <td style="width: 70%; text-align: right; vertical-align: top; font-size: 9pt; color: #444;">
+                        <div style="font-size: 20pt; color: #000; line-height: 1.1;">Comprovante de</div>
+                        <div style="font-size: 20pt; font-weight: bold; color: #000; margin-bottom: 8px; line-height: 1.1;">compra / Garantia</div>
+                        ${headerHtml}
+                    </td>
+                </tr>
+            </table>
+
+            <table style="width: 100%; border-top: 1px solid #ccc; margin-bottom: 20px; border-collapse: collapse;">
+                <tr>
+                    <td style="width: 60%; vertical-align: top; padding-top: 15px; padding-right: 15px;">
+                        <div style="font-size: 11pt; margin-bottom: 2px;"><strong>Para</strong></div>
+                        <div style="font-size: 11pt; font-weight: bold; margin-bottom: 5px;">${dados.nome}</div>
+                        <div style="font-size: 10pt; line-height: 1.4;">
+                            <strong>CPF:</strong> ${dados.cpf || 'Não inf.'}<br>
+                            <strong>Número:</strong> ${dados.tel || 'Não inf.'}<br>
+                            <strong>Endereço:</strong> ${dados.end || 'Não inf.'}
+                        </div>
+                    </td>
+
+                    <td style="width: 40%; vertical-align: top; padding-top: 15px; text-align: right;">
+                        <div style="display: inline-block; text-align: right;">
+                            <table style="width: auto; border-collapse: collapse; font-size: 10pt;">
+                                <tr>
+                                    <td style="text-align: right; padding-right: 8px; padding-bottom: 4px; white-space: nowrap;"><strong>Doc Nº:</strong></td>
+                                    <td style="text-align: left; padding-bottom: 4px; font-weight: bold; white-space: nowrap;">${docNum}</td>
+                                </tr>
+                                <tr>
+                                    <td style="text-align: right; padding-right: 8px; padding-bottom: 4px; white-space: nowrap;"><strong>Data:</strong></td>
+                                    <td style="text-align: left; padding-bottom: 4px; white-space: nowrap;">${dataCompra}</td>
+                                </tr>
+                                <tr>
+                                    <td style="text-align: right; padding-right: 8px; padding-bottom: 4px; white-space: nowrap;"><strong>Garantia:</strong></td>
+                                    <td style="text-align: left; padding-bottom: 4px; white-space: nowrap;">${txtGarantia}</td>
+                                </tr>
+                                <tr>
+                                    <td style="text-align: right; padding-right: 8px; white-space: nowrap;"><strong>Vence:</strong></td>
+                                    <td style="text-align: left; white-space: nowrap;">${dataVencimento}</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </td>
+                </tr>
+            </table>
+
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 5px;">
+                <thead>
+                    <tr style="background-color: #6da037 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
+                        <th style="padding: 8px; text-align: left; color: #ffffff !important; font-size: 10pt; font-weight: bold;">Item</th>
+                        <th style="padding: 8px; text-align: center; color: #ffffff !important; font-size: 10pt; font-weight: bold;">Qtd</th>
+                        <th style="padding: 8px; text-align: right; color: #ffffff !important; font-size: 10pt; font-weight: bold;">Unit</th>
+                        <th style="padding: 8px; text-align: right; color: #ffffff !important; font-size: 10pt; font-weight: bold;">Total</th>
+                    </tr>
+                </thead>
+                <tbody>${linhas}</tbody>
+            </table>
+
+            ${infoPagamento}
+
+            <div style="text-align: right; margin-top: 15px; margin-bottom: 25px;">
+                <div style="display: inline-block; background-color: #f2f2f2; padding: 10px 20px; font-size: 12pt; font-weight: bold; border-radius: 4px; -webkit-print-color-adjust: exact;">
+                    Total: <span style="color: #2e7d32;">R$ ${totalGeral.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span>
+                </div>
+            </div>
+
+            <div style="border-bottom: 1px solid #000; margin-bottom: 10px;">
+                <strong style="font-size: 10pt; text-transform: uppercase;">Termos de Garantia</strong>
+            </div>
+            <div style="font-size: 9pt; line-height: 1.3; color: #333; text-align: justify;">${termsHtml}</div>
+
+            <div style="width: 100%; text-align: right; margin-top: 40px; page-break-inside: avoid;">
+                <img src="${signatureUrl}" style="width: 200px; height: auto; display: inline-block;" onerror="this.style.display='none'">
+            </div>
+        </div>
+    `;
+}
+
+// 3. FUNÇÃO PDF FINAL (COM CÓPIA DE E-MAIL AUTOMÁTICA)
+// ============================================================
+async function gerarPdfDoHistorico(dados, botao) {
+    // --- 0. O RETORNO DO COPY & PASTE (RESTAURADO) ---
+    // Copia o e-mail assim que clica no botão, antes de começar a carregar
+    if (dados.email && dados.email.trim() !== '') {
+        try {
+            await navigator.clipboard.writeText(dados.email);
+            // Se quiser dar um feedback visual, pode descomentar a linha abaixo:
+            // if(typeof showCustomModal === 'function') showCustomModal({ message: "E-mail do cliente copiado!" });
+        } catch (err) {
+            console.error('Erro ao copiar e-mail automaticamente:', err);
+        }
+    }
+
+    const textoOriginal = botao.innerHTML;
+    botao.innerHTML = 'Aguarde...';
+    botao.disabled = true;
+
+    // --- CORTINA DE LOADING ---
+    const spinnerStyle = document.createElement('style');
+    spinnerStyle.id = 'workcell-spinner-style';
+    spinnerStyle.textContent = `
+        .workcell-spinner {
+            border: 4px solid #f3f3f3; border-top: 4px solid #6da037; border-radius: 50%;
+            width: 50px; height: 50px; animation: spin 1s linear infinite; margin-bottom: 25px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .loading-container { font-family: sans-serif; text-align: center; }
+        .loading-title { color: #333; font-size: 20px; font-weight: bold; margin-bottom: 10px; }
+        .loading-subtitle { color: #666; font-size: 14px; }
+    `;
+    if (!document.getElementById('workcell-spinner-style')) {
+        document.head.appendChild(spinnerStyle);
+    }
+
+    const loadingOverlay = document.createElement('div');
+    loadingOverlay.style.cssText = `
+        position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+        background: rgba(255, 255, 255, 0.98); z-index: 2147483647;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        padding: 30px; box-sizing: border-box;
+    `;
+    loadingOverlay.innerHTML = `
+        <div class="workcell-spinner"></div>
+        <div class="loading-container">
+            <div class="loading-title" id="loadingTxt">Iniciando...</div>
+            <div class="loading-subtitle">Por favor, não feche o app.</div>
+        </div>
+    `;
+    document.body.appendChild(loadingOverlay);
+
+    const updateLoading = (txt) => { const el = document.getElementById('loadingTxt'); if(el) el.innerText = txt; };
+
+    updateLoading("Preparando documento...");
+
+    // --- 1. CONFIGURAÇÕES FINAIS ---
+    
+    // A. Nome do Arquivo
+    const nomeClienteLimpo = (dados.nome || 'Cliente')
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") 
+        .replace(/[^a-zA-Z0-9\s]/g, '') 
+        .trim()
+        .replace(/\s+/g, '_');
+
+    const numeroDoc = dados.docNumber || '000';
+    const nomeFinalArquivo = `DocGarantia&comprovante_${nomeClienteLimpo}_${numeroDoc}.pdf`;
+
+    // B. Mensagem (Puxa do Admin)
+    const settings = (typeof receiptSettings !== 'undefined' && receiptSettings) ? receiptSettings : {};
+    const msgSalva = settings.emailMessage || settings.shareMessage || settings.msgEnvio || "";
+    
+    // Corpo do E-mail
+    const textoCompartilhamento = msgSalva ? `Olá ${dados.nome},\n\n${msgSalva}` : `Olá ${dados.nome},`;
+    
+    // C. Título do E-mail
+    const tituloCompartilhamento = "Documento Workcell Tecnologia";
+
+    // --- GERAÇÃO HTML ---
+ const containerTemp = document.createElement('div');
+// MUDANÇA: 'left: -9999px' joga para fora da tela e 'position: fixed' evita esticar o site
+containerTemp.style.cssText = `position: fixed; top: 0; left: -9999px; width: 794px; background: white; z-index: -100; margin: 0; padding: 0;`;
+
+    
+    if (typeof getReciboHTML === 'function') {
+        containerTemp.innerHTML = getReciboHTML(dados);
+    } else {
+        alert("Erro: Fábrica não encontrada.");
+        removerLoading();
+        botao.innerHTML = textoOriginal;
+        botao.disabled = false;
+        return;
+    }
+    document.body.appendChild(containerTemp);
+
+    function removerLoading() {
+        if(document.body.contains(containerTemp)) document.body.removeChild(containerTemp);
+        if(document.body.contains(loadingOverlay)) document.body.removeChild(loadingOverlay);
+    }
+
+    try {
+        window.scrollTo(0,0);
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        updateLoading("Processando imagens...");
+
+        const fullCanvas = await html2canvas(containerTemp, {
+            scale: 1.5, 
+            useCORS: true,
+            scrollY: 0,
+            windowWidth: 794,
+            backgroundColor: '#ffffff'
+        });
+
+        const pdfRatio = 297 / 210; 
+        const pageHeightPixels = Math.floor(fullCanvas.width * pdfRatio);
+        const margemSeguranca = 50; 
+        const contentHeightPerPage = pageHeightPixels - (margemSeguranca * 2);
+
+        const totalHeight = fullCanvas.height;
+        let currentHeight = 0;
+        let pageCount = 1;
+        
+        const printContainer = document.createElement('div');
+        printContainer.style.width = '794px'; 
+        
+        while (currentHeight < totalHeight) {
+            updateLoading(`Gerando página ${pageCount}...`);
+            
+            const pageCanvas = document.createElement('canvas');
+            pageCanvas.width = fullCanvas.width;
+            pageCanvas.height = pageHeightPixels;
+
+            const ctx = pageCanvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+
+            const heightLeft = totalHeight - currentHeight;
+            const sliceHeight = Math.min(contentHeightPerPage, heightLeft);
+
+            ctx.drawImage(
+                fullCanvas, 
+                0, currentHeight, fullCanvas.width, sliceHeight,
+                0, margemSeguranca, fullCanvas.width, sliceHeight 
+            );
+
+            if (sliceHeight >= contentHeightPerPage) {
+                 ctx.fillStyle = '#ffffff';
+                 ctx.fillRect(0, pageHeightPixels - margemSeguranca, pageCanvas.width, margemSeguranca);
+            }
+
+            const imgSlice = document.createElement('img');
+            imgSlice.src = pageCanvas.toDataURL('image/jpeg', 0.95);
+            imgSlice.style.width = '100%'; 
+            imgSlice.style.display = 'block';
+            
+            const pageDiv = document.createElement('div');
+            pageDiv.style.cssText = "position: relative; width: 100%; margin: 0; padding: 0; page-break-after: always;";
+            pageDiv.appendChild(imgSlice);
+            
+            printContainer.appendChild(pageDiv);
+
+            currentHeight += sliceHeight;
+            pageCount++;
+        }
+
+        updateLoading("Finalizando PDF...");
+
+        const opt = {
+            margin:       0, 
+            filename:     nomeFinalArquivo,
+            image:        { type: 'jpeg', quality: 0.98 },
+            html2canvas:  { scale: 1, useCORS: true }, 
+            jsPDF:        { unit: 'px', format: [794, 1123], orientation: 'portrait' } 
+        };
+
+        const blob = await html2pdf().set(opt).from(printContainer).output('blob');
+        const file = new File([blob], nomeFinalArquivo, { type: 'application/pdf' });
+
+        removerLoading();
+
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({
+                files: [file],
+                title: tituloCompartilhamento,
+                text: textoCompartilhamento
+            });
+        } else {
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = opt.filename;
+            link.click();
+        }
+
+    } catch (e) {
+        removerLoading();
+        alert("Erro ao gerar PDF: " + e.message);
+        console.error(e);
+    } finally {
+        botao.innerHTML = textoOriginal;
+        botao.disabled = false;
+    }
+}
+
+// ============================================================
+// ============================================================
+// 🧹 FAXINA DO FIREBASE (GLOBAL)
+// ============================================================
+window.limparImportacaoErrada = async function() {
+    // 1. Verificação de Segurança do Banco
+    if (!db) {
+        alert("Erro: O Banco de Dados ainda não conectou. Tente novamente em 5 segundos.");
+        return;
+    }
+
+    // 2. Senha de Segurança
+    showCustomModal({
+        message: "⚠️ ZONA DE PERIGO ⚠️\n\nIsso vai escanear o Firebase e apagar clientes que parecem erros (ex: nome '12929' ou sem telefone).\n\nDigite a senha:",
+        showPassword: true,
+        confirmText: "INICIAR VARREDURA",
+        onConfirm: (password) => {
+            if (password === "220390") {
+                executarVarreduraReal();
+            } else {
+                showCustomModal({ message: "Senha incorreta." });
+            }
+        },
+        onCancel: () => {}
+    });
+};
+
+async function executarVarreduraReal() {
+    const loadingToast = document.getElementById('toastNotification');
+    if(loadingToast) {
+        loadingToast.innerHTML = '<i class="spinner-border spinner-border-sm"></i> Escaneando Firebase...';
+        loadingToast.classList.add('show');
+    }
+
+    try {
+        // 1. Baixa TUDO da pasta clientes
+        const snapshot = await get(ref(db, 'clientes'));
+        
+        if (!snapshot.exists()) {
+            showCustomModal({ message: "O banco de dados de clientes está vazio." });
+            return;
+        }
+
+        const clientes = snapshot.val();
+        const updates = {};
+        let contador = 0;
+        let amostra = [];
+
+        // 2. O Algoritmo de Detecção de "Lixo"
+        Object.keys(clientes).forEach(key => {
+            const c = clientes[key];
+            const nome = String(c.nome || '').trim();
+            const tel = String(c.tel || '').replace(/\D/g, ''); // Só números
+            const cpf = String(c.cpf || '');
+
+            // CRITÉRIO 1: O Nome é puramente numérico? (Ex: "159700", "12.90")
+            // Regex: Só aceita números, pontos, traços e espaços. Sem letras.
+            const nomePareceCodigo = /^[0-9\s.-]+$/.test(nome) && nome.length > 0;
+
+            // CRITÉRIO 2: Sem telefone E nome curto (Ex: "Eu", "A")
+            const cadastroIncompleto = (tel.length < 6) && (nome.length < 3);
+
+            // CRITÉRIO 3: Nome contém palavras de erro de arquivo (Opcional)
+            const nomeInvalido = nome.toLowerCase().includes("undefined") || nome.toLowerCase().includes("null");
+
+            if (nomePareceCodigo || cadastroIncompleto || nomeInvalido) {
+                // Marca para deletar (null apaga no Firebase)
+                updates[`clientes/${key}`] = null;
+                contador++;
+                
+                // Guarda 3 exemplos para te mostrar antes de apagar
+                if (amostra.length < 3) amostra.push(`${nome} (ID: ${key})`);
+            }
+        });
+
+        if(loadingToast) loadingToast.classList.remove('show');
+
+        // 3. Resultado
+        if (contador === 0) {
+            showCustomModal({ message: "Tudo limpo! Não encontrei nenhum cadastro com erro." });
+        } else {
+            showCustomModal({
+                message: `🚨 ENCONTREI ${contador} ERROS!\n\nExemplos:\n- ${amostra.join('\n- ')}\n\nTem certeza que deseja EXCLUIR DEFINITIVAMENTE esses ${contador} registros do Firebase?`,
+                confirmText: "SIM, APAGAR AGORA",
+                onConfirm: async () => {
+                    await update(ref(db), updates);
+                    showCustomModal({ message: `Pronto! ${contador} registros de lixo foram apagados.` });
+                    // Atualiza a tabela se estiver aberta
+                    if (typeof renderClientsTable === 'function') renderClientsTable();
+                },
+                onCancel: () => {
+                    showCustomModal({ message: "Cancelado. Nada foi apagado." });
+                }
+            });
+        }
+
+    } catch (error) {
+        console.error(error);
+        alert("Erro técnico: " + error.message);
+    }
+}
+
+
+// ============================================================
+// ============================================================
+// 🪄 MÁGICA: IMPORTAR DADOS DO WHATSAPP (VERSÃO FINAL BLINDADA)
+// ==============================================// ============================================================
+// 🪄 MÁGICA: IMPORTAR DADOS DO WHATSAPP (VERSÃO FINAL COM ATIVADOR)
+// ============================================================
+
+// 1. Função de Abrir a Janela
+window.abrirModalColarZap = function() {
+    console.log("Abrindo janela do Zap..."); // Aviso no console pra gente saber que funcionou
+
+    const modalHtml = `
+    <div class="custom-modal-overlay active" id="modalZapOverlay" style="z-index: 10000;">
+        <div class="custom-modal-content" style="max-width: 90%; width: 400px;">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0 text-success"><i class="bi bi-whatsapp"></i> Colar Dados</h5>
+                <button class="btn-back" id="btnFecharZap"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <p class="text-secondary small text-start">Copie a mensagem inteira do cliente e cole abaixo:</p>
+            <textarea id="textoZapInput" class="form-control mb-3" rows="8" placeholder="Ex: *Nome*: João..."></textarea>
+            <button class="btn btn-success w-100" id="btnProcessarZap">
+                <i class="bi bi-magic"></i> Preencher Automático
+            </button>
+        </div>
+    </div>`;
+
+    // Remove anterior se existir
+    const existente = document.getElementById('containerModalZap');
+    if (existente) existente.remove();
+
+    const div = document.createElement('div');
+    div.id = 'containerModalZap';
+    div.innerHTML = modalHtml;
+    document.body.appendChild(div);
+
+    // Ativa os botões de dentro da janela (Fechar e Processar)
+    setTimeout(() => {
+        document.getElementById('textoZapInput').focus();
+        document.getElementById('btnFecharZap').onclick = function() { 
+            document.getElementById('containerModalZap').remove(); 
+        };
+        document.getElementById('btnProcessarZap').onclick = window.processarTextoZap;
+    }, 100);
+};
+
+// 2. O Robô Inteligente (Que acha o nome mesmo sem rótulo)
+window.processarTextoZap = function() {
+    const texto = document.getElementById('textoZapInput').value;
+    if (!texto.trim()) { alert("Cole o texto primeiro!"); return; }
+
+    const linhas = texto.split('\n').map(l => l.trim()).filter(l => l !== '');
+    const extrair = (chave) => {
+        const regex = new RegExp(`${chave}[\\s\\*\\:]+([^\n]+)`, 'i');
+        const match = texto.match(regex);
+        return match ? match[1].trim() : '';
+    };
+
+    // --- LÓGICA DE DETECÇÃO ---
+    let nome = extrair('Nome completo') || extrair('Nome') || extrair('Comprador') || extrair('Cliente');
+
+    // Se não achou nome, tenta pegar a primeira linha válida (pulando CPF/Tel/Email)
+    if (!nome && linhas.length > 0) {
+        for (let i = 0; i < Math.min(linhas.length, 5); i++) {
+            let linha = linhas[i];
+            const soNumeros = linha.replace(/\D/g, '');
+            const ehCPF = soNumeros.length >= 11;
+            const ehTel = linha.includes('(') || (soNumeros.length >= 8 && soNumeros.length <= 13);
+            const ehEmail = linha.includes('@');
+            const ehLixo = linha.includes('Dados') || linha.includes('👇') || linha.includes(':');
+
+            if (!ehCPF && !ehTel && !ehEmail && !ehLixo && linha.length > 2) {
+                nome = linha.replace(/[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2580-\u27BF]|\uD83E[\uDD10-\uDDFF]/g, '').trim();
+                break;
+            }
+        }
+    }
+
+    // CPF, Tel, Email
+    let cpf = extrair('CPF').replace(/\D/g, ''); 
+    if (!cpf) { const m = texto.match(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/); if(m) cpf = m[0].replace(/\D/g, ''); }
+    if(cpf.length > 3) cpf = cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+
+    let tel = extrair('Whatsapp') || extrair('Telefone') || extrair('Celular');
+    if (!tel) { const m = texto.match(/\(?\d{2}\)?\s?9?\d{4}-?\d{4}/); if(m) tel = m[0]; }
+    tel = tel ? tel.replace(/\D/g, '') : '';
+
+    const mEmail = texto.match(/[\w.-]+@[\w.-]+\.[a-zA-Z]{2,}/);
+    let email = mEmail ? mEmail[0] : '';
+
+    // Endereço e CEP
+    const mCep = texto.match(/\b\d{5}[-.]?\d{3}\b/);
+    let cepEncontrado = mCep ? mCep[0] : '';
+    
+    let endereco = '';
+    const camposEnd = [extrair('Rua'), extrair('Número'), extrair('Setor'), extrair('Bairro'), extrair('Cidade')];
+    endereco = camposEnd.filter(c => c).join(', ');
+    
+    if (cepEncontrado) {
+        if (!endereco) endereco = `CEP: ${cepEncontrado}`;
+        else if (!endereco.includes(cepEncontrado)) endereco += ` (${cepEncontrado})`;
+    }
+
+    // Preenche
+    if (nome) document.getElementById('bookipNome').value = nome;
+    if (cpf) document.getElementById('bookipCpf').value = cpf;
+    if (tel) document.getElementById('bookipTelefone').value = tel;
+    if (email) document.getElementById('bookipEmail').value = email;
+    if (endereco.length > 5) document.getElementById('bookipEndereco').value = endereco;
+
+    // Fecha janela
+    document.getElementById('containerModalZap').remove();
+    
+    if (typeof showCustomModal === 'function') showCustomModal({ message: "Dados Processados! ✅" });
+    else alert("Dados Processados!");
+};
+
+// 3. ATIVADOR DO BOTÃO (O SEGREDO!)
+// Isso procura o botão pelo ID e liga ele na força bruta
+setTimeout(() => {
+    const btnZap = document.getElementById('btnZapMagico');
+    if (btnZap) {
+        btnZap.addEventListener('click', (e) => {
+            e.preventDefault(); // Evita recarregar se estiver num form
+            window.abrirModalColarZap();
+        });
+        console.log("Botão Zap CONECTADO com sucesso!");
+    } else {
+        console.error("ERRO: Não achei o botão com id='btnZapMagico' no HTML");
+    }
+}, 1000); // Espera 1 segundo pra garantir que o HTML carregou
 
         });
