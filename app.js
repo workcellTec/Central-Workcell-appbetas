@@ -5675,21 +5675,25 @@ function printBookip(dados) {
 // ============================================================
 // GERADOR DE PDF (DESIGN VERDE + MODO SITUAÇÃO)
 // ============================================================
-// ============================================================
+// ===========================================================
 // GERADOR DE PDF (DESIGN VERDE + MODO SITUAÇÃO LIMPO)
 // ============================================================
+// ============================================================
+// ============================================================
+// ============================================================
+// GERADOR DE PDF (DESIGN VERDE ORIGINAL + CORREÇÃO DE QUEBRA)
+// ============================================================
 function getReciboHTML(dados) {
-    // 1. VERIFICAÇÕES DE MODO
+    // 1. VERIFICAÇÕES DE MODO (RECIBO vs GARANTIA vs SITUAÇÃO)
     const isSimple = (window.isSimpleReceiptMode === true);
-    
-    // Verifica se é "Situação" (pelo flag manual ou pelo item)
-    const isSituation = (dados.isSituation === true) || (dados.items && dados.items[0] && dados.items[0].isSituation);
+    const isSituation = (dados.type === 'situacao') || (dados.items && dados.items[0] && dados.items[0].isSituation);
 
     // 2. CONFIGURAÇÕES (Design Mantido)
     const settings = (typeof receiptSettings !== 'undefined' && receiptSettings) ? receiptSettings : {};
     const headerHtml = (settings.header || "WORKCELL TECNOLOGIA").replace(/\n/g, '<br>');
     const rawTerms = (settings.terms || "Garantia legal de 90 dias.");
     
+    // CORREÇÃO: Adicionado 'page-break-inside: avoid' em cada linha dos termos
     const termsHtml = rawTerms.split('\n').map(line => {
         if(!line || line.trim() === '') return '<div style="height: 5px;"></div>'; 
         return `<div style="margin-bottom: 3px; text-align: justify; page-break-inside: avoid;">${line}</div>`;
@@ -5727,50 +5731,27 @@ function getReciboHTML(dados) {
     }
     const docNum = dados.docNumber || '---';
 
-    // 5. LÓGICA HÍBRIDA (TABELA E TOTAL)
+    // 5. LÓGICA DA TABELA
     let tableHeaderHTML = '';
     let tableBodyHTML = '';
     let totalGeral = 0;
 
     if (isSituation) {
-        // --- MODO SITUAÇÃO ---
         const relato = (dados.items && dados.items[0]) ? dados.items[0].nome : "Sem relato.";
-        
-        tableHeaderHTML = `
-            <th style="padding: 8px; text-align: left; color: #ffffff !important; font-size: 10pt; font-weight: bold;">
-                Situação Ocorrida:
-            </th>
-        `;
-        
-        tableBodyHTML = `
-            <tr>
-                <td style="padding: 15px; border-bottom: 1px solid #eee; font-size: 10pt; vertical-align: top; text-align: justify; line-height: 1.5;">
-                    ${relato.replace(/\n/g, '<br>')}
-                </td>
-            </tr>
-        `;
-        totalGeral = 0;
-
+        tableHeaderHTML = `<th style="padding: 8px; text-align: left; color: #ffffff !important; font-size: 10pt; font-weight: bold;">Situação Ocorrida:</th>`;
+        tableBodyHTML = `<tr><td style="padding: 15px; border-bottom: 1px solid #eee; font-size: 10pt; text-align: justify; line-height: 1.5;">${relato.replace(/\n/g, '<br>')}</td></tr>`;
     } else {
-        // --- MODO PRODUTO ---
         let lista = (dados.items && Array.isArray(dados.items)) ? dados.items : [];
-        if (lista.length === 0 && dados.prodNome) {
-             lista = [{ nome: dados.prodNome, qtd: parseInt(dados.prodQtd)||1, valor: parseFloat(dados.prodValor)||0 }];
-        }
-        
         totalGeral = lista.reduce((acc, i) => acc + (parseFloat(i.valor||0) * (parseInt(i.qtd)||1)), 0);
-
         tableHeaderHTML = `
             <th style="padding: 8px; text-align: left; color: #ffffff !important; font-size: 10pt; font-weight: bold;">Item</th>
             <th style="padding: 8px; text-align: center; color: #ffffff !important; font-size: 10pt; font-weight: bold;">Qtd</th>
             <th style="padding: 8px; text-align: right; color: #ffffff !important; font-size: 10pt; font-weight: bold;">Unit</th>
-            <th style="padding: 8px; text-align: right; color: #ffffff !important; font-size: 10pt; font-weight: bold;">Total</th>
-        `;
-
+            <th style="padding: 8px; text-align: right; color: #ffffff !important; font-size: 10pt; font-weight: bold;">Total</th>`;
         tableBodyHTML = lista.map(item => `
             <tr style="page-break-inside: avoid;">
                 <td style="padding: 8px; border-bottom: 1px solid #eee; font-size: 10pt;">
-                    <strong>${item.nome}</strong><br><span style="color:#666; font-size:8.5pt;">${item.obs||''}</span>
+                    <strong>${item.nome}</strong><br><span style="color:#666; font-size:8.5pt;">${item.cor||''} ${item.obs||''}</span>
                 </td>
                 <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: center;">${item.qtd}</td>
                 <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">R$ ${parseFloat(item.valor).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
@@ -5778,38 +5759,27 @@ function getReciboHTML(dados) {
             </tr>`).join('');
     }
 
-    const infoPagamento = dados.pagamento ? 
-        `<div style="text-align: right; font-size: 9pt; color: #444; margin-top: 5px;"><strong>Forma de Pagamento:</strong> ${dados.pagamento}</div>` : '';
-
-    // --- TÍTULOS ---
-    const tituloLinha1 = isSimple ? "RECIBO DE VENDA/ " : "Comprovante de";
-    const tituloLinha2 = isSimple ? "SITUAÇAO OCORRIDA" : "compra / Garantia";
+    const tituloLinha1 = isSituation ? "RELATÓRIO DE" : (isSimple ? "RECIBO DE" : "Comprovante de");
+    const tituloLinha2 = isSituation ? "SITUAÇÃO" : (isSimple ? "VENDA / PEDIDO" : "compra / Garantia");
     
-    // --- EXIBIÇÃO CONDICIONAL ---
-    // Total só aparece se NÃO for situação
     const showTotal = !isSituation;
-    
-    // Garantia e Vence só aparecem se NÃO for situação (E 'Vence' também some se for Recibo Simples)
     const showGarantiaRow = !isSituation;
     const showVenceRow = !isSituation && !isSimple;
 
-    // Termos somem se for simples OU situação
+    // CORREÇÃO: Envolvendo todo o bloco de termos em uma div que evita quebra
     const sectionTermos = (isSimple || isSituation) ? "" : `
-        <div style="border-bottom: 1px solid #000; margin-bottom: 10px;">
-            <strong style="font-size: 10pt; text-transform: uppercase;">Termos de Garantia</strong>
-        </div>
-        <div style="font-size: 9pt; line-height: 1.3; color: #333; text-align: justify;">${termsHtml}</div>
-    `;
+        <div style="page-break-inside: avoid; border-top: 1px solid #000; padding-top: 10px; margin-top: 10px;">
+            <div style="margin-bottom: 10px;">
+                <strong style="font-size: 10pt; text-transform: uppercase;">Termos de Garantia</strong>
+            </div>
+            <div style="font-size: 9pt; line-height: 1.3; color: #333; text-align: justify;">${termsHtml}</div>
+        </div>`;
 
-    // 6. RETORNO DO HTML (ESTRUTURA VERDE INTACTA)
     return `
         <div style="font-family: 'Segoe UI', Arial, sans-serif; color: #000; background: #fff; padding: 20px 30px; width: 750px; margin: 0 auto; box-sizing: border-box;">
-            
             <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
                 <tr>
-                    <td style="width: 30%; vertical-align: top;">
-                        <img src="${logoUrl}" style="width: 160px; height: auto; object-fit: contain;" onerror="this.style.display='none'">
-                    </td>
+                    <td style="width: 30%; vertical-align: top;"><img src="${logoUrl}" style="width: 160px; height: auto; object-fit: contain;"></td>
                     <td style="width: 70%; text-align: right; vertical-align: top; font-size: 9pt; color: #444;">
                         <div style="font-size: 20pt; color: #000; line-height: 1.1;">${tituloLinha1}</div>
                         <div style="font-size: 20pt; font-weight: bold; color: #000; margin-bottom: 8px; line-height: 1.1;">${tituloLinha2}</div>
@@ -5821,25 +5791,21 @@ function getReciboHTML(dados) {
             <table style="width: 100%; border-top: 1px solid #ccc; margin-bottom: 20px; border-collapse: collapse;">
                 <tr>
                     <td style="width: 60%; vertical-align: top; padding-top: 15px; padding-right: 15px;">
-                        <div style="font-size: 11pt; margin-bottom: 2px;"><strong>Para</strong></div>
                         <div style="font-size: 11pt; font-weight: bold; margin-bottom: 5px;">${dados.nome}</div>
                         <div style="font-size: 10pt; line-height: 1.4;">
                             <strong>CPF:</strong> ${dados.cpf || 'Não inf.'}<br>
                             <strong>Número:</strong> ${dados.tel || 'Não inf.'}<br>
+                            <strong>E-mail:</strong> ${dados.email || 'Não inf.'}<br>
                             <strong>Endereço:</strong> ${dados.end || 'Não inf.'}
                         </div>
                     </td>
                     <td style="width: 40%; vertical-align: top; padding-top: 15px; text-align: right;">
-                        <div style="display: inline-block; text-align: right;">
-                            <table style="width: auto; border-collapse: collapse; font-size: 10pt;">
-                                <tr><td style="text-align: right; font-weight: bold;">Doc Nº:</td><td style="padding-left:10px;">${docNum}</td></tr>
-                                <tr><td style="text-align: right;">Data:</td><td style="padding-left:10px;">${dataCompra}</td></tr>
-                                
-                                ${showGarantiaRow ? `<tr><td style="text-align: right;">Garantia:</td><td style="padding-left:10px;">${txtGarantia}</td></tr>` : ''}
-                                ${showVenceRow ? `<tr><td style="text-align: right;">Vence:</td><td style="padding-left:10px;">${dataVencimento}</td></tr>` : ''}
-                            
-                            </table>
-                        </div>
+                        <table style="width: auto; border-collapse: collapse; font-size: 10pt; float: right;">
+                            <tr><td style="text-align: right; font-weight: bold; padding-bottom:4px;">Doc Nº:</td><td style="padding-left:10px; padding-bottom:4px;">${docNum}</td></tr>
+                            <tr><td style="text-align: right; padding-bottom:4px;">Data:</td><td style="padding-left:10px; padding-bottom:4px;">${dataCompra}</td></tr>
+                            ${showGarantiaRow ? `<tr><td style="text-align: right; padding-bottom:4px;">Garantia:</td><td style="padding-left:10px; padding-bottom:4px;">${txtGarantia}</td></tr>` : ''}
+                            ${showVenceRow ? `<tr><td style="text-align: right; padding-left:10px; padding-bottom:4px;">Vence:</td><td style="padding-left:10px; padding-bottom:4px;">${dataVencimento}</td></tr>` : ''}
+                        </table>
                     </td>
                 </tr>
             </table>
@@ -5850,25 +5816,20 @@ function getReciboHTML(dados) {
                         ${tableHeaderHTML}
                     </tr>
                 </thead>
-                <tbody>
-                    ${tableBodyHTML}
-                </tbody>
+                <tbody>${tableBodyHTML}</tbody>
             </table>
-
-            ${infoPagamento}
 
             ${showTotal ? `
             <div style="text-align: right; margin-top: 15px; margin-bottom: 25px;">
-                <div style="display: inline-block; background-color: #f2f2f2; padding: 10px 20px; font-size: 12pt; font-weight: bold; border-radius: 4px; -webkit-print-color-adjust: exact;">
+                <div style="display: inline-block; background-color: #f2f2f2; padding: 10px 20px; font-size: 12pt; font-weight: bold; border-radius: 4px;">
                     Total: <span style="color: #2e7d32;">R$ ${totalGeral.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span>
                 </div>
-            </div>
-            ` : ''}
+            </div>` : '<div style="height:30px;"></div>'}
 
             ${sectionTermos}
 
             <div style="width: 100%; text-align: right; margin-top: 40px; page-break-inside: avoid;">
-                <img src="${signatureUrl}" style="width: 200px; height: auto; display: inline-block;" onerror="this.style.display='none'">
+                <img src="${signatureUrl}" style="width: 200px; height: auto; display: inline-block;">
             </div>
         </div>
     `;
