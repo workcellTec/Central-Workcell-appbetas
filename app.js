@@ -5766,14 +5766,30 @@ function getReciboHTML(dados) {
     const showGarantiaRow = !isSituation;
     const showVenceRow = !isSituation && !isSimple;
 
-    // CORREÇÃO: Envolvendo todo o bloco de termos em uma div que evita quebra
+    // CORREÇÃO INTELIGENTE: PERFEITO NO PDF (SEM CORTES) E FLUIDO NA IMPRESSORA (SEM BURACOS)
     const sectionTermos = (isSimple || isSituation) ? "" : `
-        <div style="page-break-inside: avoid; border-top: 1px solid #000; padding-top: 10px; margin-top: 10px;">
+        <style>
+            /* Regra Padrão (Para o PDF gerado via imagem/tela) */
+            .termos-garantia {
+                page-break-inside: avoid; /* Segura o bloco junto no PDF */
+            }
+
+            /* Regra Específica para Impressão Física (Ctrl+P) */
+            @media print {
+                .termos-garantia {
+                    page-break-inside: auto !important; /* Permite quebrar suavemente no papel */
+                    margin-top: 5px !important; /* Ajusta margem pra economizar papel */
+                }
+            }
+        </style>
+
+        <div class="termos-garantia" style="border-top: 1px solid #000; padding-top: 10px; margin-top: 10px;">
             <div style="margin-bottom: 10px;">
                 <strong style="font-size: 10pt; text-transform: uppercase;">Termos de Garantia</strong>
             </div>
             <div style="font-size: 9pt; line-height: 1.3; color: #333; text-align: justify;">${termsHtml}</div>
         </div>`;
+
 
     return `
         <div style="font-family: 'Segoe UI', Arial, sans-serif; color: #000; background: #fff; padding: 20px 30px; width: 750px; margin: 0 auto; box-sizing: border-box;">
