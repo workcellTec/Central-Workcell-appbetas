@@ -72,55 +72,102 @@ window.alternarModoInput = function() {
 // SISTEMA DE CONTROLE DE TELA (RECIBO vs GARANTIA) - FINAL
 // ============================================================
 
-// 1. FUNÇÃO QUE O BOTÃO "NOVO RECIBO" CHAMA
+// FUNÇÃO BLINDADA: ABRIR NOVO RECIBO
 window.abrirReciboSimples = function() {
     console.log("Abrindo Recibo Simples...");
-    
-    // Ativa o modo simples
-    window.isSimpleReceiptMode = true;
 
-    // A. Muda o Título
+    // 1. Configura Variáveis Globais
+    window.isSimpleReceiptMode = true;
+    window.currentEditingBookipId = null; 
+    
+    // 2. Chama a Faxina (Limpa campos e zera produtos)
+    if(typeof window.resetFormulariosBookip === 'function') {
+        window.resetFormulariosBookip();
+    }
+
+    // 3. Configura Títulos
     const titulo = document.querySelector('#areaBookipWrapper h3');
     if (titulo) titulo.innerText = "Novo Recibo (Simples)";
 
-    // B. MOSTRA O INTERRUPTOR (Produto/Situação)
-    // Força o display 'flex' para ele aparecer e alinhar
-    const toggle = document.getElementById('toggleModoInputContainer');
-    if (toggle) toggle.style.display = 'flex';
+    const txtNovo = document.getElementById('txtToggleNovo');
+    if (txtNovo) txtNovo.innerHTML = '<i class="bi bi-plus-lg"></i> Novo Recibo';
 
-    // C. Troca de Tela (Esconde menus, mostra Bookip)
+    // 4. Configura Interface (Esconde busca, mostra toggle)
+    const toggle = document.getElementById('toggleModoInputContainer');
+    if (toggle) toggle.style.display = 'flex'; 
+
+    const buscaContainer = document.querySelector('#camposProduto .search-wrapper');
+    if (buscaContainer) buscaContainer.classList.add('hidden'); 
+
+    // 5. Troca a Tela (Esconde menus, mostra Bookip)
     const menus = document.querySelectorAll('#mainMenu, #documentsHome, .section-content');
     menus.forEach(m => m.style.display = 'none');
     
     const tela = document.getElementById('areaBookipWrapper');
     if (tela) tela.style.display = 'block';
-
-    // D. Carrega a lista (se existir)
-    if (typeof loadBookipHistory === 'function') loadBookipHistory();
+    
+    // Garante aba "Novo" ativa visualmente
+    const tabToggle = document.getElementById('bookipModeToggle');
+    if(tabToggle) {
+        tabToggle.checked = false; 
+        tabToggle.dispatchEvent(new Event('change'));
+    }
 };
 
 // 2. CORREÇÃO AUTOMÁTICA DO BOTÃO "GARANTIA"
-// Isso garante que, se clicar em Garantia, o interruptor some.
+/// CONFIGURAÇÃO DOS BOTÕES AO CARREGAR A PÁGINA
 document.addEventListener('DOMContentLoaded', () => {
+    
+    // --- BOTÃO GARANTIA (Lógica Blindada) ---
     const btnGarantia = document.getElementById('openBookipView');
     if (btnGarantia) {
-        // Adiciona um clique extra só para garantir a limpeza
         btnGarantia.addEventListener('click', () => {
             console.log("Abrindo Garantia...");
-            window.isSimpleReceiptMode = false;
             
-            // Muda Título de volta
+            // 1. Reset de Variáveis
+            window.isSimpleReceiptMode = false;
+            window.currentEditingBookipId = null; 
+            
+            // 2. Chama a Faxina
+            if(typeof window.resetFormulariosBookip === 'function') {
+                window.resetFormulariosBookip();
+            }
+
+            // 3. Configura Títulos
             const titulo = document.querySelector('#areaBookipWrapper h3');
             if (titulo) titulo.innerText = "Garantia (Bookip)";
 
-            // ESCONDE O INTERRUPTOR!
+            const txtNovo = document.getElementById('txtToggleNovo');
+            if (txtNovo) txtNovo.innerHTML = '<i class="bi bi-plus-lg"></i> Nova Garantia';
+
+            // 4. Configura Interface (Garantia precisa da busca e NÃO tem toggle)
             const toggle = document.getElementById('toggleModoInputContainer');
-            if (toggle) toggle.style.display = 'none';
+            if (toggle) toggle.style.display = 'none'; 
             
-            // Força voltar para aba produto
-            if(typeof alternarModoInput === 'function') alternarModoInput('produto');
+            if(typeof alternarModoInput === 'function') alternarModoInput('produto'); 
+
+            const buscaContainer = document.querySelector('#camposProduto .search-wrapper');
+            if (buscaContainer) buscaContainer.classList.remove('hidden'); 
+
+            // 5. Abre a Tela
+            // (Usando o método manual para garantir)
+            const menus = document.querySelectorAll('#mainMenu, #documentsHome, .section-content');
+            menus.forEach(m => m.style.display = 'none');
+            
+            const tela = document.getElementById('areaBookipWrapper');
+            if (tela) tela.style.display = 'block';
+            
+            const tabToggle = document.getElementById('bookipModeToggle');
+            if(tabToggle) {
+                tabToggle.checked = false;
+                tabToggle.dispatchEvent(new Event('change'));
+            }
+            
+            if(typeof loadBookipHistory === 'function') loadBookipHistory();
         });
     }
+
+    // (Se houver outros listeners aqui dentro, mantenha-os abaixo, mas cuidado para não apagar o '});' final)
 });
 
 
@@ -630,18 +677,37 @@ function calculateFecharVenda() {
 function calculateRepassarValores() {
     const resultDiv = document.getElementById("resultRepassarValores");
     const exportContainer = document.getElementById('exportRepassarContainer');
-    if (!areRatesLoaded) return;
     
-    const valorDesejado = parseFloat(document.getElementById("repassarValue").value);
-    if (isNaN(valorDesejado) || valorDesejado <= 0) {
+    // Verificação de segurança para variáveis globais
+    if (typeof areRatesLoaded !== 'undefined' && !areRatesLoaded) return;
+    
+    // 1. PEGA O VALOR DIGITADO (PRINCIPAL)
+    const valorInput = parseFloat(document.getElementById("repassarValue").value);
+
+    // Validação: Se não digitou nada ou valor inválido, limpa e sai
+    if (isNaN(valorInput) || valorInput <= 0) {
         resultDiv.innerHTML = "";
-        exportContainer.style.display = 'none';
+        if(exportContainer) exportContainer.style.display = 'none';
         return;
     }
+
+    // 2. PEGA O LUCRO EXTRA (OCULTO)
+    // Se o campo existir, pega o valor. Se não, assume 0.
+    const elExtra = document.getElementById("repassarExtra");
+    let valorExtra = 0;
+    if (elExtra) {
+        valorExtra = parseFloat(elExtra.value);
+        if (isNaN(valorExtra)) valorExtra = 0; // Proteção contra valor vazio
+    }
+
+    // 3. SOMA TUDO (Esse é o valor real que será calculado)
+    const valorDesejado = valorInput + valorExtra;
     
-    const machine = document.getElementById("machine2").value, brand = document.getElementById("brand2").value;
+    const machine = document.getElementById("machine2").value; 
+    const brand = document.getElementById("brand2").value;
+    
     let maxInstallments = 0;
-    if (rates[machine]) {
+    if (typeof rates !== 'undefined' && rates[machine]) {
         switch(machine) {
             case "pagbank": maxInstallments = 18; break;
             case "infinity": maxInstallments = 12; break;
@@ -650,12 +716,15 @@ function calculateRepassarValores() {
     }
     
     let tableRows = "";
+    
+    // Cálculo Débito
     const debitTax = getRate(machine, brand, 0);
     if(debitTax !== null && debitTax !== undefined) {
         const valorBrutoDebito = valorDesejado / (1 - debitTax / 100);
         tableRows += `<tr class="debit-row"><td>Débito</td><td>-</td><td>${valorBrutoDebito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>`;
     }
     
+    // Cálculo Crédito (Com sua lógica original de arredondamento)
     const arredondarAtivo = safeStorage.getItem('ctwArredondarEnabled') === 'true';
     for (let i = 1; i <= maxInstallments; i++) {
         const creditTax = getRate(machine, brand, i);
@@ -675,11 +744,13 @@ function calculateRepassarValores() {
     
     if (tableRows) {
         resultDiv.innerHTML = `<div class="table-responsive"><table class="table results-table"><thead><tr><th>Parcelas</th><th>Valor da Parcela</th><th>Total a Passar</th></tr></thead><tbody>${tableRows}</tbody></table></div>`;
+        if(exportContainer) exportContainer.style.display = 'block';
     } else {
         resultDiv.innerHTML = "";
+        if(exportContainer) exportContainer.style.display = 'none';
     }
-    exportContainer.style.display = tableRows.trim() !== "" ? 'block' : 'none';
 }
+
 
 function calculateEmprestimo() {
     const resultDiv = document.getElementById("resultCalcularEmprestimo");
@@ -3287,6 +3358,27 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('brand2').addEventListener('change', updateRepassarValoresUI);
     document.getElementById('repassarValue').addEventListener('input', calculateRepassarValores);
 
+// --- OUVINTES DO LUCRO EXTRA (REPASSAR) ---
+const inputRepassarExtra = document.getElementById('repassarExtra');
+if (inputRepassarExtra) {
+    // Garante que o valor 40 esteja lá
+    if(!inputRepassarExtra.value) inputRepassarExtra.value = "40";
+    inputRepassarExtra.addEventListener('input', calculateRepassarValores);
+}
+
+const btnToggleRepassar = document.getElementById('toggleRepassarExtraBtn');
+if (btnToggleRepassar) {
+    btnToggleRepassar.addEventListener('click', (e) => {
+        const btn = e.currentTarget;
+        const container = document.getElementById('repassarExtraContainer');
+        btn.classList.toggle('is-active');
+        container.classList.toggle('is-active');
+    });
+}
+
+
+
+
     document.getElementById('emprestimoValue').addEventListener('input', calculateEmprestimo);
     document.getElementById('machine4').addEventListener('change', (event) => {
     updateCalcularEmprestimoUI(); 
@@ -4160,7 +4252,12 @@ document.getElementById('admin-nav-buttons').addEventListener('click', e => {
                         </div>`;
                     
                     item.addEventListener('click', () => {
-                        document.getElementById('bookipProdNomeTemp').value = p.nome;
+
+
+                                            // AQUI A MÁGICA: Chama a função que limpa o emoji antes de preencher
+                    document.getElementById('bookipProdNomeTemp').value = limparTextoEmoji(p.nome);
+
+
                         document.getElementById('bookipProdValorTemp').value = p.valor;
                         const cor = (p.cores && p.cores.length > 0) ? p.cores[0].nome : '';
                         document.getElementById('bookipProdCorTemp').value = cor;
@@ -4186,14 +4283,6 @@ document.getElementById('admin-nav-buttons').addEventListener('click', e => {
             }
         });
     }
-
-    // ============================================================
-    // ============================================================
-    // 2. LÓGICA DE ADICIONAR / EDITAR PRODUTO NA LISTA (FINAL)
-    // ============================================================
-    
-    // Variável para controlar a edição (null = criando novo)
-    // Nota: editingItemIndex já foi declarado lá no topo, então usamos ele direto.
 
         // ============================================================
     // 2. LÓGICA DE ADICIONAR / EDITAR PRODUTO NA LISTA (ATUALIZADO)
@@ -4243,7 +4332,27 @@ document.getElementById('admin-nav-buttons').addEventListener('click', e => {
 
                 const nome = nomeInput.value.trim();
                 const qtd = parseInt(qtdInput.value) || 1;
-                const valor = parseFloat(valorInput.value) || 0;
+
+
+                            // --- CORREÇÃO DE VALOR (Lê R$ corretamente) ---
+            let valorRaw = valorInput.value;
+            let valorFinal = 0;
+            
+            if (valorRaw.includes(',') || valorRaw.includes('.')) {
+                // Tira o ponto de milhar e troca vírgula por ponto (1.500,00 -> 1500.00)
+                valorRaw = valorRaw.replace(/\./g, '').replace(',', '.');
+                valorFinal = parseFloat(valorRaw);
+            } else {
+                valorFinal = parseFloat(valorRaw);
+            }
+            if(isNaN(valorFinal)) valorFinal = 0;
+            
+            // Agora use 'valorFinal' no seu objeto, em vez de 'valor'
+            // Ex: valor: valorFinal,
+
+
+
+
                 const cor = corInput.value;
                 const obs = obsInput.value;
 
@@ -4252,14 +4361,16 @@ document.getElementById('admin-nav-buttons').addEventListener('click', e => {
                     return;
                 }
 
-                itemObjeto = { 
-                    nome, 
-                    qtd, 
-                    valor, 
-                    cor, 
-                    obs,
-                    isSituation: false 
-                };
+            // CRIA O OBJETO (Corrigido para usar valorFinal)
+            itemObjeto = { 
+                nome, 
+                qtd, 
+                valor: valorFinal, // <--- O SEGREDO TÁ AQUI (antes era 'valor')
+                cor, 
+                obs,
+                isSituation: false 
+            };
+
 
                 // Limpa os campos de produto
                 if(inputBuscaBookip) inputBuscaBookip.value = '';
@@ -4292,6 +4403,28 @@ document.getElementById('admin-nav-buttons').addEventListener('click', e => {
             atualizarListaVisualBookip();
         });
     }
+
+
+// FERRAMENTA: Limpa Emojis 🧹
+function limparTextoEmoji(texto) {
+    if (!texto) return "";
+    return texto.replace(/([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/g, '')
+                .replace(/\s+/g, ' ').trim();
+}
+
+// MÁSCARA: Formata R$ ao digitar 💰
+const inputValorBookip = document.getElementById('bookipProdValorTemp');
+if (inputValorBookip) {
+    inputValorBookip.type = "text"; 
+    inputValorBookip.addEventListener('input', (e) => {
+        let value = e.target.value.replace(/\D/g, ""); // Só números
+        if (value === "") { e.target.value = ""; return; }
+        // Divide por 100 pra virar centavos
+        e.target.value = (parseFloat(value) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+    });
+}
+
+
 
     // 3. Função para Atualizar a Lista Visual (USANDO SEU CSS NOVO)
     function atualizarListaVisualBookip() {
@@ -4402,13 +4535,13 @@ document.getElementById('admin-nav-buttons').addEventListener('click', e => {
 
 // CARREGAR HISTÓRICO (VERSÃO MASTER: TUDO INCLUSO 🏆)
 // ============================================================
-// CARREGAR HISTÓRICO (COM CORES POR TIPO 🎨)
-// ============================================================
 function loadBookipHistory() {
     // Verificações de segurança originais
     if (!db || !isAuthReady) return;
     
-    const bookipsRef = ref(db, 'bookips');
+    // NOTA: Se o seu banco for separado por usuário, lembre-se de usar 'bookips/' + userId
+    // Mas mantive exatamente como você mandou:
+    const bookipsRef = ref(db, 'bookips'); 
     const container = document.getElementById('historyBookipContent');
     
     // Variáveis de controle
@@ -4421,7 +4554,9 @@ function loadBookipHistory() {
     container.innerHTML = '<div class="text-center p-4"><div class="spinner-border text-primary"></div><p class="mt-2 text-secondary">Carregando histórico...</p></div>';
 
     // Remove listener antigo para não duplicar
-    if (bookipListener) off(bookipsRef, 'value', bookipListener);
+    if (typeof bookipListener !== 'undefined' && bookipListener) {
+        off(bookipsRef, 'value', bookipListener);
+    }
 
     // Novo Listener do Firebase
     bookipListener = onValue(bookipsRef, (snapshot) => {
@@ -4430,14 +4565,33 @@ function loadBookipHistory() {
             // 1. Transforma em lista
             listaCompletaCache = Object.keys(data).map(key => ({ id: key, ...data[key] }));
             
-            // 2. Ordena (Data mais recente no topo)
+            // ==========================================================
+            // 2. ORDENAÇÃO INTELIGENTE (MODIFICADO AQUI)
+            // ==========================================================
             listaCompletaCache.sort((a, b) => {
-                const dataA = a.dataVenda || (a.criadoEm ? a.criadoEm.split('T')[0] : '0000-00-00');
-                const dataB = b.dataVenda || (b.criadoEm ? b.criadoEm.split('T')[0] : '0000-00-00');
+                // Passo A: Normaliza a Data do Documento (YYYY-MM-DD)
+                const getData = (item) => {
+                    if (item.dataVenda) return item.dataVenda; 
+                    if (item.criadoEm) return new Date(item.criadoEm).toISOString().split('T')[0];
+                    return '0000-00-00';
+                };
+
+                const dataA = getData(a);
+                const dataB = getData(b);
+
+                // PRIORIDADE 1: DATA DO DOCUMENTO
+                // Se B for maior (futuro), B vem primeiro
                 if (dataB > dataA) return 1;
                 if (dataB < dataA) return -1;
-                return 0;
+
+                // PRIORIDADE 2: HORA DA CRIAÇÃO (Desempate)
+                // Se as datas são iguais, o cadastro mais recente (hora) vem primeiro
+                const horaA = a.criadoEm ? new Date(a.criadoEm).getTime() : 0;
+                const horaB = b.criadoEm ? new Date(b.criadoEm).getTime() : 0;
+                
+                return horaB - horaA; 
             });
+            // ==========================================================
             
             // 3. Configura e aplica filtros
             configurarFiltros();
@@ -4538,7 +4692,6 @@ function loadBookipHistory() {
             let badgeClass = 'bg-primary'; // Azul (Padrão / Garantia)
             
             // 1. SITUAÇÃO (Prioridade: Amarelo)
-            // Verifica o tipo novo 'situacao' OU se tem item antigo com flag isSituation
             const isSituacao = (item.type === 'situacao') || (item.items && item.items[0] && item.items[0].isSituation);
             
             // 2. RECIBO (Verde)
@@ -4551,8 +4704,24 @@ function loadBookipHistory() {
             }
             // =========================================================
 
-            return `
-            <div class="accordion-item">
+            // --- CÓDIGO NOVO (Lógica Visual de Envio) ---
+            const foiEnviado = (item.statusEnvio === true);
+            
+            // Define se a borda fica verde e o fundo claro
+            const styleCard = foiEnviado ? 'border-left: 6px solid #28a745; background-color: #f0fff4;' : '';
+            
+            // Define se o botão fica cinza (check) ou amarelo (email)
+            const classBtnEnvio = foiEnviado ? 'btn-dark' : 'btn-warning';
+            const iconBtnEnvio = foiEnviado ? 'bi-check-circle-fill text-success' : 'bi-envelope-at-fill';
+            const titleBtnEnvio = foiEnviado ? 'Já enviado (Reenviar)' : 'PDF/Email';
+            // --------------------------------------------
+
+
+                        return `
+            <div class="accordion-item" style="${styleCard}">
+
+
+
                 <h2 class="accordion-header" id="head-bk-${item.id}">
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-bk-${item.id}">
                         <span class="badge ${badgeClass} me-2">Doc ${docNum}</span> 
@@ -4568,7 +4737,10 @@ function loadBookipHistory() {
                         </ul>
                         <div class="d-flex justify-content-end gap-2 mt-2">
                             <button class="btn btn-sm btn-info edit-bookip-btn" data-id="${item.id}" title="Editar"><i class="bi bi-pencil-square"></i></button>
-                            <button class="btn btn-sm btn-warning email-history-btn" data-id="${item.id}" title="PDF/Email"><i class="bi bi-envelope-at-fill"></i></button>
+
+<button class="btn btn-sm ${classBtnEnvio} email-history-btn" data-id="${item.id}" title="${titleBtnEnvio}"><i class="bi ${iconBtnEnvio}"></i></button>
+
+
                             <button class="btn btn-sm btn-primary print-old-bookip" data-id="${item.id}" title="Imprimir"><i class="bi bi-printer"></i></button>
                             <button class="btn btn-sm btn-outline-danger delete-bookip-btn" data-id="${item.id}" title="Apagar"><i class="bi bi-trash"></i></button>
                         </div>
@@ -4599,7 +4771,6 @@ function loadBookipHistory() {
         }));
     }
 }
-
 
     // --- FUNÇÃO AUXILIAR: CARREGAR DADOS NO FORMULÁRIO ---
         // --- FUNÇÃO AUXILIAR: CARREGAR DADOS NO FORMULÁRIO (CORRIGIDA) ---
@@ -5663,22 +5834,8 @@ function printBookip(dados) {
     } catch (e) { alert("Erro: " + e.message); document.body.classList.remove('print-bookip'); }
 }
 
-// ============================================================
-// ============================================================
-// ============================================================
-// ============================================================
-// GERADOR DE PDF (BASEADO NA VERSÃO ESTÁVEL + MODO SIMPLES)
-// ============================================================
-// ============================================================
-// GERADOR DE PDF (SEU DESIGN ORIGINAL + MODO RECIBO)
-// ============================================================
-// ============================================================
-// GERADOR DE PDF (DESIGN VERDE + MODO SITUAÇÃO)
-// ============================================================
-// ===========================================================
+
 // GERADOR DE PDF (DESIGN VERDE + MODO SITUAÇÃO LIMPO)
-// ============================================================
-// ============================================================
 // ============================================================
 // ============================================================
 // GERADOR DE PDF (DESIGN VERDE ORIGINAL + CORREÇÃO DE QUEBRA)
@@ -5836,10 +5993,20 @@ function getReciboHTML(dados) {
             </table>
 
             ${showTotal ? `
-            <div style="text-align: right; margin-top: 15px; margin-bottom: 25px;">
-                <div style="display: inline-block; background-color: #f2f2f2; padding: 10px 20px; font-size: 12pt; font-weight: bold; border-radius: 4px;">
-                    Total: <span style="color: #2e7d32;">R$ ${totalGeral.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span>
-                </div>
+            <div style="margin-top: 10px; margin-bottom: 25px; border-top: 1px solid #eee; padding-top: 10px;">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="text-align: left; vertical-align: middle; font-size: 10pt; color: #444;">
+                            <strong>Forma de Pagamento:</strong> <span style="color: #000; font-weight: 500;">${dados.pagamento || 'Não informado'}</span>
+                        </td>
+                        
+                        <td style="text-align: right; vertical-align: middle;">
+                            <div style="display: inline-block; background-color: #f2f2f2; padding: 10px 20px; font-size: 12pt; font-weight: bold; border-radius: 4px;">
+                                Total: <span style="color: #2e7d32;">R$ ${totalGeral.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span>
+                            </div>
+                        </td>
+                    </tr>
+                </table>
             </div>` : '<div style="height:30px;"></div>'}
 
             ${sectionTermos}
@@ -5888,10 +6055,19 @@ async function gerarPdfDoHistorico(dados, botao) {
         if (navigator.clipboard && navigator.clipboard.writeText) {
             try {
                 await navigator.clipboard.writeText(textToCopy);
-            } catch (err) {
-                // Se der erro (bloqueio de segurança), aciona o plano B
-                copiarJeitoAntigo(textToCopy);
+                         } catch (err) {
+                // Se der erro ou o usuário cancelar, NÃO BAIXA MAIS AUTOMATICAMENTE.
+                console.warn("Compartilhamento cancelado ou falhou:", err);
+
+                // Se não for apenas um cancelamento do usuário (AbortError), avisa.
+                if (err.name !== 'AbortError') {
+                    alert("Não foi possível abrir o compartilhamento direto.");
+                }
+                
+                // Opcional: Reseta o botão para "Enviar" caso queira tentar de novo
+                novoBotao.innerHTML = '<i class="bi bi-whatsapp"></i> Tentar Novamente';
             }
+
         } else {
             // Se o navegador for velho e nem tiver clipboard, vai direto no plano B
             copiarJeitoAntigo(textToCopy);
@@ -5968,7 +6144,7 @@ async function gerarPdfDoHistorico(dados, botao) {
     // --- GERAÇÃO HTML ---
     const containerTemp = document.createElement('div');
     // MUDANÇA: 'left: -9999px' joga para fora da tela e 'position: fixed' evita esticar o site
-    containerTemp.style.cssText = `position: fixed; top: 0; left: -9999px; width: 794px; background: white; z-index: -100; margin: 0; padding: 0;`;
+        containerTemp.style.cssText = "position: fixed; top: 0; left: -9999px; width: 794px; background: white; z-index: -100; margin: 0; padding: 0; letter-spacing: 0.2px; font-variant-ligatures: none;";
 
     
     if (typeof getReciboHTML === 'function') {
@@ -5990,7 +6166,7 @@ async function gerarPdfDoHistorico(dados, botao) {
     try {
         window.scrollTo(0,0);
         await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 2500));
 
         updateLoading("Processando imagens...");
 
@@ -6005,7 +6181,9 @@ async function gerarPdfDoHistorico(dados, botao) {
         const pdfRatio = 297 / 210; 
         const pageHeightPixels = Math.floor(fullCanvas.width * pdfRatio);
         const margemSeguranca = 50; 
-        const contentHeightPerPage = pageHeightPixels - (margemSeguranca * 2);
+        
+        // AQUI: Diminuímos 15px da altura útil para criar o respiro no final da folha
+        const contentHeightPerPage = pageHeightPixels - (margemSeguranca * 2) - 15;
 
         const totalHeight = fullCanvas.height;
         let currentHeight = 0;
@@ -6028,10 +6206,14 @@ async function gerarPdfDoHistorico(dados, botao) {
             const heightLeft = totalHeight - currentHeight;
             const sliceHeight = Math.min(contentHeightPerPage, heightLeft);
 
+            // --- AJUSTE CIRÚRGICO PÁGINA 2+ ---
+            // Se for página 2 ou mais, desce 15px (ajusteVisual) para não colar no topo
+            const ajusteVisual = (pageCount > 1) ? 20 : 0; 
+
             ctx.drawImage(
                 fullCanvas, 
                 0, currentHeight, fullCanvas.width, sliceHeight,
-                0, margemSeguranca, fullCanvas.width, sliceHeight 
+                0, margemSeguranca + ajusteVisual, fullCanvas.width, sliceHeight 
             );
 
             if (sliceHeight >= contentHeightPerPage) {
@@ -6064,35 +6246,88 @@ async function gerarPdfDoHistorico(dados, botao) {
             jsPDF:        { unit: 'px', format: [794, 1123], orientation: 'portrait' } 
         };
 
+                // ... (Mantenha o código acima igual, até chegar nesta linha abaixo) ...
         const blob = await html2pdf().set(opt).from(printContainer).output('blob');
+        
+        // --- DAQUI PRA BAIXO É O CÓDIGO NOVO ---
+        
         const file = new File([blob], nomeFinalArquivo, { type: 'application/pdf' });
-
         removerLoading();
 
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            await navigator.share({
-                files: [file],
-                title: tituloCompartilhamento,
-                text: textoCompartilhamento
-            });
-        } else {
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = opt.filename;
-            link.click();
-        }
+        // 1. O BOTÃO VIRA "ENVIAR" (Verde)
+        botao.innerHTML = '<i class="bi bi-whatsapp"></i> Enviar PDF'; 
+        botao.classList.remove('btn-primary', 'btn-warning', 'btn-secondary', 'btn-dark'); 
+        botao.classList.add('btn-success'); 
+        botao.disabled = false; 
+
+        // 2. PREPARA O NOVO CLIQUE (Limpa eventos antigos)
+        const novoBotao = botao.cloneNode(true);
+        botao.parentNode.replaceChild(novoBotao, botao);
+
+        // 3. CLIQUE DE ENVIO
+        novoBotao.addEventListener('click', async () => {
+            try {
+                let compartilhou = false;
+
+                // Tenta compartilhar nativo
+                if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                    await navigator.share({
+                        files: [file],
+                        title: tituloCompartilhamento,
+                        text: textoCompartilhamento
+                    });
+                    compartilhou = true;
+                } else {
+                    throw new Error("Share não suportado, indo para download.");
+                }
+
+                // --- SE DEU CERTO: MARCA TUDO ---
+                if (compartilhou) {
+                    // A. Visual do Botão
+                    novoBotao.innerHTML = '<i class="bi bi-check-circle-fill"></i> Enviado!';
+                    novoBotao.classList.remove('btn-success');
+                    novoBotao.classList.add('btn-dark'); 
+                    
+                    // B. Visual da Lista (Borda Verde)
+                    const cardPai = novoBotao.closest('.list-group-item') || novoBotao.closest('.card') || novoBotao.parentNode.parentNode;
+                    if (cardPai) {
+                        cardPai.style.borderLeft = "6px solid #28a745"; 
+                        cardPai.style.backgroundColor = "#f0fff4"; 
+                    }
+
+                    // C. Salva no Firebase (Memória Eterna)
+                    if (dados.id || dados.docId) {
+                        marcarComoEnviadoNoBanco(dados.id || dados.docId);
+                    }
+                }
+
+            } catch (err) {
+                // Apenas avisa no console, NÃO baixa mais nada
+                console.warn("Compartilhamento cancelado ou erro:", err);
+                
+                // Opcional: Se quiser que o botão volte a ficar verde pra tentar de novo:
+                // novoBotao.innerHTML = '<i class="bi bi-whatsapp"></i> Enviar PDF';
+            }
+
+        });
+
+        // Vibra para avisar que está pronto
+        if (navigator.vibrate) navigator.vibrate(100);
 
     } catch (e) {
         removerLoading();
-        alert("Erro ao gerar PDF: " + e.message);
+        alert("Erro ao gerar: " + e.message);
         console.error(e);
-    } finally {
         botao.innerHTML = textoOriginal;
         botao.disabled = false;
     }
 }
 
-// ============================================================
+
+        
+// =====================================
+
+// ==============
 // ============================================================
 // 🧹 FAXINA DO FIREBASE (GLOBAL)
 // ============================================================
@@ -6326,6 +6561,175 @@ setTimeout(() => {
     }
 }, 1000); // Espera 1 segundo pra garantir que o HTML carregou
 
+// ============================================================
+// FUNÇÃO DE FAXINA (LIMPA TUDO PARA EVITAR BUGS DE EDIÇÃO)
+// ============================================================
+// FUNÇÃO DE FAXINA (LIMPA TUDO: DADOS E VISUAL)
+// ============================================================
+window.resetFormulariosBookip = function() {
+    console.log("🧹 Executando faxina completa...");
+
+    // 1. Limpa Campos de Texto do Cliente
+    const camposCliente = ['bookipNome', 'bookipCpf', 'bookipTelefone', 'bookipEndereco', 'bookipEmail', 'bookipDataManual'];
+    camposCliente.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+
+    // 2. Limpa Campos de Produto (Temp)
+    const camposProd = ['bookipProductSearch', 'bookipProdNomeTemp', 'bookipProdValorTemp', 'bookipProdCorTemp', 'bookipProdObsTemp'];
+    camposProd.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+    
+    // Reseta quantidade para 1
+    const qtd = document.getElementById('bookipProdQtdTemp');
+    if (qtd) qtd.value = '1';
+
+    // 3. Limpa Descrição de Situação
+    const sit = document.getElementById('sitDescricao');
+    if (sit) sit.value = '';
+
+    // 4. Reseta Checkboxes de Pagamento
+    document.querySelectorAll('.check-pagamento').forEach(c => c.checked = false);
+
+    // 5. Restaura o Botão de Salvar (Verde)
+    const btnSave = document.getElementById('btnSaveBookip');
+    if (btnSave) {
+        btnSave.innerHTML = '<i class="bi bi-check-circle-fill"></i> Finalizar e Salvar Documento';
+        btnSave.classList.remove('btn-warning', 'btn-info'); 
+        btnSave.classList.add('btn-success'); 
+        btnSave.disabled = false;
+    }
+    
+    // 6. Restaura o Botão de Adicionar Item (Azul)
+    const btnAdd = document.getElementById('btnAdicionarItemLista');
+    if (btnAdd) {
+        btnAdd.innerHTML = '<i class="bi bi-plus-lg"></i> Adicionar à Lista';
+        btnAdd.classList.remove('btn-warning');
+        btnAdd.classList.add('btn-primary');
+    }
+
+    // 7. ZERA A LISTA NA MEMÓRIA E NA TELA (O Pulo do Gato)
+    if (typeof bookipCartList !== 'undefined') {
+        bookipCartList = []; 
+    } else {
+        window.bookipCartList = [];
+    }
+    
+    // Força apagar os itens da tela visualmente
+    if (typeof window.atualizarListaVisualBookip === 'function') {
+        window.atualizarListaVisualBookip();
+    } else if (typeof atualizarListaVisualBookip === 'function') {
+        atualizarListaVisualBookip();
+    }
+
+    // 8. Esconde opções de pós-salvamento e mostra o form
+    const postSave = document.getElementById('postSaveOptions');
+    if(postSave) postSave.classList.add('hidden');
+    
+    const saveContainer = document.getElementById('saveActionContainer');
+    if(saveContainer) saveContainer.classList.remove('hidden');
+};
+
+// ============================================================
+// ============================================================
+// ============================================================
+// ============================================================
+// SOLUÇÃO CONTROLE REMOTO (BOTÃO FÍSICO = BOTÃO VIRTUAL)
+// ============================================================
+
+document.addEventListener('DOMContentLoaded', () => {
+
+    // 1. AVISA O CELULAR QUE NAVEGAMOS (CRIA O HISTÓRICO)
+    // Sem isso, o botão voltar fecha o app.
+    const botoesQueAbremTelas = document.querySelectorAll('.btn-menu, .btn-action-sm, #btnAdminClients');
+    
+    botoesQueAbremTelas.forEach(btn => {
+        btn.addEventListener('click', () => {
+            // Empurra um estado novo para o histórico
+            history.pushState({ time: Date.now() }, '', '');
+        });
+    });
+
+    // 2. QUANDO APERTAR VOLTAR NO CELULAR...
+    window.onpopstate = function(event) {
+        
+        // Estratégia: Achar qual tela está aberta e clicar no botão 'Voltar' dela.
+        
+        // Lista de telas possíveis (baseada no seu index.html)
+        const telas = [
+            'fecharVenda', 'repassarValores', 'calcularEmprestimo', 'calcularPorAparelho', // Telas Calc
+            'calculatorHome', // Menu Calc
+            'areaContratoWrapper', 'areaBookipWrapper', // Telas Docs
+            'documentsHome', // Menu Docs
+            'stockContainer', 'administracao', 'clientsContainer' // Outros
+        ];
+
+        let clicouEmAlgo = false;
+
+        // Procura qual tela está visível agora
+        for (let id of telas) {
+            const tela = document.getElementById(id);
+            // Se a tela existe e está visível (sem display:none e sem classe hidden)
+            if (tela && !tela.classList.contains('hidden') && tela.style.display !== 'none') {
+                
+                // Procura o botão de voltar DENTRO dessa tela
+                // No seu HTML, eles tem a classe .btn-back ou .btn-back-custom
+                const botaoVoltarDaTela = tela.querySelector('.btn-back, button[aria-label="Voltar"], button[id^="backFrom"]');
+                
+                if (botaoVoltarDaTela) {
+                    console.log(`📱 Celular apertou voltar -> Clicando automagicamente em: ${botaoVoltarDaTela.id}`);
+                    botaoVoltarDaTela.click(); // SIMULA O CLIQUE FÍSICO
+                    clicouEmAlgo = true;
+                    break; // Paramos de procurar
+                }
+            }
+        }
+
+        // Se não achou nenhum botão para clicar, significa que estamos no Menu Principal.
+        // Deixamos o histórico vazio para o navegador decidir (fechar ou minimizar).
+        if (!clicouEmAlgo) {
+            // Se quiser forçar ir pro menu principal sempre, descomente abaixo:
+            // if(typeof showMainSection === 'function') showMainSection('main');
+        }
+    };
+
+    // 3. GARANTIA DE INÍCIO
+    history.replaceState(null, '', '');
+});
+
+
+
+// ============================================================
+// FUNÇÃO AUXILIAR: ATUALIZA STATUS NO FIREBASE
+// ============================================================
+// ============================================================
+// CORREÇÃO: SALVAR NO REALTIME DATABASE (Compatível com seu histórico)
+// ============================================================
+async function marcarComoEnviadoNoBanco(idDocumento) {
+    if (!idDocumento) return;
+
+    try {
+        // 1. Cria a referência para o item específico dentro da pasta 'bookips'
+        // ATENÇÃO: O 'db' aqui deve ser o mesmo objeto que você usa no loadBookipHistory
+        // Se der erro de 'ref is not defined', certifique-se que importou { ref, update } do firebase
+        const itemRef = ref(db, `bookips/${idDocumento}`);
+        
+        // 2. Atualiza apenas o status
+        await update(itemRef, {
+            statusEnvio: true,
+            dataEnvio: new Date().toISOString()
+        });
+        
+        console.log("✅ (Realtime DB) Status salvo com sucesso!");
+    } catch (error) {
+        console.error("Erro ao atualizar no Realtime DB:", error);
+        // Tenta mostrar o erro na tela pra ajudar a debugar
+        alert("Erro ao salvar status: " + error.message);
+    }
+}
 
 
 
