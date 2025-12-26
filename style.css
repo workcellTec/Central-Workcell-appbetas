@@ -1952,3 +1952,17 @@ body[data-color="orange"] {
     background: rgba(0, 0, 0, 0.35) !important;
     box-shadow: 0 0 15px rgba(0,0,0,0.2);
 }
+
+html, body {
+    /* 1. TRAVA O ELÁSTICO: Impede que a tela "quique" e mostre o fundo vazio */
+    overscroll-behavior-y: none;
+
+    /* 2. Garante que seu tema de fumaça cubra a tela toda (até em celulares altos) */
+    min-height: 100vh;
+    width: 100%;
+
+    /* 3. Ajustes básicos de layout (sem mexer em cores) */
+    margin: 0;
+    padding: 0;
+    scroll-behavior: smooth;
+}

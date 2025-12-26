@@ -518,6 +518,9 @@
     
 </head>
 <body>
+    
+
+
     <div id="loadingOverlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: var(--tertiary-color); z-index: 10000; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.5s ease;">
         <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
             <span class="visually-hidden">Loading...</span>
@@ -569,12 +572,100 @@
             <div class="d-grid gap-2">
                 <button class="btn-menu" id="openFecharVenda"><i class="bi bi-cash-coin"></i> Fechar uma venda</button>
                 <button class="btn-menu" id="openRepassarValores"><i class="bi bi-arrow-left-right"></i> Repassar valores</button>
+
+<button class="btn-menu" id="openEmprestarValores"><i class="bi bi-people-fill"></i> Emprestar valores</button>
+
+
                 <button class="btn-menu" id="openCalcularEmprestimo"><i class="bi bi-bank"></i> Calcular Empréstimo</button>
                 <button class="btn-menu" id="openCalcularPorAparelho"><i class="bi bi-phone"></i> Calcular por aparelho</button>
+
+
             </div>
         </div>
 
         </div>
+
+
+
+
+<div class="container" id="emprestarValores" style="display: none;">
+    <div class="section-header">
+        <h3>Emprestar Valores</h3>
+        <button aria-label="Voltar" class="btn-back" id="backFromEmprestarValores"><i class="bi bi-arrow-left"></i></button>
+    </div>
+    <div class="content-card w-100">
+        <div class="mb-3" style="max-width: 400px; margin: 0 auto;">
+            <label class="form-label" for="emprestarNomeProduto"><i class="bi bi-tag"></i> Nome do Produto / Cliente</label>
+            <input class="form-control" id="emprestarNomeProduto" type="text" placeholder="Ex: Iphone 17 Pro Max" autocomplete="off"/>
+        </div>
+
+
+
+        <div class="mb-3" style="max-width: 400px; margin: 0 auto;">
+            <label class="form-label" for="emprestarValorBase"><i class="bi bi-wallet2"></i> Valor a Investir (R$)</label>
+            <input class="form-control form-control-lg" id="emprestarValorBase" type="number" step="0.01" min="0" placeholder="0,00"/>
+        </div>
+
+        <div class="mb-3" style="max-width: 400px; margin: 0 auto;">
+    <label class="form-label text-warning" for="emprestarEntrada"><i class="bi bi-cash-coin"></i> Entrada (Opcional)</label>
+    <input class="form-control form-control-lg border-warning" id="emprestarEntrada" type="number" step="0.01" min="0" placeholder="Valor pago na hora"/>
+    <div class="form-text text-secondary small">Este valor apenas aparece na imagem, não altera o cálculo.</div>
+</div>
+
+
+        <div class="mb-3" style="max-width: 400px; margin: 0 auto;">
+            <label class="form-label text-success fw-bold" for="emprestarLucroReais"><i class="bi bi-graph-up-arrow"></i> Lucro Desejado em 1x (R$)</label>
+            <input class="form-control form-control-lg border-success" id="emprestarLucroReais" type="number" step="0.01" min="0" placeholder="0,00"/>
+        </div>
+
+
+        <div class="row mb-3 w-100 justify-content-center">
+            <div class="col-12 col-md-6 mb-3">
+                <label class="form-label text-muted small">Maquininha para Taxas</label>
+
+<select class="form-select" id="machine5">
+    <option value="pagbank">PagBank</option>
+    <option value="infinity">InfinityPay</option>
+    <option value="valorante">Valorante</option>
+    <option value="nubank">Nubank Link</option>
+</select>
+
+
+            </div>
+            <div class="col-12 col-md-6 mb-3" id="flagDisplayContainer5" style="display: none;">
+                <label class="form-label text-muted small">Bandeira</label>
+                <button class="btn-flag-display w-100" id="flagDisplayButton5"></button>
+            </div>
+        </div>
+
+        
+        <div id="brand5Container" class="hidden" style="display:none;">
+            <select id="brand5">
+                <option value="visa">Visa</option>
+                <option value="mastercard">Mastercard</option>
+                <option value="elo">Elo</option>
+                <option value="hipercard">Hipercard</option>
+                <option value="amex">Amex</option>
+            </select>
+        </div>
+
+
+        <hr class="my-3" style="border-color: rgba(255,255,255,0.1);">
+
+        <div class="w-100 d-flex flex-column align-items-center" id="resultEmprestarValores"></div>
+
+        <div class="text-center mt-3 w-100" id="exportEmprestarContainer" style="display: none;">
+            <button class="btn btn-info w-100 py-3 fw-bold" id="exportEmprestarBtn" style="max-width: 400px;">
+                <i class="bi bi-camera-fill"></i> Salvar Imagem da Tabela
+            </button>
+        </div>
+    </div>
+</div>
+
+
+
+
+
         <div class="container" id="fecharVenda" style="display: none;">
             <div class="section-header">
                 <h3>Fechar Venda</h3>
@@ -582,7 +673,19 @@
             </div>
             <div class="content-card w-100">
                 <div class="row mb-3 w-100 justify-content-center">
-                    <div class="col-12 col-md-4 mb-3"><label class="form-label">Maquininha</label><select class="form-select" id="machine1"><option value="pagbank">PagBank</option><option value="infinity" selected>InfinityPay</option><option value="valorante">Valorante</option></select></div>
+                    <div class="col-12 col-md-4 mb-3"><label class="form-label">Maquininha</label>
+
+
+<select class="form-select" id="machine1">
+    <option value="pagbank">PagBank</option>
+    <option value="infinity" selected>InfinityPay</option>
+    <option value="valorante">Valorante</option>
+    <option value="nubank">Nubank Link</option>
+</select>
+
+
+
+</div>
                     <div class="col-12 col-md-4 mb-3" id="flagDisplayContainer1" style="display: none;"><label class="form-label">Bandeira</label><button class="btn-flag-display" id="flagDisplayButton1"></button></div>
                     <div class="col-12 col-md-4 mb-3">
                         <label for="installments1" class="form-label d-flex justify-content-between">
@@ -640,7 +743,19 @@
             </div>
             <div class="content-card w-100">
                 <div class="row mb-3 w-100 justify-content-center">
-                    <div class="col-12 col-md-6 mb-3"><label class="form-label">Maquininha</label><select class="form-select" id="machine2"><option value="pagbank">PagBank</option><option value="infinity">InfinityPay</option><option value="valorante">Valorante</option></select></div>
+                    <div class="col-12 col-md-6 mb-3"><label class="form-label">Maquininha</label>
+
+
+<select class="form-select" id="machine2">
+    <option value="pagbank">PagBank</option>
+    <option value="infinity">InfinityPay</option>
+    <option value="valorante">Valorante</option>
+    <option value="nubank">Nubank Link</option>
+</select>
+
+
+
+</div>
                     <div class="col-12 col-md-6 mb-3" id="flagDisplayContainer2" style="display: none;"><label class="form-label">Bandeira</label><button class="btn-flag-display" id="flagDisplayButton2"></button></div>
                 </div>
                 <div id="brand2Container" class="hidden"><select id="brand2"><option value="visa">Visa</option><option value="mastercard">Mastercard</option><option value="hiper">Hiper</option><option value="hipercard">Hipercard</option><option value="elo">Elo</option><option value="amex">Amex</option></select></div>
@@ -688,7 +803,17 @@
                     <input class="form-control form-control-lg" id="emprestimoValue" min="0" placeholder="Ex: 10000" step="0.01" type="number"/>
                 </div>
                 <div class="row mb-3 w-100 justify-content-center">
-                    <div class="col-12 col-md-6 mb-3"><label class="form-label">Maquininha</label><select class="form-select" id="machine4"><option value="pagbank">PagBank</option><option value="infinity">InfinityPay</option><option value="valorante" selected>Valorante</option></select></div>
+                    <div class="col-12 col-md-6 mb-3"><label class="form-label">Maquininha</label>
+
+
+<select class="form-select" id="machine4">
+    <option value="pagbank">PagBank</option>
+    <option value="infinity">InfinityPay</option>
+    <option value="valorante" selected>Valorante</option>
+    <option value="nubank">Nubank Link</option>
+</select>
+
+</div>
                     <div class="col-12 col-md-6 mb-3" id="flagDisplayContainer4" style="display: none;"><label class="form-label">Bandeira</label><button class="btn-flag-display" id="flagDisplayButton4"></button></div>
                 </div>
                 <div id="brand4Container" class="hidden"><select id="brand4"><option value="visa">Visa</option><option value="mastercard">Mastercard</option><option value="hiper">Hiper</option><option value="hipercard">Hipercard</option><option value="elo">Elo</option><option value="amex">Amex</option></select></div>
@@ -737,7 +862,17 @@
                         </button>
                     </div>
                     <div class="row my-3 w-100 justify-content-center">
-                        <div class="col-12 col-md-6 mb-3"><label class="form-label">Maquininha</label><select class="form-select" id="machine3"><option value="pagbank">PagBank</option><option value="infinity">InfinityPay</option><option value="valorante">Valorante</option></select></div>
+                        <div class="col-12 col-md-6 mb-3"><label class="form-label">Maquininha</label>
+
+<select class="form-select" id="machine3">
+    <option value="pagbank">PagBank</option>
+    <option value="infinity">InfinityPay</option>
+    <option value="valorante">Valorante</option>
+    <option value="nubank">Nubank Link</option>
+</select>
+
+
+</div>
                         <div class="col-12 col-md-6 mb-3" id="flagDisplayContainer3" style="display: none;"><label class="form-label">Bandeira</label><button class="btn-flag-display" id="flagDisplayButton3"></button></div>
                     </div>
                     <div id="brand3Container" class="hidden"><select id="brand3"><option value="visa">Visa</option><option value="mastercard">Mastercard</option><option value="hiper">Hiper</option><option value="hipercard">Hipercard</option><option value="elo">Elo</option><option value="amex">Amex</option></select></div>
@@ -760,6 +895,11 @@
         </div>
     </div>
     
+
+
+
+
+
        <div class="container" id="administracao" style="display: none;">
         <div class="section-header">
             <h3>Administração</h3>
@@ -875,6 +1015,12 @@
                         <input class="form-check-input visibility-toggle" type="checkbox" role="switch" id="toggle-valorante-visibility" data-machine="valorante" checked>
                         <label class="form-check-label" for="toggle-valorante-visibility">Valorante</label>
                     </div>
+
+<div class="form-check form-switch">
+    <input class="form-check-input visibility-toggle" type="checkbox" role="switch" id="toggle-nubank-visibility" data-machine="nubank" checked>
+    <label class="form-check-label" for="toggle-nubank-visibility">Nubank Link</label>
+</div>
+
                 </div>
             </div>
             <div class="admin-section">
@@ -1076,6 +1222,17 @@ do que você precisa??</h2>
                 <h3>Garantia (Bookip)</h3>
                 <button aria-label="Voltar" class="btn-back" id="backFromBookipView"><i class="bi bi-arrow-left"></i></button>
             </div>
+
+<div id="bookipDraftNotice" class="alert alert-warning d-flex justify-content-between align-items-center p-2 mb-3 hidden" style="border-radius: 10px;">
+    <span class="small"><i class="bi bi-hdd-fill"></i> Há um rascunho salvo.</span>
+    <div>
+        <button class="btn btn-sm btn-success py-0" onclick="recuperarRascunhoBookip()" title="Recuperar"><i class="bi bi-arrow-counterclockwise"></i></button>
+        <button class="btn btn-sm btn-danger py-0" onclick="apagarRascunhoBookip()" title="Apagar"><i class="bi bi-trash"></i></button>
+    </div>
+</div>
+
+
+
 
             <div class="toggle-switch">
                 <input type="checkbox" id="bookipModeToggle">
@@ -1568,9 +1725,9 @@ do que você precisa??</h2>
                 </div>
             </div>
 
-            <button id="btnNewBookipCycle" class="btn btn-outline-light w-100 py-2 rounded-pill mt-2">
-                <i class="bi bi-plus-lg"></i>  Sair e Começar Nova Garantia
-            </button>
+        <button id="btnResetSuccess" class="btn btn-outline-light w-100 py-2 rounded-pill mt-2">
+    <i class="bi bi-plus-lg"></i>  Sair e Começar Nova Garantia
+</button>
 
         </div>
     </div>
@@ -1580,7 +1737,7 @@ do que você precisa??</h2>
         <script type="application/json" id="manifest-data">
         {
             "name": "Central Workcell",
-            "short_name": "CW",
+            "short_name": "Central Workcell",
             "description": "Calculadora de taxas e gerador de contratos para facilitar suas vendas.",
             "start_url": ".",
             "display": "standalone",
@@ -1614,11 +1771,11 @@ do que você precisa??</h2>
 
 <script>
 (function() {
-    console.log("🚀 Sistema de Navegação CSS Computado Iniciado...");
+    console.log("🚀 Sistema de Navegação CSS Computado Iniciado (Corrigido)...");
 
     // 1. GATILHO: Adiciona histórico ao clicar para abrir telas
     document.addEventListener('click', function(e) {
-        // Pega qualquer botão que pareça ser de navegação
+        // Pega qualquer botão que pareça ser de navegação ou ação
         const target = e.target.closest('.btn-menu, .btn-action-sm, #btnAdminClients');
         if (target) {
             window.history.pushState({ time: Date.now() }, "", "");
@@ -1626,18 +1783,12 @@ do que você precisa??</h2>
     }, true);
 
     // 2. FUNÇÃO INFALÍVEL PARA CHECAR VISIBILIDADE
-    // Essa função ignora se está "por baixo" ou "por cima". 
-    // Ela só retorna TRUE se o elemento estiver realmente ocupando espaço na tela.
     function isRealmenteVisivel(id) {
         const el = document.getElementById(id);
         if (!el) return false;
         
-        // Pega o estilo FINAL calculado pelo navegador (não o inline)
         const style = window.getComputedStyle(el);
         
-        // Se display for 'none', não está visível.
-        // Se visibility for 'hidden', não está visível.
-        // Se a classe 'hidden' estiver presente, não está visível (redundância de segurança).
         return style.display !== 'none' && 
                style.visibility !== 'hidden' && 
                !el.classList.contains('hidden');
@@ -1648,8 +1799,12 @@ do que você precisa??</h2>
         console.log("🔙 Voltar detectado. Analisando tela ativa...");
 
         // === NIVEL 1: TELAS FILHAS (PRIORIDADE MÁXIMA) ===
-        // Se qualquer uma dessas estiver visível, ELA manda.
-        // Ignoramos menus pais por enquanto.
+        
+        // --- CORREÇÃO FEITA AQUI: ID EXATO DO SEU HTML ---
+        if (isRealmenteVisivel('emprestarValores')) {
+            document.getElementById('backFromEmprestarValores').click(); return;
+        }
+        // -------------------------------------------------
 
         if (isRealmenteVisivel('fecharVenda')) {
             document.getElementById('backFromFecharVenda').click(); return;
@@ -1674,7 +1829,6 @@ do que você precisa??</h2>
 
 
         // === NIVEL 2: MENUS INTERMEDIÁRIOS ===
-        // Só verificamos isso se NENHUM filho acima foi encontrado.
         
         if (isRealmenteVisivel('calculatorHome')) {
             document.getElementById('backFromCalculatorHome').click(); return;
@@ -1696,8 +1850,7 @@ do que você precisa??</h2>
             document.getElementById('backFromAdmin').click(); return;
         }
 
-        // Se chegou aqui, estamos no Menu Principal ou perdidos.
-        // Garante que o Menu Principal apareça.
+        // Se chegou aqui, força o Menu Principal
         const mainMenu = document.getElementById('mainMenu');
         if (mainMenu && window.getComputedStyle(mainMenu).display === 'none') {
              if(typeof showMainSection === 'function') showMainSection('main');
@@ -1710,6 +1863,10 @@ do que você precisa??</h2>
 })();
 </script>
 
+<div id="loadingOverlay" class="d-none" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 99999; display: flex; flex-direction: column; align-items: center; justify-content: center; backdrop-filter: blur(5px);">
+    <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status"></div>
+    <h5 class="mt-3 text-white fw-light" id="loadingText">Processando...</h5>
+</div>
 
 
 
