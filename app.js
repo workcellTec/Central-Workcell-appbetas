@@ -922,7 +922,8 @@ function calculateFecharVenda() {
         return;
     }
     
-    const inputValue = parseFloat(document.getElementById("fecharVendaValue").value);
+    const inputValue = parseBrazilianCurrencyToFloat(document.getElementById("fecharVendaValue").value);
+
     if (isNaN(inputValue) || inputValue <= 0) { resultDiv.innerHTML = checkboxHtml || ""; return; }
     
     const manualMode = document.querySelector('input[name="manualMode"]:checked').value;
@@ -7721,5 +7722,21 @@ window.filtrarHistoricoPorPerfil = function(perfil, btn) {
 };
 
 
+// --- MÁSCARA DE DINHEIRO RÁPIDA ---
+const inputVenda = document.getElementById('fecharVendaValue');
+if (inputVenda) {
+    inputVenda.addEventListener('input', (e) => {
+        let value = e.target.value.replace(/\D/g, ""); // Só deixa números
+        if (value === "") { e.target.value = ""; return; }
+        
+        // Formata: Divide por 100 e coloca virgula/ponto
+        e.target.value = (parseFloat(value) / 100).toLocaleString('pt-BR', {
+            minimumFractionDigits: 2, maximumFractionDigits: 2
+        });
+        
+        // Chama o cálculo automaticamente
+        calculateFecharVenda();
+    });
+}
 
         });
