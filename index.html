@@ -6,7 +6,7 @@
     <title>Central Workcell</title>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="theme-color" content="#000000"/>
+    <meta name="theme-color" content="#0B1120"/>
         <link rel="apple-touch-icon" href="https://i.imgur.com/6Ei51Rg.png">
     <link rel="icon" type="image/png" href="https://i.imgur.com/6Ei51Rg.png">
 
@@ -519,6 +519,10 @@
 </head>
 <body>
     
+<div class="turbo-bg">
+    <div class="light-orb orb-1"></div>
+    <div class="light-orb orb-2"></div>
+</div>
 
 
     <div id="loadingOverlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: var(--tertiary-color); z-index: 10000; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.5s ease;">
@@ -528,26 +532,168 @@
         <p class="mt-3" style="color: var(--text-secondary);">Carregando sistema...</p>
     </div>
     
-        <div id="top-right-controls" class="hidden">
-        <div id="theme-palette-btn" title="Mudar Cor do Tema">
-            <i class="bi bi-palette-fill"></i>
-        </div>
 
-        <div class="toggle-switch-theme">
-            <input type="checkbox" id="theme-toggle-checkbox">
-            <label for="theme-toggle-checkbox">
-                <span><i class="bi bi-moon-fill"></i></span>
-                <span><i class="bi bi-sun-fill"></i></span>
-            </label>
-        </div>
 
-        <div id="notification-bell">
-            <i class="bi bi-bell-fill"></i>
-            <span class="notification-badge hidden"></span>
-        </div>
+
+
+
+
+<div id="top-right-controls" style="position: absolute; top: 20px; right: 20px; z-index: 1050;">
+
+    <div class="dropdown">
+        <button class="btn btn-link p-0 border-0" type="button" data-bs-toggle="dropdown" aria-expanded="false" style="color: var(--text-color); transition: all 0.3s ease;">
+            <div style="width: 45px; height: 45px; 
+                        background: var(--input-bg);
+                        border-radius: 50%; 
+                        display: flex; align-items: center; justify-content: center; 
+                        border: 1px solid var(--glass-border); 
+                        box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
+                <i class="bi bi-person-fill fs-4"></i>
+            </div>
+            <span id="avatar-badge" class="position-absolute top-0 start-100 translate-middle p-1 bg-danger border border-light rounded-circle hidden" style="width: 12px; height: 12px;"></span>
+        </button>
+
+        <ul class="dropdown-menu dropdown-menu-end shadow-lg border-0" 
+            style="background: var(--tertiary-color); 
+                   border: 1px solid var(--glass-border); 
+                   min-width: 280px; 
+                   padding: 0; 
+                   overflow: hidden;
+                   border-radius: 16px;">
+            
+            <li class="px-3 py-3 mb-1" style="border-bottom: 1px solid var(--glass-border); background: rgba(255,255,255,0.03);">
+                <small class="d-block text-secondary text-uppercase fw-bold" style="font-size: 0.65rem; letter-spacing: 1px;">Logado como:</small>
+                <div class="d-flex align-items-center gap-2 mt-1">
+                    <span id="displayProfileIcon" style="width: 8px; height: 8px; background: #00E676; border-radius: 50%; box-shadow: 0 0 10px #00E676;"></span>
+                    <span id="displayProfileName" class="fw-bold fs-5" style="color: var(--text-color);">Visitante</span>
+                </div>
+            </li>
+            
+
+
+
+                                 <li id="menu-notification-area" class="hidden" style="border-bottom: 1px solid var(--glass-border); background: rgba(255, 255, 255, 0.05);">
+                <button class="dropdown-item py-3" onclick="document.getElementById('notification-bell').click();" style="white-space: normal;">
+                    <div class="d-flex align-items-start gap-2">
+                        <div class="mt-1 position-relative">
+                            <i class="bi bi-bell-fill text-danger fs-5"></i>
+                            <span class="position-absolute top-0 start-100 translate-middle bg-danger rounded-circle" style="width: 8px; height: 8px; box-shadow: 0 0 8px red;"></span>
+                        </div>
+                        
+                        <div style="overflow: hidden; width: 100%;">
+                            <span class="d-block fw-bold mb-1" style="font-size: 0.70rem; color: var(--primary-color); text-transform: uppercase; letter-spacing: 1px;">
+                                Nova Mensagem
+                            </span>
+                            
+                            <small class="d-block" id="menu-notification-text" 
+                                   style="font-size: 0.85rem; line-height: 1.3; opacity: 0.9; color: var(--text-color); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">
+                                Carregando...
+                            </small>
+                        </div>
+                    </div>
+                </button>
+            </li>
+            
+
+
+
+
+
+
+
+            <li class="p-2">
+                <button class="dropdown-item rounded py-2 d-flex align-items-center gap-2" 
+                        onclick="document.getElementById('theme-toggle-checkbox').click();" style="color: var(--text-color);">
+                    <div class="icon-box bg-warning bg-opacity-10 text-warning"><i class="bi bi-moon-stars-fill"></i></div>
+                    <span>Alternar Tema</span>
+                </button>
+
+                <button class="dropdown-item rounded py-2 d-flex align-items-center gap-2 mt-1" 
+                        onclick="document.getElementById('theme-palette-btn').click();" style="color: var(--text-color);">
+                    <div class="icon-box bg-info bg-opacity-10 text-info"><i class="bi bi-palette-fill"></i></div>
+                    <span>Mudar Cores</span>
+                </button>
+                
+                <div id="installAppOption" style="display: none;">
+                    <button class="dropdown-item rounded py-2 d-flex align-items-center gap-2 mt-1" 
+                            onclick="if(window.installApp) window.installApp()" style="color: var(--text-color);">
+                        <div class="icon-box bg-success bg-opacity-10 text-success"><i class="bi bi-download"></i></div>
+                        <span>Instalar App</span>
+                    </button>
+                <li class="p-2">
+                <button class="dropdown-item rounded py-2 d-flex align-items-center gap-2" 
+                        onclick="document.getElementById('profileSelectorModal').classList.add('active');" 
+                        style="color: var(--text-color);">
+                    <div class="icon-box bg-primary bg-opacity-10 text-primary">
+                        <i class="bi bi-people-fill"></i>
+                    </div>
+                    <span>Trocar Usuário</span>
+                </button>
+            </li>
+
+        </ul>
     </div>
 
-    
+    <div style="display:none !important;">
+        <input type="checkbox" id="theme-toggle-checkbox">
+        <div id="theme-palette-btn"></div>
+        <div id="notification-bell"><span class="notification-badge hidden"></span></div> 
+    </div>
+
+    <style>
+        .icon-box { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; }
+        @keyframes pulseRed { 0% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(2.5); } }
+
+        /* --- NOVA ANIMAÇÃO DO MENU --- */
+        /* Quando o menu abre (ganha a classe .show), ele executa essa animação */
+        #top-right-controls .dropdown-menu.show {
+            animation: dropdownSlideIn 0.2s ease-out forwards;
+            transform-origin: top right; /* Faz ele "nascer" a partir do botão */
+        }
+
+        @keyframes dropdownSlideIn {
+            from {
+                opacity: 0;
+                /* Começa um pouco para cima e menor */
+                transform: translateY(-15px) scale(0.95); 
+            }
+            to {
+                opacity: 1;
+                /* Termina na posição certa e tamanho normal */
+                transform: translateY(0) scale(1);
+            }
+        }
+    </style>
+
+    <script>
+        (function(){
+            const oldBadge = document.querySelector('#notification-bell .notification-badge');
+            const avatarBadge = document.getElementById('avatar-badge');
+            const menuArea = document.getElementById('menu-notification-area');
+            const menuText = document.getElementById('menu-notification-text');
+
+            function atualizarEstado() {
+                const temNotificacao = !oldBadge.classList.contains('hidden') && oldBadge.style.display !== 'none';
+                if (temNotificacao) {
+                    avatarBadge.classList.remove('hidden');
+                    menuArea.classList.remove('hidden');
+                    const textoSalvo = localStorage.getItem('sys_ultimo_aviso');
+                    menuText.innerText = (textoSalvo && textoSalvo.trim() !== "") ? textoSalvo : "Toque para ver os detalhes.";
+                } else {
+                    avatarBadge.classList.add('hidden');
+                    menuArea.classList.add('hidden');
+                }
+            }
+            if (oldBadge) {
+                new MutationObserver(atualizarEstado).observe(oldBadge, { attributes: true, attributeFilter: ['class', 'style'] });
+                setTimeout(atualizarEstado, 1500); 
+            }
+        })();
+    </script>
+</div>
+
+
+ 
     <div class="container text-center" id="mainMenu">
         <h2 class="mb-4">Bem-vindo(a) à Central Workcell,<br/>O que você quer fazer?</h2>
         <div class="d-grid gap-2">
@@ -1119,11 +1265,9 @@
 
 
 
+<div id="contractContainer" class="hidden">
 
 
-
-    <div id="contractContainer" class="hidden">
-        
         <div class="container text-center" id="documentsHome">
             
             <div class="w-100 d-flex justify-content-start mb-2">
@@ -1712,10 +1856,11 @@ do que você precisa??</h2>
 
             <div class="row g-2 mb-3">
                 <div class="col-6">
-                    <button id="btnPostPrint" class="btn btn-dark w-100 p-3 border-secondary">
-                        <i class="bi bi-printer-fill fs-2 d-block mb-2 text-primary"></i> 
-                        <span class="small text-light">Imprimir</span>
-                    </button>
+<button id="btnPostPrint" class="btn btn-dark w-100 p-3 border-secondary" onclick="imprimirUniversal()">
+    <i class="bi bi-printer-fill fs-2 d-block mb-2 text-primary"></i> 
+    <span class="small text-light">Imprimir</span>
+</button>
+
                 </div>
                 <div class="col-6">
                     <button id="btnPostShare" class="btn btn-dark w-100 p-3 border-secondary">
@@ -1731,6 +1876,29 @@ do que você precisa??</h2>
 
         </div>
     </div>
+
+
+<div class="custom-modal-overlay" id="profileSelectorModal" style="z-index: 20000; background: rgba(0,0,0,0.9);">
+    <div class="custom-modal-content" style="max-width: 400px;">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h3 class="m-0">Quem é você?</h3>
+            <button class="btn btn-sm btn-outline-secondary rounded-circle" onclick="document.getElementById('profileSelectorModal').classList.remove('active')" style="width: 32px; height: 32px; padding: 0;"><i class="bi bi-x-lg"></i></button>
+        </div>
+        
+        <div id="profilesList" class="d-grid gap-2" style="max-height: 300px; overflow-y: auto;"></div>
+
+        <hr class="border-secondary opacity-25 my-3">
+
+        <button onclick="criarNovoPerfil()" class="btn btn-outline-success w-100 py-2 border-dashed">
+            <i class="bi bi-plus-lg"></i> Criar Novo Perfil
+        </button>
+        
+        <p class="mt-3 text-secondary small">Isso serve apenas para controle interno da equipe.</p>
+    </div>
+</div>
+
+<style> .border-dashed { border-style: dashed !important; } </style>
+
 
 
 
@@ -1752,7 +1920,7 @@ do que você precisa??</h2>
     </script>
 
     <script type="text/plain" id="sw-script">
-        const CACHE_NAME = 'centrar-workcell-cache-v1';
+        const CACHE_NAME = 'centrar-workcell-cache-v80';
         const urlsToCache = [ '/', '/index.html', 'https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap', 'https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css', 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css', 'https://cdn.jsdelivr.net/npm/fuse.js/dist/fuse.min.js', 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js', 'https://www.gstatic.com/firebasejs/11.9.1/firebase-app.js', 'https://www.gstatic.com/firebasejs/11.9.1/firebase-auth.js', 'https://www.gstatic.com/firebasejs/11.9.1/firebase-database.js' ];
         self.addEventListener('install', event => { event.waitUntil( caches.open(CACHE_NAME).then(cache => { console.log('Cache aberto'); return cache.addAll(urlsToCache); }) ); });
         self.addEventListener('fetch', event => { event.respondWith( caches.match(event.request).then(response => { if (response) { return response; } return fetch(event.request).then( response => { if(!response || response.status !== 200 || response.type !== 'basic') { return response; } const responseToCache = response.clone(); caches.open(CACHE_NAME).then(cache => { cache.put(event.request, responseToCache); }); return response; } ); }) ); });

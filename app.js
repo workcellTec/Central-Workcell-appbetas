@@ -12,6 +12,227 @@ const firebaseConfig = {
     appId: "1:37459949616:web:bf2e722a491f45880a55f5"
 };
 
+// ============================================================
+// 👥 SISTEMA DE PERFIS EM NUVEM (FIREBASE)
+// ============================================================
+
+// O perfil ATUAL (quem sou eu) continua salvo só no meu celular
+let currentUserProfile = localStorage.getItem('ctwUserProfile') || '';
+// A lista de perfis agora é uma variável que vem do banco
+let teamProfilesList = {}; 
+
+// ============================================================
+
+// ============================================================
+// 🚀 SISTEMA DE EQUIPE (CACHE + VISUAL GRID + ORDENAÇÃO)
+// ============================================================
+
+// 1. Salva no celular
+function salvarCacheEquipe(dados) {
+    if(!dados) return;
+    localStorage.setItem('cache_equipe_local', JSON.stringify(dados));
+}
+
+// 2. Carrega do celular (Instantâneo)
+function carregarCacheEquipe() {
+    const cache = localStorage.getItem('cache_equipe_local');
+    if (cache) {
+        try {
+            const dados = JSON.parse(cache);
+            if (typeof renderizarEquipeNaTela === 'function') {
+                renderizarEquipeNaTela(dados);
+                console.log("⚡ Equipe carregada do Cache!");
+            }
+        } catch (e) { console.error("Erro cache", e); }
+    }
+}
+
+// 3. O Desenhista (Cria o HTML bonito)
+function renderizarEquipeNaTela(listaPerfis) {
+    const container = document.getElementById('profilesList');
+    if(!container) return;
+    
+    container.innerHTML = ''; 
+
+    // A. Converte Objeto em Array
+    let arrayPerfis = Object.entries(listaPerfis).map(([key, value]) => {
+        return { id: key, ...value };
+    });
+
+    // B. ORDENAÇÃO (Admin -> Ordem de Chegada)
+    arrayPerfis.sort((a, b) => {
+        // Regra 1: Admin/Dono CONTINUA no topo (Opcional, se não quiser avisa)
+        const aAdmin = (a.role === 'admin' || a.role === 'dono') ? 1 : 0;
+        const bAdmin = (b.role === 'admin' || b.role === 'dono') ? 1 : 0;
+        
+        if (aAdmin > bAdmin) return -1;
+        if (aAdmin < bAdmin) return 1;
+
+        // Regra 2: Ordem de CRIAÇÃO (Quem foi criado antes aparece antes)
+        // Se não tiver data (perfis antigos), usa o ID do Firebase que também é cronológico
+        const dataA = a.createdAt || a.id;
+        const dataB = b.createdAt || b.id;
+        
+        // Compara as datas (Texto simples funciona para data ISO)
+        return dataA.localeCompare(dataB);
+    });
+
+    // C. Desenha os cartões
+    arrayPerfis.forEach(perfil => {
+        const nome = perfil.name;
+        
+        const cores = ['#EF5350', '#2979FF', '#00E676', '#FFD600', '#AB47BC', '#FF7043'];
+        const cor = cores[nome.length % cores.length];
+        const inicial = nome.charAt(0).toUpperCase();
+
+        const card = document.createElement('div');
+        card.className = 'team-card'; 
+
+        card.innerHTML = `
+            <div onclick="apagarPerfil('${perfil.id}', '${nome}')" class="btn-delete-card">
+                <i class="bi bi-trash"></i>
+            </div>
+            <div onclick="setProfile('${nome}')" style="width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor: pointer;">
+                <div class="team-avatar" style="background: ${cor};">${inicial}</div>
+                <div class="text-truncate w-100 fw-bold" style="color: var(--text-color); font-size: 0.9rem;">${nome}</div>
+                <div class="mt-1 d-flex gap-1 justify-content-center flex-wrap">
+                    ${nome === currentUserProfile ? '<span class="badge bg-success" style="font-size: 0.6rem">VOCÊ</span>' : ''}
+                    ${perfil.role === 'admin' || perfil.role === 'dono' ? '<span class="badge bg-primary" style="font-size: 0.6rem">ADMIN</span>' : ''}
+                </div>
+            </div>
+        `;
+        container.appendChild(card);
+    });
+}
+
+
+// 4. Conexão Principal (Listener)
+function setupTeamProfilesListener() {
+    const db = getDatabase();
+    const profilesRef = ref(db, 'team_profiles');
+
+    carregarCacheEquipe(); // Carrega rápido
+
+    onValue(profilesRef, (snapshot) => { // Ouve o banco
+        const data = snapshot.val();
+        if (data) {
+            teamProfilesList = data;
+            salvarCacheEquipe(data);
+            renderizarEquipeNaTela(data);
+        } else {
+            const container = document.getElementById('profilesList');
+            if(container) container.innerHTML = '<div class="text-center text-muted py-4">Nenhum perfil encontrado.</div>';
+        }
+    });
+}
+
+// SUBSTITUA A FUNÇÃO window.setProfile POR ESTA:
+
+window.setProfile = function(name) {
+    currentUserProfile = name;
+    localStorage.setItem('ctwUserProfile', name);
+    
+    // 1. Atualiza o visual da lista (Check verde)
+    if(typeof setupTeamProfilesListener === 'function') setupTeamProfilesListener(); 
+    
+    // 2. ATUALIZA O NOME NO MENU DO AVATAR (A Mágica acontece aqui)
+    const displayMenu = document.getElementById('displayProfileName');
+    if(displayMenu) displayMenu.innerText = name;
+    
+    // 3. Atualiza a mensagem de Bem-vindo na tela inicial
+    const tituloPrincipal = document.querySelector('#mainMenu h2');
+    if(tituloPrincipal) {
+        tituloPrincipal.innerHTML = `Bem-vindo(a), <span class="text-primary">${name}</span><br/>O que você quer fazer?`;
+    }
+
+    // 4. Fecha a janela e confirma
+    setTimeout(() => {
+        const modal = document.getElementById('profileSelectorModal');
+        if(modal) modal.classList.remove('active');
+        
+        if(typeof showCustomModal === 'function') showCustomModal({ message: `Perfil definido: ${name} 🚀` });
+    }, 200);
+}
+
+
+// SUBSTITUA A FUNÇÃO window.criarNovoPerfil POR ESTA:
+
+window.criarNovoPerfil = function() {
+    if(typeof showCustomModal === 'function') {
+        // Truque para o modal de senha/input ficar ACIMA do modal de perfil
+        const modalInput = document.getElementById('customModalOverlay');
+        if(modalInput) modalInput.style.zIndex = "20005"; // Mais alto que o perfil (20000)
+
+        showCustomModal({
+            message: "Nome do novo membro da equipe:",
+            showPassword: true, 
+            confirmText: "Salvar e Entrar",
+            onConfirm: (novoNome) => {
+                if(novoNome && novoNome.trim() !== "") {
+                    const nomeLimpo = novoNome.trim();
+                    
+                    // 1. Salva no Firebase
+                    push(ref(db, 'team_profiles'), {
+                        name: nomeLimpo,
+                        createdAt: new Date().toISOString()
+                    }).then(() => {
+                        // 2. A MÁGICA: Já seleciona e fecha a janela na hora!
+                        setProfile(nomeLimpo);
+                        
+                        // Restaura o z-index original do modal
+                        if(modalInput) modalInput.style.zIndex = ""; 
+                    }).catch(err => alert("Erro ao criar: " + err.message));
+                }
+            },
+            onCancel: () => {
+                // Restaura o z-index se cancelar
+                if(modalInput) modalInput.style.zIndex = ""; 
+            }
+        });
+        
+        // Ajuste visual do input
+        setTimeout(() => {
+            const input = document.getElementById('customModalPasswordInput');
+            if(input) { input.type = "text"; input.placeholder = "Ex: Vendedor Tarde"; input.focus(); }
+        }, 50);
+    }
+}
+
+// 4. Apagar (Remove do Firebase para todos)
+window.apagarPerfil = function(key, nome) {
+    if(confirm(`Tem certeza que deseja remover "${nome}" da equipe? Isso sumirá para todos.`)) {
+        const profileRef = ref(db, `team_profiles/${key}`);
+        remove(profileRef).catch(err => alert("Erro ao apagar: " + err.message));
+    }
+}
+
+// 5. Inicialização
+document.addEventListener('DOMContentLoaded', () => {
+    
+    if (!currentUserProfile) {
+        // Se NÃO tem usuário, abre a janela depois de 2 segundos
+        setTimeout(() => document.getElementById('profileSelectorModal').classList.add('active'), 2000);
+    } else {
+        // --- SE JÁ TEM USUÁRIO, MOSTRA O NOME NOS LUGARES CERTOS ---
+        
+        // 1. Texto pequeno "Usuário: Brendon" (Mantém o original)
+        const topoTitulo = document.querySelector('.d-flex.flex-column small');
+        if(topoTitulo) topoTitulo.innerText = "Usuário: " + currentUserProfile;
+
+        // 2. No Menu do Avatar (Cartão de Visita) - NOVO
+        const displayMenu = document.getElementById('displayProfileName');
+        if(displayMenu) displayMenu.innerText = currentUserProfile;
+
+        // 3. Título Principal "Bem-vindo(a), Brendon" - NOVO
+        const tituloPrincipal = document.querySelector('#mainMenu h2');
+        if(tituloPrincipal) {
+            tituloPrincipal.innerHTML = `Bem-vindo(a), <span class="text-primary">${currentUserProfile}</span><br/>O que você quer fazer?`;
+        }
+    }
+});
+
+
+
 // Adicione junto com as outras variáveis globais (perto de userId, products, etc.)
 let currentEditingBookipId = null; // Guarda o ID se estiver editando
 
@@ -279,17 +500,17 @@ function showMainSection(sectionId) {
         calculatorContainer.style.display = 'block';
         openCalculatorSection('calculatorHome');
     } 
-               else if (sectionId === 'contract') {
+    else if (sectionId === 'contract') {
         contractContainer.classList.remove('hidden');
-        contractContainer.style.display = 'block'; 
+        contractContainer.style.display = 'block'; // SÓ ISSO!
         
-        // CORREÇÃO: Não carregamos o rascunho aqui ainda!
-        // Apenas abrimos o menu de escolha.
-        
-        document.getElementById('documentsHome').style.display = 'flex'; // Garante o display correto
+        document.getElementById('documentsHome').style.display = 'flex'; 
         document.getElementById('areaContratoWrapper').style.display = 'none';
         document.getElementById('areaBookipWrapper').style.display = 'none';
     } 
+
+
+
 
     else if (sectionId === 'stock') {
         stockContainer.classList.remove('hidden');
@@ -2396,71 +2617,101 @@ function checkForDueInstallments(initialNotifications = []) {
     });
 }
 
+
+// SUBSTITUA A FUNÇÃO updateNotificationUI POR ESTA:
+
 function updateNotificationUI(notifications) {
-    const badge = document.querySelector('#notification-bell .notification-badge');
+    console.log("🔔 Sistema de Notificação Acionado:", notifications.length, "mensagens.");
+
+    // Elementos
+    const oldBadge = document.querySelector('#notification-bell .notification-badge');
     const notificationList = document.getElementById('notificationList');
-    
+    const avatarBadge = document.getElementById('avatar-badge');
+    const menuArea = document.getElementById('menu-notification-area');
+    const menuText = document.getElementById('menu-notification-text');
+
     if (notifications.length > 0) {
-        badge.textContent = notifications.length;
-        badge.classList.remove('hidden');
+        // 1. Acende a bolinha no Avatar
+        if (avatarBadge) {
+            avatarBadge.classList.remove('hidden');
+            avatarBadge.style.display = 'block';
+        }
+
+        // 2. Prepara o texto
+        let textoNotificacao = "Nova notificação recebida";
+        if (notifications[0] && notifications[0].message) {
+            const tempDiv = document.createElement("div");
+            tempDiv.innerHTML = notifications[0].message;
+            textoNotificacao = tempDiv.textContent || tempDiv.innerText || "";
+        }
+
+        // 3. Mostra a notificação no menu
+        if (menuArea) {
+            menuArea.classList.remove('hidden');
+            menuArea.style.display = 'block';
+        }
         
-        notificationList.innerHTML = notifications.map(notif => {
-            if (notif.isGeneral) {
-                return `<div class="list-group-item bg-transparent text-light border-secondary">${notif.message}</div>`;
-            } else {
-                // DESIGN NOVO: Botão redondo, discreto e alinhado
-                return `
-                <div class="list-group-item list-group-item-action notification-item d-flex justify-content-between align-items-center bg-transparent border-secondary text-light p-3 mb-2" id="notif-item-${notif.notificationId}" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.1) !important;">
-                    <div class="flex-grow-1 pe-3" style="cursor: pointer;" onclick="verBoletoDeNotificacao('${notif.boletoId}')">
-                        ${notif.message}
-                    </div>
-                    <button class="dismiss-notif-btn text-secondary" data-id="${notif.notificationId}" title="Limpar notificação" style="background: rgba(255,255,255,0.05); border: none; border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.2s;">
-                        <i class="bi bi-x-lg" style="font-size: 0.9rem;"></i>
-                    </button>
-                </div>`;
-            }
-        }).join('') + '<div class="text-secondary small text-center mt-3" style="opacity: 0.6;">As notificações limpas somem apenas para você.</div>';
+        if (menuText) {
+            menuText.innerText = textoNotificacao;
+            // 👇 A CORREÇÃO MÁGICA É ESTA LINHA AQUI: 👇
+            localStorage.setItem('sys_ultimo_aviso', textoNotificacao); 
+        }
+
+        // 4. Atualiza badge antigo
+        if (oldBadge) {
+            oldBadge.textContent = notifications.length;
+            oldBadge.classList.remove('hidden');
+        }
         
-        // Lógica do botão limpar
-        document.querySelectorAll('.dismiss-notif-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const notifId = e.currentTarget.dataset.id;
-                
-                // Salva no LocalStorage
-                const dismissedKey = 'ctwDismissedNotifs';
-                let dismissedList = [];
-                try { dismissedList = JSON.parse(safeStorage.getItem(dismissedKey) || '[]'); } catch(err) { dismissedList = []; }
-
-                if (!dismissedList.includes(notifId)) {
-                    dismissedList.push(notifId);
-                    safeStorage.setItem(dismissedKey, JSON.stringify(dismissedList));
-                }
-
-                // Efeito visual de remover
-                const itemRow = document.getElementById(`notif-item-${notifId}`);
-                if (itemRow) {
-                    itemRow.style.opacity = '0';
-                    setTimeout(() => itemRow.remove(), 300);
-                }
-
-                // Atualiza o contador
-                const currentCount = parseInt(badge.textContent || '0');
-                const newCount = Math.max(0, currentCount - 1);
-                if (newCount > 0) {
-                    badge.textContent = newCount;
+        // 5. Renderiza lista lateral
+        if (notificationList) {
+            notificationList.innerHTML = notifications.map(notif => {
+                if (notif.isGeneral) {
+                    return `<div class="list-group-item bg-transparent text-light border-secondary">${notif.message}</div>`;
                 } else {
-                    badge.classList.add('hidden');
-                    notificationList.innerHTML = '<div class="list-group-item bg-transparent text-secondary text-center border-0 p-4">Nenhuma notificação pendente.</div>';
+                    return `
+                    <div class="list-group-item list-group-item-action notification-item d-flex justify-content-between align-items-center bg-transparent border-secondary text-light p-3 mb-2" id="notif-item-${notif.notificationId}" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.1) !important;">
+                        <div class="flex-grow-1 pe-3" style="cursor: pointer;" onclick="verBoletoDeNotificacao('${notif.boletoId}')">
+                            ${notif.message}
+                        </div>
+                        <button class="dismiss-notif-btn text-secondary" data-id="${notif.notificationId}" title="Limpar notificação" style="background: rgba(255,255,255,0.05); border: none; border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.2s;">
+                            <i class="bi bi-x-lg" style="font-size: 0.9rem;"></i>
+                        </button>
+                    </div>`;
                 }
+            }).join('');
+            
+            // Reativa botões de fechar...
+            document.querySelectorAll('.dismiss-notif-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const notifId = e.currentTarget.dataset.id;
+                    const dismissedKey = 'ctwDismissedNotifs';
+                    let dismissedList = [];
+                    try { dismissedList = JSON.parse(localStorage.getItem(dismissedKey) || '[]'); } catch(err) { dismissedList = []; }
+
+                    if (!dismissedList.includes(notifId)) {
+                        dismissedList.push(notifId);
+                        localStorage.setItem(dismissedKey, JSON.stringify(dismissedList));
+                    }
+                    const itemRow = document.getElementById(`notif-item-${notifId}`);
+                    if (itemRow) {
+                        itemRow.style.opacity = '0';
+                        setTimeout(() => itemRow.remove(), 300);
+                    }
+                });
             });
-        });
+        }
 
     } else {
-        badge.classList.add('hidden');
-        notificationList.innerHTML = '<div class="list-group-item bg-transparent text-secondary text-center border-0 p-4">Nenhuma notificação pendente.</div>';
+        // Esconde tudo se não tiver notificação
+        if (avatarBadge) avatarBadge.classList.add('hidden');
+        if (menuArea) menuArea.classList.add('hidden');
+        if (oldBadge) oldBadge.classList.add('hidden');
+        localStorage.removeItem('sys_ultimo_aviso'); // Limpa a memória
     }
 }
+
 // --- FUNÇÕES RECUPERADAS (ESSENCIAIS PARA O ADMIN) ---
 function getTagList() {
     return (typeof tags !== 'undefined' && Array.isArray(tags)) ? tags : ['Nenhuma'];
@@ -2713,6 +2964,16 @@ function applyColorTheme(color) {
             btn.classList.add('active');
             btn.innerHTML = '<i class="bi bi-check-lg"></i>';
         }
+
+// Exemplo: Coloque onde você troca o tema
+function atualizarCorNavegador(corHex) {
+    // Muda a cor da barra de status/fundo do navegador
+    document.querySelector('meta[name="theme-color"]').setAttribute('content', corHex);
+    // Força o fundo do HTML a ser igual
+    document.documentElement.style.backgroundColor = corHex;
+    document.body.style.backgroundColor = corHex;
+}
+
     });
 }
 async function main() {
@@ -2737,7 +2998,8 @@ async function main() {
                 loadTagTexts();
                 loadSettingsFromDB(); 
                 setupNotificationListeners();
-                
+                                setupTeamProfilesListener(); // <--- ✅ COLE AQUI (Onde o banco já existe)
+
                 const loadingOverlay = document.getElementById('loadingOverlay');
                 if(loadingOverlay) loadingOverlay.style.opacity = '0';
                 
@@ -4242,32 +4504,39 @@ document.getElementById('admin-nav-buttons').addEventListener('click', e => {
 
 
 
-    // --- TOGGLE NOVO / HISTÓRICO DO BOOKIP ---
-        // --- TOGGLE NOVO / HISTÓRICO DO BOOKIP (CORRIGIDO) ---
+    // --- TOGGLE NOVO / HISTÓRICO DO BOOKIP (CORRIGIDO) ---
     const bookipToggle = document.getElementById('bookipModeToggle');
-    // Pegamos o novo container de busca que criamos no HTML
     const searchContainer = document.getElementById('bookipSearchContainer');
 
     if(bookipToggle) {
         bookipToggle.addEventListener('change', (e) => {
             const showHistory = e.target.checked;
             
-            // Alterna as telas principais
+            // 1. Alterna as telas principais (Conteúdo)
             document.getElementById('newBookipContent').classList.toggle('hidden', showHistory);
             document.getElementById('historyBookipContent').classList.toggle('hidden', !showHistory);
             
-            // Alterna a barra de busca separadamente (Segurança contra erro de impressão)
+            // 2. Alterna a barra de busca
             if (searchContainer) {
                 searchContainer.classList.toggle('hidden', !showHistory);
             }
 
+            // 3. CORREÇÃO: Alterna também os botões de filtro (Meus Arquivos)
+            const filterBar = document.getElementById('filterBarProfiles');
+            if (filterBar) {
+                // Se for histórico, mostra (remove hidden). Se for novo, esconde (add hidden).
+                filterBar.classList.toggle('hidden', !showHistory);
+                
+                // Força visual caso a classe hidden não funcione por CSS específico
+                filterBar.style.display = showHistory ? 'flex' : 'none';
+            }
+
+            // 4. Carrega o histórico se necessário
             if (showHistory) {
                 loadBookipHistory();
             }
         });
     }
-
-
 
     // ============================================================
     // CORREÇÃO: LÓGICA DE BUSCA E ADIÇÃO DE ITENS NO BOOKIP
@@ -4616,6 +4885,29 @@ function loadBookipHistory() {
     // Loading...
     container.innerHTML = '<div class="text-center p-4"><div class="spinner-border text-primary"></div><p class="mt-2 text-secondary">Carregando histórico...</p></div>';
 
+// --- CRIA BARRA DE FILTROS ---
+        // --- CRIA BARRA DE FILTROS (Com Seleção Automática) ---
+        if (!document.getElementById('filterBarProfiles')) {
+            // Define qual botão começa aceso
+            const filtroAtual = window.activeProfileFilter || 'todos';
+            const clsTodos = filtroAtual === 'todos' ? 'btn-light active fw-bold' : 'btn-outline-light';
+            const clsMeus = filtroAtual !== 'todos' ? 'btn-light active fw-bold' : 'btn-outline-light';
+
+            const filterHTML = `
+            <div id="filterBarProfiles" class="d-flex gap-2 mb-3 overflow-auto pb-2">
+                <button class="btn btn-sm ${clsTodos} filter-profile-btn" onclick="filtrarHistoricoPorPerfil('todos', this)" style="border-radius: 20px; padding: 5px 15px;">Todos</button>
+                <button class="btn btn-sm ${clsMeus} filter-profile-btn" onclick="filtrarHistoricoPorPerfil('MEUS_ARQUIVOS_DINAMICO', this)" style="border-radius: 20px; padding: 5px 15px;">
+                    <i class="bi bi-person-fill me-1"></i> Meus Arquivos
+                </button>
+            </div>`;
+
+
+            const searchBox = document.getElementById('bookipSearchContainer');
+            if(searchBox) searchBox.insertAdjacentHTML('beforebegin', filterHTML);
+        }
+
+
+
     // Remove listener antigo para não duplicar
     if (typeof bookipListener !== 'undefined' && bookipListener) {
         off(bookipsRef, 'value', bookipListener);
@@ -4662,6 +4954,8 @@ function loadBookipHistory() {
         } else {
             container.innerHTML = '<p class="text-center text-secondary mt-4">Nenhum recibo salvo.</p>';
         }
+
+
     });
 
     // --- FUNÇÕES INTERNAS DE FILTRO ---
@@ -4703,7 +4997,7 @@ function loadBookipHistory() {
             }
         }
 
-        // Lógica de Filtragem
+        // Lógica de Filtragem CORRIGIDA
         listaFiltradaCache = listaCompletaCache.filter(item => {
             const nDoc = (item.docNumber || '').toLowerCase();
             const nome = (item.nome || '').toLowerCase();
@@ -4711,8 +5005,18 @@ function loadBookipHistory() {
             const email = (item.email || '').toLowerCase(); 
             const telLimpo = (item.tel || '').toLowerCase().replace(/\D/g, ''); 
             const telOriginal = (item.tel || '').toLowerCase();
+
+            // Pega o nome de TODOS os produtos dessa venda
+            const produtosTexto = (item.items || []).map(p => p.nome).join(' ').toLowerCase(); 
             
-            const matchTexto = termo === '' || nDoc.includes(termo) || nome.includes(termo) || cpf.includes(termo) || email.includes(termo) || telOriginal.includes(termo) || telLimpo.includes(termo);
+            const matchTexto = termo === '' || 
+                               nDoc.includes(termo) || 
+                               nome.includes(termo) || 
+                               cpf.includes(termo) || 
+                               email.includes(termo) || 
+                               telOriginal.includes(termo) || 
+                               telLimpo.includes(termo) ||
+                               produtosTexto.includes(termo);
 
             let matchData = true;
             if (dataFiltro) {
@@ -4720,12 +5024,24 @@ function loadBookipHistory() {
                 if (!dataItem && item.criadoEm) dataItem = item.criadoEm.split('T')[0];
                 matchData = (dataItem === dataFiltro);
             }
-            return matchTexto && matchData;
+
+            // --- AQUI ESTÁ A CORREÇÃO (O FILTRO DE PERFIL AGORA FUNCIONA) ---
+            let matchPerfil = true;
+            // Se o filtro NÃO for 'todos', verifica se o criador é igual ao filtro ativo
+            if (window.activeProfileFilter && window.activeProfileFilter !== 'todos') {
+                matchPerfil = item.criadoPor === window.activeProfileFilter;
+            }
+
+            // Retorna apenas se TUDO for verdadeiro (Texto E Data E Perfil)
+            return matchTexto && matchData && matchPerfil;
         });
 
         itensVisiveis = 50; // Reseta paginação ao filtrar
         renderizarLote();
     }
+
+
+
 
     // --- RENDERIZAÇÃO NA TELA ---
     function renderizarLote() {
@@ -4738,60 +5054,113 @@ function loadBookipHistory() {
         }
 
         let html = `<div class="accordion w-100 history-accordion" id="bookipAccordion">` + 
-        fatia.map(item => {
+                fatia.map(item => {
+            // --- 1. TRATAMENTO DE DATA ---
             let dataVisual = '---';
+            let dataVendaObj = new Date();
+
             if (item.dataVenda) {
                  const p = item.dataVenda.split('-'); 
+                 // Cria data segura (Ano, Mês-1, Dia)
+                 dataVendaObj = new Date(p[0], p[1]-1, p[2]);
                  dataVisual = `${p[2]}/${p[1]}/${p[0]}`;
             } else if (item.criadoEm) {
-                 dataVisual = new Date(item.criadoEm).toLocaleDateString('pt-BR');
+                 dataVendaObj = new Date(item.criadoEm);
+                 dataVisual = dataVendaObj.toLocaleDateString('pt-BR');
             }
+
             
             const docNum = item.docNumber || '---';
 
-            // =========================================================
-            // LÓGICA DE CORES 🎨
-            // =========================================================
-            let badgeClass = 'bg-primary'; // Azul (Padrão / Garantia)
+            // --- 2. SEMÁFORO INTELIGENTE (Separação Recibo vs Garantia) ---
+            const diasGarantia = parseInt(item.diasGarantia) || 0;
+            const dataVencimento = new Date(dataVendaObj);
+            dataVencimento.setDate(dataVendaObj.getDate() + diasGarantia);
             
-            // 1. SITUAÇÃO (Prioridade: Amarelo)
+            const hoje = new Date();
+            // Zera as horas para comparar apenas datas (evita bugs de fuso)
+            hoje.setHours(0,0,0,0);
+            dataVencimento.setHours(0,0,0,0);
+
+            const diferencaTempo = dataVencimento - hoje;
+            const diasRestantes = Math.ceil(diferencaTempo / (1000 * 60 * 60 * 24));
+
+            // CORES PADRÃO
+            let corStatus = '#0d6efd'; // Azul (Padrão para Recibos/Neutro)
+            let textoStatus = 'Recibo';
+            let textoCor = '#0d6efd'; // Cor do texto do status
+
+            // Lógica de Prioridade
             const isSituacao = (item.type === 'situacao') || (item.items && item.items[0] && item.items[0].isSituation);
-            
-            // 2. RECIBO (Verde)
             const isRecibo = (item.type === 'recibo');
 
             if (isSituacao) {
-                badgeClass = 'bg-warning text-dark'; // Amarelo
-            } else if (isRecibo) {
-                badgeClass = 'bg-success'; // Verde
+                // SITUAÇÃO: Amarelo
+                corStatus = '#ffc107'; 
+                textoStatus = 'Situação';
+                textoCor = '#b58900'; // Amarelo mais escuro para ler melhor
+            } 
+            else if (isRecibo) {
+                 // RECIBO: Azul (Neutro - Não confunde com garantia)
+                 corStatus = '#0d6efd'; 
+                 textoStatus = 'Recibo Simples';
+                 textoCor = '#0d6efd';
+            } 
+            else if (diasGarantia > 0) {
+                // GARANTIA: Aqui entra o Semáforo
+                if (diasRestantes < 0) {
+                    corStatus = '#dc3545'; // Vermelho
+                    textoStatus = `Vencida há ${Math.abs(diasRestantes)} dias`;
+                    textoCor = '#dc3545';
+                } else if (diasRestantes <= 7) {
+                    corStatus = '#fd7e14'; // Laranja
+                    textoStatus = `Vence em ${diasRestantes} dias!`;
+                    textoCor = '#fd7e14';
+                } else {
+                    corStatus = '#198754'; // Verde
+                    textoStatus = 'Garantia Ativa';
+                    textoCor = '#198754';
+                }
+            } else {
+                // Caso não tenha dias definidos mas não seja recibo explícito
+                textoStatus = 'Sem Garantia';
             }
-            // =========================================================
 
-            // --- CÓDIGO NOVO (Lógica Visual de Envio) ---
+            // --- 3. VISUAL DO CARTÃO ---
             const foiEnviado = (item.statusEnvio === true);
             
-            // Define se a borda fica verde e o fundo claro
-            const styleCard = foiEnviado ? 'border-left: 6px solid #28a745; background-color: #f0fff4;' : '';
+            // Fundo verde claro APENAS se enviado (Feedback de ação)
+            const fundoCard = foiEnviado ? '#f0fff4' : '#fff';
             
-            // Define se o botão fica cinza (check) ou amarelo (email)
+            // A Borda Esquerda é quem manda no Status (Semáforo)
+            const styleCard = `border-left: 6px solid ${corStatus}; background-color: ${fundoCard};`;
+            
+            // Botões
             const classBtnEnvio = foiEnviado ? 'btn-dark' : 'btn-warning';
             const iconBtnEnvio = foiEnviado ? 'bi-check-circle-fill text-success' : 'bi-envelope-at-fill';
             const titleBtnEnvio = foiEnviado ? 'Já enviado (Reenviar)' : 'PDF/Email';
-            // --------------------------------------------
 
-
-                        return `
-            <div class="accordion-item" style="${styleCard}">
-
-
-
+            return `
+                       <div class="accordion-item" style="${styleCard}">
                 <h2 class="accordion-header" id="head-bk-${item.id}">
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-bk-${item.id}">
-                        <span class="badge ${badgeClass} me-2">Doc ${docNum}</span> 
-                        <span class="text-truncate" style="max-width: 150px;">${item.nome}</span> 
-                        <span class="ms-auto small text-secondary">${dataVisual}</span>
-                    </button>
+                        
+                        <span class="badge me-2" style="background-color: ${corStatus}; color: ${isSituacao ? '#000' : '#fff'};">Doc ${docNum}</span> 
+                        
+                        <div class="d-flex flex-column text-truncate" style="max-width: 160px;">
+                            <span class="fw-bold">${item.nome}</span>
+                            <span style="font-size: 0.75rem; color: ${textoCor}; font-weight: 700; text-transform: uppercase;">${textoStatus}</span>
+                        </div>
+
+                        <div class="text-end ms-auto" style="min-width: 80px;">
+                            <small class="d-block text-secondary" style="font-size: 0.7rem;">${dataVisual}</small>
+                            <span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-25" style="font-size: 0.65rem; font-weight: normal; letter-spacing: 0.5px;">
+                                <i class="bi bi-person me-1"></i>${item.criadoPor || 'Geral'}
+                            </span>
+                        </div>
+                        </button>
                 </h2>
+                
                 <div id="collapse-bk-${item.id}" class="accordion-collapse collapse" data-bs-parent="#bookipAccordion">
                     <div class="accordion-body">
                         <p><strong>Cliente:</strong> ${item.nome}</p>
@@ -4799,10 +5168,13 @@ function loadBookipHistory() {
                             ${(item.items || []).map(i => `<li>${i.qtd}x ${i.nome} - R$ ${parseFloat(i.valor).toFixed(2)}</li>`).join('')}
                         </ul>
                         <div class="d-flex justify-content-end gap-2 mt-2">
+
+
+
+
                             <button class="btn btn-sm btn-info edit-bookip-btn" data-id="${item.id}" title="Editar"><i class="bi bi-pencil-square"></i></button>
 
-<button class="btn btn-sm ${classBtnEnvio} email-history-btn" data-id="${item.id}" title="${titleBtnEnvio}"><i class="bi ${iconBtnEnvio}"></i></button>
-
+                            <button class="btn btn-sm ${classBtnEnvio} email-history-btn" data-id="${item.id}" title="${titleBtnEnvio}"><i class="bi ${iconBtnEnvio}"></i></button>
 
                             <button class="btn btn-sm btn-primary print-old-bookip" data-id="${item.id}" title="Imprimir"><i class="bi bi-printer"></i></button>
                             <button class="btn btn-sm btn-outline-danger delete-bookip-btn" data-id="${item.id}" title="Apagar"><i class="bi bi-trash"></i></button>
@@ -5056,7 +5428,8 @@ if (btnSave) {
                 
                 diasGarantia: dias,
                 dataVenda: dataFinalVenda,
-                criadoEm: new Date().toISOString()
+                criadoEm: new Date().toISOString(),
+criadoPor: currentUserProfile || "Desconhecido", 
             };
 
             // SALVA NO FIREBASE
@@ -6014,7 +6387,14 @@ function getReciboHTML(dados) {
 
 
     return `
-        <div style="font-family: 'Segoe UI', Arial, sans-serif; color: #000; background: #fff; padding: 20px 30px; width: 750px; margin: 0 auto; box-sizing: border-box;">
+        <div style="font-family: 'Segoe UI',
+
+
+
+
+
+
+Arial, sans-serif; color: #000; background: #fff; padding: 20px 30px; width: 750px; margin: 0 auto; box-sizing: border-box;">
             <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
                 <tr>
                     <td style="width: 30%; vertical-align: top;"><img src="${logoUrl}" style="width: 160px; height: auto; object-fit: contain;"></td>
@@ -6214,6 +6594,17 @@ async function gerarPdfDoHistorico(dados, botao) {
     
     if (typeof getReciboHTML === 'function') {
         containerTemp.innerHTML = getReciboHTML(dados);
+
+ // 👇 CORREÇÃO DE COR (Sem mexer no layout) 👇
+        const styleFix = document.createElement('style');
+        styleFix.innerHTML = `
+            #pdf-temp-fix, #pdf-temp-fix * { color: #000000 !important; text-shadow: none !important; }
+            #pdf-temp-fix th { color: #ffffff !important; } 
+        `;
+        containerTemp.id = 'pdf-temp-fix'; // Batiza o container
+        containerTemp.appendChild(styleFix); // Injeta a vacina de cor
+        // 👆 FIM DA CORREÇÃO 👆
+
     } else {
         alert("Erro: Fábrica não encontrada.");
         removerLoading();
@@ -7204,6 +7595,131 @@ function iniciarRascunho() {
         });
     }
 }
+
+// 🖨️ IMPRESSÃO QUE RESPEITA O DESIGN MAS DESTRAVA AS PÁGINAS
+// ============================================================
+window.imprimirUniversal = function() {
+    // 1. Identifica qual documento está na tela
+    const contratoDiv = document.getElementById('contractPreview');
+    const bookipDiv = document.getElementById('bookipPreview');
+    
+    let conteudo = "";
+    let titulo = "Documento";
+
+    // Verifica quem tem texto
+    if (contratoDiv && contratoDiv.innerHTML.replace(/<[^>]*>?/gm, '').trim().length > 20) {
+        conteudo = contratoDiv.innerHTML;
+        titulo = "Contrato";
+    } else if (bookipDiv && bookipDiv.innerHTML.replace(/<[^>]*>?/gm, '').trim().length > 20) {
+        conteudo = bookipDiv.innerHTML;
+        titulo = "Garantia";
+    } else {
+        alert("Nada para imprimir! Gere o documento primeiro.");
+        return;
+    }
+
+    // 2. Abre uma janela nova (Clone)
+    const janela = window.open('', '_blank', 'height=900,width=800');
+    
+    // 3. Monta o HTML puxando o seu CSS original + A Correção de Rolagem
+    janela.document.write(`
+        <html>
+            <head>
+                <title>${titulo}</title>
+                <link rel="stylesheet" href="style.css?v=${Date.now()}">
+                <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+                
+                <style>
+                    /* AQUI ESTÁ O SEGRED0: DESTRAVA SÓ NESSA JANELA */
+                    html, body {
+                        height: auto !important;
+                        overflow: visible !important;
+                        background: white !important;
+                        color: black !important;
+                        display: block !important;
+                    }
+                    /* Remove botões e coisas inúteis se tiverem vindo junto */
+                    .no-print, button, .btn { display: none !important; }
+                    
+                    /* Ajustes de margem para papel */
+                    @page { margin: 10mm; }
+                    body { padding: 20px; }
+                </style>
+            </head>
+            <body>
+                ${conteudo}
+                <script>
+                    // Espera carregar o CSS antes de imprimir
+                    window.onload = function() {
+                        setTimeout(() => {
+                            window.print();
+                            // window.close(); // Se quiser fechar sozinho depois
+                        }, 1000);
+                    };
+                </script>
+            </body>
+        </html>
+    `);
+    janela.document.close();
+};
+
+
+// --- CORREÇÃO FINAL (BLINDADA) ---
+// Funciona mesmo se o botão for criado depois
+document.addEventListener('click', function(e) {
+    // Verifica se clicou no botão de Gerar Relatório (ou no ícone dentro dele)
+    if (e.target && (e.target.id === 'generateReportBtn' || e.target.closest('#generateReportBtn'))) {
+        
+        // 1. Limpa o lixo dos outros documentos
+        const lixo = ['bookipPreview', 'contractPreview'];
+        lixo.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = ''; 
+        });
+
+        // 2. Garante que não tem travas no corpo do site
+        document.body.classList.remove('print-only-contract', 'print-only-bookip');
+        
+        // (Opcional) Console log para você saber que limpou
+        console.log("Lixeira de impressão esvaziada!");
+    }
+});
+// ============================================================
+// 🔍 FUNÇÃO DE CLIQUE NO FILTRO (Adicione ao final do app.js)
+// ============================================================
+window.filtrarHistoricoPorPerfil = function(perfil, btn) {
+    // 1. Define qual perfil filtrar
+    if (perfil === 'MEUS_ARQUIVOS_DINAMICO') {
+        if (!currentUserProfile) {
+            // Se o usuário não tiver logado/escolhido perfil
+            if(typeof showCustomModal === 'function') showCustomModal({ message: "Selecione seu perfil no menu primeiro." });
+            else alert("Selecione seu perfil primeiro.");
+            return;
+        }
+        window.activeProfileFilter = currentUserProfile;
+    } else {
+        window.activeProfileFilter = 'todos';
+    }
+
+    // 2. Atualiza visual dos botões (Pinta o ativo de branco)
+    document.querySelectorAll('.filter-profile-btn').forEach(b => {
+        b.classList.remove('btn-light', 'active', 'fw-bold');
+        b.classList.add('btn-outline-light');
+    });
+    
+    if(btn) {
+        btn.classList.remove('btn-outline-light');
+        btn.classList.add('btn-light', 'active', 'fw-bold');
+    }
+
+    // 3. Força a atualização da lista (Chama a função que já existe no seu código)
+    // Disparar um evento no campo de busca obriga o filtro a rodar de novo
+    const searchInput = document.getElementById('bookipHistorySearch');
+    if(searchInput) {
+        searchInput.dispatchEvent(new Event('input'));
+    }
+};
+
 
 
         });
