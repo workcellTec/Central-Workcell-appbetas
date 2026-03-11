@@ -9808,63 +9808,207 @@ window.updateNotificationUI  = updateNotificationUI;
         var ov = document.createElement('div');
         ov.style.cssText = 'position:fixed;inset:0;z-index:26000;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;padding:20px;';
         ov.innerHTML = `
-            <div style="background:var(--bg-color,#0b1325);border:1px solid var(--glass-border);border-radius:20px;padding:24px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:14px;">
-                <div style="font-weight:700;font-size:1rem;color:var(--text-color);">✏️ Editar: ${nome}</div>
+            <div style="background:var(--bg-color,#0b1325);border:1px solid var(--glass-border);border-radius:20px;padding:24px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:16px;">
+
+                <div style="font-weight:700;font-size:1rem;color:var(--text-color);">✏️ Editar Perfil</div>
+
+                <!-- Nome -->
                 <div>
                     <label style="font-size:.75rem;color:var(--text-secondary);margin-bottom:4px;display:block;">Nome</label>
                     <input id="_editPerfilNome" class="form-control" type="text" value="${nome}" autocomplete="off">
                 </div>
-                <div>
-                    <label style="font-size:.75rem;color:var(--text-secondary);margin-bottom:4px;display:block;">Senha (deixe vazio para sem senha)</label>
-                    <input id="_editPerfilSenha" class="form-control" type="password" placeholder="Nova senha..." autocomplete="new-password">
-                    ${senhaAtual ? '<div style="font-size:.68rem;color:#f59e0b;margin-top:4px;">⚠️ Já tem senha — deixe vazio para manter a atual</div>' : ''}
+
+                <!-- Bloco de senha -->
+                <div style="background:rgba(255,255,255,0.04);border:1px solid var(--glass-border);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px;">
+
+                    ${senhaAtual ? `
+                    <!-- Tem senha: mostra status + opções -->
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span style="font-size:1.1rem;">🔐</span>
+                        <span style="font-size:.78rem;color:var(--text-color);font-weight:600;">Senha definida</span>
+                    </div>
+
+                    <div id="_editSenhaOpcoes" style="display:flex;flex-direction:column;gap:8px;">
+                        <button id="_btnAlterarSenha" style="background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.3);color:#3b82f6;border-radius:8px;padding:8px;font-size:.75rem;cursor:pointer;font-weight:600;">
+                            🔄 Alterar senha
+                        </button>
+                        <button id="_btnRemoverSenha" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#ef4444;border-radius:8px;padding:8px;font-size:.75rem;cursor:pointer;font-weight:600;">
+                            🔓 Remover senha (deixar sem senha)
+                        </button>
+                    </div>
+
+                    <div id="_novaSenhaContainer" style="display:none;">
+                        <label style="font-size:.72rem;color:var(--text-secondary);margin-bottom:4px;display:block;">Nova senha</label>
+                        <input id="_editPerfilSenha" class="form-control" type="password" placeholder="Digite a nova senha..." autocomplete="new-password">
+                    </div>
+
+                    <div id="_removerSenhaConfirm" style="display:none;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:8px;padding:10px;font-size:.75rem;color:#ef4444;line-height:1.4;">
+                        ⚠️ A senha será <strong>removida</strong> ao salvar. Este perfil ficará sem proteção.
+                    </div>
+                    ` : `
+                    <!-- Sem senha: mostra campo direto -->
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px;">
+                        <span style="font-size:1.1rem;">🔓</span>
+                        <span style="font-size:.78rem;color:var(--text-secondary);">Sem senha definida</span>
+                    </div>
+                    <label style="font-size:.72rem;color:var(--text-secondary);margin-bottom:2px;display:block;">Definir senha (opcional)</label>
+                    <input id="_editPerfilSenha" class="form-control" type="password" placeholder="Deixe vazio para continuar sem senha..." autocomplete="new-password">
+                    `}
                 </div>
+
                 <div style="display:flex;gap:10px;">
                     <button id="_editPerfilCancel" class="btn btn-outline-secondary flex-fill">Cancelar</button>
-                    <button id="_editPerfilSave"   class="btn btn-primary flex-fill">Salvar</button>
+                    <button id="_editPerfilSave"   class="btn btn-primary flex-fill">💾 Salvar</button>
                 </div>
             </div>
         `;
         document.body.appendChild(ov);
+
         var nomeInp  = document.getElementById('_editPerfilNome');
         var senhaInp = document.getElementById('_editPerfilSenha');
         setTimeout(function(){ if(nomeInp) nomeInp.focus(); }, 80);
 
+        // Lógica dos botões de senha (só existe se já tiver senha)
+        var _removerSenha = false;
+        if (senhaAtual) {
+            document.getElementById('_btnAlterarSenha').addEventListener('click', function() {
+                _removerSenha = false;
+                document.getElementById('_novaSenhaContainer').style.display = 'block';
+                document.getElementById('_removerSenhaConfirm').style.display = 'none';
+                document.getElementById('_editSenhaOpcoes').style.display = 'none';
+                setTimeout(function(){ if(senhaInp) senhaInp.focus(); }, 60);
+            });
+            document.getElementById('_btnRemoverSenha').addEventListener('click', function() {
+                _removerSenha = true;
+                document.getElementById('_removerSenhaConfirm').style.display = 'block';
+                document.getElementById('_novaSenhaContainer').style.display = 'none';
+                document.getElementById('_editSenhaOpcoes').style.display = 'none';
+            });
+        }
+
         document.getElementById('_editPerfilCancel').addEventListener('click', function(){ ov.remove(); });
         document.getElementById('_editPerfilSave').addEventListener('click', function(){
             var novoNome  = nomeInp.value.trim();
-            var novaSenha = senhaInp.value;
+            var novaSenha = senhaInp ? senhaInp.value : '';
             if(!novoNome) { alert('Nome obrigatório.'); return; }
 
             var updates = { name: novoNome };
-            if(novaSenha) {
+
+            if (_removerSenha) {
+                // Remove explicitamente a senha do Firebase
+                updates.senha = null;
+            } else if (novaSenha) {
                 updates.senha = novaSenha;
-            } else if(senhaAtual) {
+            } else if (senhaAtual && !_removerSenha) {
                 updates.senha = senhaAtual; // mantém a existente
             }
 
             update(ref(db, 'team_profiles/' + pid), updates).then(function(){
-                // Atualiza currentUserProfile se o nome mudou
                 if(nome === currentUserProfile && novoNome !== nome) {
                     currentUserProfile = novoNome;
                     localStorage.setItem('ctwUserProfile', novoNome);
                 }
                 ov.remove();
                 _loadPerfis();
-                if(typeof showCustomModal === 'function') showCustomModal({ message: '✅ Perfil atualizado!' });
+                var msg = _removerSenha ? '✅ Senha removida! Perfil sem proteção.' : '✅ Perfil atualizado!';
+                if(typeof showCustomModal === 'function') showCustomModal({ message: msg });
             }).catch(function(e){ alert('Erro: ' + e.message); });
         });
     }
 
     function _deletePerfil(pid, nome) {
-        if(!confirm('Remover "' + nome + '" da equipe? Isso remove para todos.')) return;
-        remove(ref(db, 'team_profiles/' + pid)).then(function(){
-            if(nome === currentUserProfile) {
-                currentUserProfile = '';
-                localStorage.removeItem('ctwUserProfile');
+        // Modal estilizado de confirmação com senha de admin
+        var ov = document.createElement('div');
+        ov.style.cssText = 'position:fixed;inset:0;z-index:26000;background:rgba(0,0,0,.9);display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px);';
+        ov.innerHTML = `
+            <div style="background:var(--bg-color,#0b1325);border:1px solid rgba(239,68,68,.35);border-radius:20px;padding:24px;width:100%;max-width:340px;display:flex;flex-direction:column;align-items:center;gap:16px;text-align:center;">
+
+                <!-- Ícone de perigo -->
+                <div style="width:60px;height:60px;border-radius:50%;background:rgba(239,68,68,.15);border:2px solid rgba(239,68,68,.3);display:flex;align-items:center;justify-content:center;font-size:1.8rem;">
+                    🗑️
+                </div>
+
+                <!-- Título -->
+                <div style="display:flex;flex-direction:column;gap:4px;">
+                    <span style="font-size:1rem;font-weight:700;color:#ef4444;">Excluir perfil?</span>
+                    <span style="font-size:.82rem;color:var(--text-color);font-weight:600;">"${nome}"</span>
+                    <span style="font-size:.73rem;color:var(--text-secondary);line-height:1.4;margin-top:2px;">
+                        Essa ação é irreversível e vai remover<br>este perfil para <strong>toda a equipe</strong>.
+                    </span>
+                </div>
+
+                <!-- Campo de senha -->
+                <div style="width:100%;text-align:left;">
+                    <label style="font-size:.72rem;color:var(--text-secondary);margin-bottom:6px;display:block;">🔑 Confirme com a senha de administrador:</label>
+                    <input id="_deletePerfilSenha" class="form-control" type="password"
+                           placeholder="••••••"
+                           autocomplete="off"
+                           style="text-align:center;letter-spacing:6px;font-size:1.1rem;">
+                    <div id="_deletePerfilErro" style="display:none;margin-top:6px;font-size:.72rem;color:#ef4444;font-weight:600;">
+                        ❌ Senha incorreta. Tente novamente.
+                    </div>
+                </div>
+
+                <!-- Botões -->
+                <div style="display:flex;gap:10px;width:100%;">
+                    <button id="_deletePerfilCancel" style="
+                        flex:1;padding:10px;border-radius:10px;
+                        background:rgba(255,255,255,0.06);
+                        border:1px solid var(--glass-border);
+                        color:var(--text-color);font-size:.85rem;
+                        font-weight:600;cursor:pointer;">
+                        Cancelar
+                    </button>
+                    <button id="_deletePerfilConfirm" style="
+                        flex:1;padding:10px;border-radius:10px;
+                        background:rgba(239,68,68,.2);
+                        border:1px solid rgba(239,68,68,.4);
+                        color:#ef4444;font-size:.85rem;
+                        font-weight:700;cursor:pointer;">
+                        🗑️ Excluir
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(ov);
+
+        var senhaInp = document.getElementById('_deletePerfilSenha');
+        var erroDiv  = document.getElementById('_deletePerfilErro');
+        setTimeout(function(){ if(senhaInp) senhaInp.focus(); }, 80);
+
+        document.getElementById('_deletePerfilCancel').addEventListener('click', function(){ ov.remove(); });
+
+        document.getElementById('_deletePerfilConfirm').addEventListener('click', function(){
+            if(senhaInp.value !== '220390') {
+                erroDiv.style.display = 'block';
+                senhaInp.value = '';
+                senhaInp.focus();
+                // Shake animation
+                senhaInp.style.transition = 'transform 0.08s';
+                var shakes = ['-6px','6px','-4px','4px','0px'];
+                var i = 0;
+                var shake = setInterval(function(){
+                    senhaInp.style.transform = 'translateX(' + shakes[i++] + ')';
+                    if(i >= shakes.length) { clearInterval(shake); senhaInp.style.transform = ''; }
+                }, 60);
+                return;
             }
-            _loadPerfis();
-        }).catch(function(e){ alert('Erro: ' + e.message); });
+            // Senha correta — exclui
+            ov.remove();
+            remove(ref(db, 'team_profiles/' + pid)).then(function(){
+                if(nome === currentUserProfile) {
+                    currentUserProfile = '';
+                    localStorage.removeItem('ctwUserProfile');
+                }
+                _loadPerfis();
+                if(typeof showCustomModal === 'function') showCustomModal({ message: '✅ Perfil "' + nome + '" removido.' });
+            }).catch(function(e){ alert('Erro: ' + e.message); });
+        });
+
+        // Enter no campo de senha confirma
+        senhaInp.addEventListener('keydown', function(e){
+            if(e.key === 'Enter') document.getElementById('_deletePerfilConfirm').click();
+        });
     }
 
     function _addPerfil() {
