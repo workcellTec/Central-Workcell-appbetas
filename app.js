@@ -906,10 +906,11 @@ function openCalculatorSection(sectionId) {
 
     // Mapeamento de qual select pertence a qual seção
     const sectionMap = {
-        'fecharVenda': { m: 'machine1', b: 'brand1', init: () => { updateInstallmentsOptions(); updateFecharVendaUI(); } },
-        'repassarValores': { m: 'machine2', b: 'brand2', init: () => updateRepassarValoresUI() },
+        'fecharVenda':        { m: 'machine1', b: 'brand1', init: () => { updateInstallmentsOptions(); updateFecharVendaUI(); } },
+        'repassarValores':    { m: 'machine2', b: 'brand2', init: () => updateRepassarValoresUI() },
         'calcularEmprestimo': { m: 'machine4', b: 'brand4', init: () => updateCalcularEmprestimoUI() },
-        'calcularPorAparelho': { m: 'machine3', b: 'brand3', init: () => updateCalcularPorAparelhoUI() }
+        'calcularPorAparelho':{ m: 'machine3', b: 'brand3', init: () => updateCalcularPorAparelhoUI() },
+        'emprestarValores':   { m: 'machine5', b: 'brand5', init: () => calculateEmprestarValores() },
     };
 
     const config = sectionMap[sectionId];
@@ -4005,6 +4006,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Botão Voltar do Sub-menu da Calculadora
     document.getElementById('backFromCalculatorHome').addEventListener('click', () => showMainSection('main'));
+
+    // ── Aplica padrão de maquininha em TODOS os selects logo no início ──
+    (function aplicarPadraoMaquinaGlobal() {
+        const defMachine = safeStorage.getItem('ctwDefaultMachine');
+        const defBrand   = safeStorage.getItem('ctwDefaultBrand');
+        if (!defMachine) return;
+        ['machine1','machine2','machine3','machine4','machine5'].forEach(id => {
+            const sel = document.getElementById(id);
+            if (sel) sel.value = defMachine;
+        });
+        if (defMachine !== 'pagbank' && defBrand) {
+            ['brand1','brand2','brand3','brand4','brand5'].forEach(id => {
+                const sel = document.getElementById(id);
+                if (sel) sel.value = defBrand;
+            });
+        }
+    })();
 
     ['openFecharVenda', 'openRepassarValores', 'openCalcularEmprestimo', 'openCalcularPorAparelho'].forEach(id => { document.getElementById(id).addEventListener('click', () => openCalculatorSection(id.replace('open', '').charAt(0).toLowerCase() + id.slice(5))); });
     ['backFromFecharVenda', 'backFromRepassarValores', 'backFromCalcularEmprestimo', 'backFromCalcularPorAparelho'].forEach(id => { document.getElementById(id).addEventListener('click', () => openCalculatorSection('calculatorHome')); });
@@ -9999,16 +10017,86 @@ window.updateNotificationUI  = updateNotificationUI;
                 }, 60);
                 return;
             }
-            // Senha correta — exclui
+            // Senha correta — exclui perfil e marca registros vinculados
             ov.remove();
-            remove(ref(db, 'team_profiles/' + pid)).then(function(){
-                if(nome === currentUserProfile) {
+
+            async function _excluirPerfilComMarcacao() {
+                const tag = '⚠️ Perfil removido (' + nome + ')';
+
+                // Helper: varre um nó e marca campos que correspondam ao perfil
+                async function marcarNo(no, campos) {
+                    try {
+                        const snap = await get(ref(db, no));
+                        if (!snap.exists()) return;
+                        const upd = {};
+                        snap.forEach(child => {
+                            const d = child.val();
+                            campos.forEach(campo => {
+                                if (d[campo] === nome) {
+                                    upd[no + '/' + child.key + '/' + campo] = tag;
+                                }
+                            });
+                        });
+                        if (Object.keys(upd).length > 0) await update(ref(db), upd);
+                    } catch(e) { console.warn('Erro ao marcar ' + no + ':', e); }
+                }
+
+                // 1. Bookips — criadoPor
+                await marcarNo('bookips', ['criadoPor']);
+
+                // 2. Lixeira de Bookips — criadoPor (cópia do bookip, mesmo campo)
+                await marcarNo('trash_bookips', ['criadoPor']);
+
+                // 3. Contratos / Boletos — criadoPor
+                await marcarNo('boletos', ['criadoPor']);
+
+                // 4. Clientes — criadoPor + atribuidoA
+                await marcarNo('clientes', ['criadoPor', 'atribuidoA']);
+
+                // 5. Consertos — criadoPor + responsavel + cada user da timeline
+                try {
+                    const snapRep = await get(ref(db, 'repairs'));
+                    if (snapRep.exists()) {
+                        const updRep = {};
+                        snapRep.forEach(child => {
+                            const d   = child.val();
+                            const base = 'repairs/' + child.key;
+                            if (d.criadoPor   === nome) updRep[base + '/criadoPor']   = tag;
+                            if (d.responsavel === nome) updRep[base + '/responsavel'] = tag;
+                            // Cada etapa da timeline pode ter o user do perfil
+                            if (d.timeline && typeof d.timeline === 'object') {
+                                Object.entries(d.timeline).forEach(([etapa, val]) => {
+                                    if (val && val.user === nome) {
+                                        updRep[base + '/timeline/' + etapa + '/user'] = tag;
+                                    }
+                                });
+                            }
+                        });
+                        if (Object.keys(updRep).length > 0) await update(ref(db), updRep);
+                    }
+                } catch(e) { console.warn('Erro ao marcar repairs:', e); }
+
+                // 6. Remove o nó do perfil em si (favorites, avatarUrl, senha somem junto)
+                await remove(ref(db, 'team_profiles/' + pid));
+
+                // 7. Limpa localStorage do dispositivo que está fazendo a exclusão
+                localStorage.removeItem('ctwAvatar_' + nome.toLowerCase().replace(/\s+/g, '_'));
+                localStorage.removeItem('ctw_favs_'  + nome.toLowerCase().replace(/\s+/g, '_'));
+                if (nome === currentUserProfile) {
                     currentUserProfile = '';
                     localStorage.removeItem('ctwUserProfile');
                 }
+
+                // 8. Invalida cache da equipe para forçar recarga
+                localStorage.removeItem('cache_equipe_local');
+
                 _loadPerfis();
-                if(typeof showCustomModal === 'function') showCustomModal({ message: '✅ Perfil "' + nome + '" removido.' });
-            }).catch(function(e){ alert('Erro: ' + e.message); });
+                if (typeof showCustomModal === 'function') {
+                    showCustomModal({ message: '✅ Perfil "' + nome + '" removido.\nTodos os registros vinculados foram marcados.' });
+                }
+            }
+
+            _excluirPerfilComMarcacao().catch(function(e){ alert('Erro: ' + e.message); });
         });
 
         // Enter no campo de senha confirma
