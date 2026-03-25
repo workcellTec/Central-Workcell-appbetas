@@ -193,7 +193,7 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
             body: JSON.stringify({
-                model: GROQ_MODEL, max_tokens: 4096, temperature: 0.2,
+                model: GROQ_MODEL, max_tokens: 4096, temperature: 0.0,
                 messages: [{ role: 'user', content: parts }]
             })
         });
@@ -205,6 +205,7 @@
     function buildPrompt(produto, valor) {
         var vf = Number(valor).toLocaleString('pt-BR',{minimumFractionDigits:2});
         var vn = Number(valor);
+        var e20 = (vn*0.20).toLocaleString('pt-BR',{minimumFractionDigits:2});
         var e30 = (vn*0.30).toLocaleString('pt-BR',{minimumFractionDigits:2});
         var e35 = (vn*0.35).toLocaleString('pt-BR',{minimumFractionDigits:2});
         var e60 = (vn*0.60).toLocaleString('pt-BR',{minimumFractionDigits:2});
@@ -238,9 +239,9 @@
 '- FRACO (40-59): Autonomo, gasta tudo, tem emprestimos.\n'+
 '- REPROVADO (0-39): Fraude, saldo negativo cronico.\n\n'+
 '=== PASSO 3 - BALANCA DE RISCO ===\n'+
-'FORTE: 30% = R$ '+e30+' | MEDIO: 35% = R$ '+e35+' | FRACO: 60% = R$ '+e60+'\n\n'+
+'FORTE (nota 85-100): 20% = R$ '+e20+' | MEDIO (nota 60-84): 35% = R$ '+e35+' | FRACO (nota 40-59): 60% = R$ '+e60+'\n\n'+
 '=== PASSO 4 - TESTE DE FOGO ===\n'+
-'Teto: FORTE (30% renda) | MEDIO (25%) | FRACO (10%).\n'+
+'Teto: FORTE (30% renda) | MEDIO (20%) | FRACO (10%).\n'+
 'Parcela base = (Valor - Entrada Minima) / 12 + juros 6%am.\n'+
 'Se parcela > Teto: decisao=SUGESTAO_ENTRADA_ALTA. EntradaTurbinada = Valor - (Teto x 8,4).\n'+
 'Se EntradaTurbinada > 80% do Valor: decisao=SUGESTAO_DOWNGRADE.\n\n'+
@@ -293,7 +294,7 @@
             var confianca      = (obj.confiancaLeitura || 'ALTA').toUpperCase();
 
             var risco = 'REPROVADO', entradaPct = 0.60;
-            if (nota >= 80) { risco = 'FORTE';      entradaPct = 0.30; }
+            if (nota >= 85) { risco = 'FORTE';      entradaPct = 0.20; }
             else if (nota >= 60) { risco = 'MEDIO'; entradaPct = 0.35; }
             else if (nota >= 40) { risco = 'FRACO'; entradaPct = 0.60; }
             else { risco = 'REPROVADO'; aprov = false; }
@@ -367,6 +368,53 @@
         var riscoLabel = d.risco.split(' \u00b7 ')[0];
         var nota_html = '<div class="cs-nota-row"><div class="cs-nota-c" style="border-color:'+nc+';color:'+nc+';background:'+nc+'18">'+d.nota+'</div><div><div class="cs-nota-lbl">Pontuacao &middot; <span style="color:'+nc+';font-weight:800">'+riscoLabel+'</span></div>'+(d.rendaEstimada>0?'<div class="cs-nota-renda">\ud83d\udcb5 Renda estimada: <strong>'+R$(d.rendaEstimada)+'</strong></div>':'')+'</div></div>';
 
+        // Alvo de Venda Ideal — menor entre teto de parcela e trava de renda
+        var alvo_html = '';
+        if (d.rendaEstimada > 0 && d.nota !== null && !d.reprovado) {
+            var alvoPct   = d.nota >= 85 ? 0.30 : d.nota >= 60 ? 0.20 : 0.10;
+            var alvoTeto  = d.rendaEstimada * alvoPct;
+            var alvoFinan = alvoTeto * 8.4;
+            var alvoMaxParcela = Math.floor((alvoFinan / (1 - d.entradaPct)) / 10) * 10;
+            // Trava de multiplicador de renda por perfil
+            var multRenda = d.nota >= 85 ? 3.0 : d.nota >= 60 ? 2.2 : 1.0;
+            var alvoMaxRenda = Math.floor((d.rendaEstimada * multRenda) / 10) * 10;
+            // Usa o menor dos dois limites
+            var alvoMax = Math.min(alvoMaxParcela, alvoMaxRenda);
+            // Identifica qual trava limitou
+            var travaAtiva = alvoMaxRenda < alvoMaxParcela ? 'renda' : 'parcela';
+            var alvoColor = d.nota >= 85 ? '#4ade80' : d.nota >= 60 ? '#fbbf24' : '#fb923c';
+            var alvoSub = travaAtiva === 'renda'
+                ? 'Limitado pela renda (' + multRenda + 'x = ' + R$(alvoMaxRenda) + ') &middot; entrada de ' + Math.round(d.entradaPct*100) + '%'
+                : 'Parcela caberia em ' + Math.round(alvoPct*100) + '% da renda &middot; entrada de ' + Math.round(d.entradaPct*100) + '%';
+            // Texto explicativo do tooltip
+            var alvoNomeCliente = d.nomeCliente || 'este cliente';
+            var alvoPerfilLabel = d.nota >= 85 ? 'FORTE' : d.nota >= 60 ? 'MEDIO' : 'FRACO';
+            var alvoExplicacao = 'Recomendamos aparelhos ate ' + R$(alvoMax) + ' para ' + alvoNomeCliente +
+                ', pois sua renda estimada e de ' + R$(d.rendaEstimada) + '. ' +
+                'Com perfil ' + alvoPerfilLabel + ', o limite e de ' + multRenda + 'x a renda' +
+                (travaAtiva === 'renda' ? ' — acima disso o risco de inadimplencia aumenta muito.' :
+                ' — a parcela comprometeria ' + Math.round(alvoPct*100) + '% da renda mensal.');
+            var alvoTooltipId = 'cs_alvo_tip_' + Date.now();
+            alvo_html = '<div id="'+alvoTooltipId+'_wrap" style="position:relative;cursor:pointer" onclick="(function(el,id){'+
+                'var tip=document.getElementById(id);'+
+                'if(tip){var show=tip.style.opacity!=\'1\';tip.style.opacity=show?\'1\':\'0\';tip.style.pointerEvents=show?\'auto\':\'none\';'+
+                'if(show)setTimeout(function(){tip.style.opacity=\'0\';tip.style.pointerEvents=\'none\';},4500);}'+
+                '})(this,\''+alvoTooltipId+'\')">' +
+                '<div style="display:flex;align-items:center;gap:10px;padding:9px 13px;border-radius:10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08)">'+
+                    '<i class="bi bi-bullseye" style="color:'+alvoColor+';font-size:1rem;flex-shrink:0"></i>'+
+                    '<div style="flex:1">'+
+                        '<div style="font-size:.58rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:rgba(255,255,255,.4)">Alvo de Venda Ideal <i class="bi bi-info-circle" style="font-size:.6rem;opacity:.5"></i></div>'+
+                        '<div style="font-size:.88rem;font-weight:800;color:'+alvoColor+'">Aparelhos de ate '+R$(alvoMax)+'</div>'+
+                        '<div style="font-size:.62rem;color:rgba(255,255,255,.4)">'+alvoSub+'</div>'+
+                    '</div>'+
+                '</div>'+
+                '<div id="'+alvoTooltipId+'" style="opacity:0;pointer-events:none;transition:opacity .3s;position:absolute;top:0;left:0;right:0;z-index:10;background:rgba(15,20,40,.97);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:11px 13px;font-size:.76rem;line-height:1.6;color:#e2e8f0;">'+
+                    esc(alvoExplicacao)+
+                '</div>'+
+            '</div>';
+        }
+
+
         var titularidade_html = '';
         if (d.nomeDocPessoal || d.nomeRenda) {
             var matchColor = d.nomesBatem === true ? '#4ade80' : d.nomesBatem === false ? '#f87171' : '#fbbf24';
@@ -394,21 +442,25 @@
         else if (d.aprov) banner = '<div class="cs-dec cs-dec-yes"><i class="bi bi-check-circle-fill"></i> APROVADO \u2014 PODE VENDER</div>';
         else banner = '<div class="cs-dec cs-dec-no"><i class="bi bi-x-circle-fill"></i> REPROVADO \u2014 NAO VENDER</div>';
 
-        if (!d.aprov) return '<div class="cs-ri">'+banner+confianca_html+titularidade_html+nota_html+'<div class="cs-rb">'+html+'</div></div>';
+        if (!d.aprov) return '<div class="cs-ri">'+banner+confianca_html+titularidade_html+nota_html+alvo_html+'<div class="cs-rb">'+html+'</div></div>';
 
-        var vn = valorBase || 0, enMin = Math.ceil(vn * d.entradaPct / 10) * 10;
-        var en = d.entrada ? Math.max(parseFloat(d.entrada), enMin) : enMin;
+        var vn = valorBase || 0;
+        var enBaseMin = Math.ceil(vn * d.entradaPct / 10) * 10;
+        // Entrada turbinada: usa d.entrada (calculada pelo reavaliarDecisao), nao o % base
+        var enTurb = d.entradaAlta && d.entrada ? Math.ceil(parseFloat(d.entrada)/10)*10 : enBaseMin;
+        var enMin  = d.entradaAlta ? enTurb : enBaseMin;
+        var en = enMin;
         var np = d.parcelas ? parseInt(d.parcelas) : 12, tx = d.taxa ? parseFloat(d.taxa) : 6;
         var vp = price(vn, en, np, tx), tt = en + vp * np;
         var initialWpp = gerarWpp(d._produto || 'Aparelho', en, np, vp, d);
         var wpp_block = '<div class="cs-wpp"><div class="cs-wpp-lbl"><i class="bi bi-whatsapp"></i> Mensagem pronta \u2014 toque para copiar</div><div class="cs-wpp-txt" id="cs_wpp_txt" title="Toque para copiar">'+esc(initialWpp).replace(/\n/g,'<br>')+'</div><div class="cs-wpp-cp-hint" id="cs_wpp_hint"><i class="bi bi-clipboard-fill"></i> Toque no texto acima para copiar</div></div>';
-        if (d.downgrade) return '<div class="cs-ri">'+banner+confianca_html+titularidade_html+nota_html+wpp_block+'<div class="cs-rb">'+html+'</div></div>';
+        if (d.downgrade) return '<div class="cs-ri">'+banner+confianca_html+titularidade_html+nota_html+alvo_html+wpp_block+'<div class="cs-rb">'+html+'</div></div>';
         var parcOpts = ''; for (var px=1; px<=12; px++) parcOpts += '<option value="'+px+'"'+(px===np?' selected':'')+'>'+px+'x</option>';
-        var sim_grid = '<div class="cs-sim-grid"><div><label class="cs-lbl">Entrada (R$)</label><input class="cs-in" type="number" id="cs_en" value="'+en.toFixed(2)+'" min="'+enMin.toFixed(2)+'" step="10"></div><div><label class="cs-lbl">Parcelas</label><select class="cs-in" id="cs_np">'+parcOpts+'</select></div><div><label class="cs-lbl">Juros %am</label><input class="cs-in" type="number" id="cs_tx" value="'+tx.toFixed(1)+'" min="0" max="30" step="0.5"></div></div><div class="cs-pills" id="cs_pills"><div class="cs-pill'+(d.entradaAlta?' cs-pill-o':'')+'"> Entrada: <strong>'+R$(en)+'</strong></div><div class="cs-pill"> <strong>'+np+'x</strong> de <strong>'+R$(vp)+'</strong></div><div class="cs-pill cs-pill-j"> Juros: <strong>'+tx+'%am</strong></div><div class="cs-pill cs-pill-t"> Total: <strong>'+R$(tt)+'</strong></div></div>';
+        var sim_grid = '<div class="cs-sim-grid"><div><label class="cs-lbl">Entrada (R$)</label><input class="cs-in" type="number" id="cs_en" value="'+en.toFixed(2)+'" step="10"></div><div><label class="cs-lbl">Parcelas</label><select class="cs-in" id="cs_np">'+parcOpts+'</select></div><div><label class="cs-lbl">Juros %am</label><input class="cs-in" type="number" id="cs_tx" value="'+tx.toFixed(1)+'" min="0" max="30" step="0.5"></div></div><div class="cs-pills" id="cs_pills"><div class="cs-pill'+(d.entradaAlta?' cs-pill-o':'')+'"> Entrada: <strong>'+R$(en)+'</strong></div><div class="cs-pill"> <strong>'+np+'x</strong> de <strong>'+R$(vp)+'</strong></div><div class="cs-pill cs-pill-j"> Juros: <strong>'+tx+'%am</strong></div><div class="cs-pill cs-pill-t"> Total: <strong>'+R$(tt)+'</strong></div></div>';
         var sim = (d.entradaAlta)
-            ? '<div class="cs-sim cs-sim-orange"><div class="cs-sim-ttl"><i class="bi bi-lightning-charge-fill"></i> Entrada Turbinada</div><div class="cs-sim-aviso cs-sim-aviso-orange"><i class="bi bi-lock-fill"></i> Entrada minima travada em '+R$(enMin)+' ('+Math.round(d.entradaPct*100)+'% do valor)</div>'+sim_grid+'</div>'
+            ? '<div class="cs-sim cs-sim-orange"><div class="cs-sim-ttl"><i class="bi bi-lightning-charge-fill"></i> Entrada Turbinada</div><div class="cs-sim-aviso cs-sim-aviso-orange"><i class="bi bi-lock-fill"></i> Entrada minima travada em '+R$(enMin)+' ('+Math.round(enMin/vn*100)+'% do valor) — parcela cabe no orcamento</div>'+sim_grid+'</div>'
             : '<div class="cs-sim"><div class="cs-sim-ttl"><i class="bi bi-sliders"></i> Simular condicoes</div><div class="cs-sim-aviso"><i class="bi bi-lock-fill"></i> Entrada minima: '+Math.round(d.entradaPct*100)+'% = '+R$(enMin)+' | Perfil '+riscoLabel+'</div>'+sim_grid+'</div>';
-        return '<div class="cs-ri">'+banner+confianca_html+titularidade_html+nota_html+sim+wpp_block+'<div class="cs-rb">'+html+'</div></div>';
+        return '<div class="cs-ri">'+banner+confianca_html+titularidade_html+nota_html+alvo_html+sim+wpp_block+'<div class="cs-rb">'+html+'</div></div>';
     }
 
     async function abrirHist() {
@@ -459,6 +511,8 @@
             var p=el('cs_rm_prod').value.trim(),val=parseFloat((el('cs_rm_val').value||'0').replace(',','.'));
             if(!p||!val){alert('Preencha produto e valor.');return;}
             var d=extrair(it.textoCompleto);d._produto=p;
+            // Reavalia viabilidade com o novo valor antes de mostrar
+            reavaliarDecisao(d, val);
             _last={nome:it.nomeCliente,produto:p,valor:val,dados:d,entradaMin:Math.ceil(val*d.entradaPct/10)*10,docsHash:-1};
             if(el('cs_produto'))el('cs_produto').value=p;if(el('cs_valor'))el('cs_valor').value=val;
             el('cs_reuso_modal').style.display='none';el('cs_hist_ov').classList.remove('active');
@@ -575,6 +629,8 @@
 
             setProg('Finalizando...',90);
             var d=extrair(resp);d._produto=prod;
+            // Reavalia com a matemática local ANTES de salvar e renderizar
+            reavaliarDecisao(d, val);
             var nomeExtraido=d.nomeCompleto;
             _last={nome:nomeExtraido,produto:prod,valor:val,dados:d,entradaMin:Math.ceil(val*d.entradaPct/10)*10,docsHash:_docsRend.length};
             await salvarFB(nomeExtraido,prod,resp,d);
@@ -590,11 +646,79 @@
         finally{_busy=false;setBtnState();}
     }
 
-    function recalcularLocal(){
+    // ── Motor Matemático Offline: reavalia decisão sem chamar a API ──
+    function reavaliarDecisao(d, novoValor) {
+        // Se já era reprovado definitivo ou renda desconhecida, mantém
+        if (d.reprovado || !(d.rendaEstimada > 0)) return d;
+
+        // Teto da parcela conforme nota
+        var tetoPct = d.nota >= 85 ? 0.30 : d.nota >= 60 ? 0.20 : 0.10;
+        var teto    = d.rendaEstimada * tetoPct;
+
+        // Entrada mínima (arredonda para dezena superior)
+        var enMin   = Math.ceil(novoValor * d.entradaPct / 10) * 10;
+        var saldo   = novoValor - enMin;
+        var parcela = saldo / 8.4; // fator fixo 12x a 6%am
+
+        // Limpa flags de decisão antigas (mantém reprovado, nota, renda intactos)
+        var riscoBase = d.risco.split(' · ')[0]; // ex: "MEDIO"
+
+        if (parcela <= teto) {
+            // Cliente passa no teste: aprovação normal
+            d.aprov      = true;
+            d.entradaAlta = false;
+            d.downgrade  = false;
+            d.risco      = riscoBase;
+            d.entrada    = enMin;
+        } else {
+            // Não passou: calcula entrada turbinada
+            var entTurb = novoValor - (teto * 8.4);
+            if (entTurb > novoValor * 0.80) {
+                // Entrada turbinada surreal → downgrade
+                d.aprov       = true; // aprovado com limite menor
+                d.entradaAlta = false;
+                d.downgrade   = true;
+                d.risco       = riscoBase + ' · DOWNGRADE';
+                d.entrada     = null;
+            } else {
+                // Entrada turbinada viável
+                d.aprov       = true;
+                d.entradaAlta = true;
+                d.downgrade   = false;
+                d.risco       = riscoBase + ' · ENTRADA TURBINADA';
+                d.entrada     = Math.ceil(entTurb / 10) * 10;
+            }
+        }
+        // Atualiza rascunho com os numeros reais do recalculo local
+        var riscoLabel2 = riscoBase;
+        var rascTeto = R$(teto) + ' (' + Math.round(tetoPct*100) + '% da renda)';
+        var rascParc = R$(parcela) + ' [(R$ ' + novoValor.toFixed(2) + ' - R$ ' + enMin.toFixed(2) + ') / 8,4]';
+        var rascStatus = parcela <= teto ? 'DENTRO do teto ✔' : 'ACIMA do teto ⚠️';
+        var rascExtra = '';
+        if (d.entradaAlta) rascExtra = '\nEntrada turbinada necessaria: R$ ' + d.entrada.toFixed(2);
+        if (d.downgrade) rascExtra = '\nEntrada turbinada surreal (>80% do valor) → DOWNGRADE';
+        // Calcula o alvo para incluir no rascunho
+        var rascMultRenda = d.nota >= 85 ? 3.0 : d.nota >= 60 ? 2.2 : 1.0;
+        var rascAlvoMaxParcela = Math.floor((teto * 8.4 / (1 - d.entradaPct)) / 10) * 10;
+        var rascAlvoMaxRenda   = Math.floor((d.rendaEstimada * rascMultRenda) / 10) * 10;
+        var rascAlvoFinal      = Math.min(rascAlvoMaxParcela, rascAlvoMaxRenda);
+        var rascAlvoMotivo     = rascAlvoMaxRenda < rascAlvoMaxParcela
+            ? 'limitado pela trava de ' + rascMultRenda + 'x a renda (' + R$(rascAlvoMaxRenda) + ')'
+            : 'limitado pelo teto de parcela (' + R$(rascAlvoMaxParcela) + ')';
+        d.rascunho = 'Renda: ' + R$(d.rendaEstimada) + ' | Teto parcela: ' + rascTeto + '\n' +
+            'Parcela base: ' + rascParc + ' = ' + rascStatus + rascExtra + '\n' +
+            'Alvo ideal: ate ' + R$(rascAlvoFinal) + ' (' + rascAlvoMotivo + ')';
+
+        return d;
+    }
+
+        function recalcularLocal(){
         if(!_last||!_last.dados)return;
         var prod=el('cs_produto').value.trim(),val=parseFloat((el('cs_valor').value||'0').replace(',','.'))||0;
         if(!prod||!val){alert('Preencha produto e valor.');return;}
         _last.produto=prod;_last.valor=val;_last.dados._produto=prod;
+        // Reavalia a viabilidade com o novo valor ANTES de renderizar
+        reavaliarDecisao(_last.dados, val);
         _last.entradaMin=Math.ceil(val*_last.dados.entradaPct/10)*10;
         el('cs_res').innerHTML=formatResult('',_last.dados,val);
         wireRes();el('cs_res').scrollIntoView({behavior:'smooth',block:'start'});
@@ -604,21 +728,32 @@
 
     function wireRes(){
         if(!_last)return;
-        var d=_last.dados,vn=_last.valor,enMin=_last.entradaMin,produto=_last.produto;
+        var d=_last.dados,vn=_last.valor,produto=_last.produto;
+        // Trava correta: turbinada quando entradaAlta, base caso contrario
+        var enMin = (d.entradaAlta && d.entrada) ? Math.ceil(parseFloat(d.entrada)/10)*10 : _last.entradaMin;
         var wt=el('cs_wpp_txt');if(wt){var wt2=wt.cloneNode(true);wt.parentNode.replaceChild(wt2,wt);wt2.addEventListener('click',copiarWpp);}
         if(!d||d.downgrade||!d.aprov)return;
-        function recalcular(){
+        // recalcular: aceita qualquer valor enquanto digita, corrige só no blur
+        function recalcular(forcarTrava){
             var enEl=el('cs_en'),npEl=el('cs_np'),txEl=el('cs_tx');if(!enEl||!npEl||!txEl)return;
-            var en=parseFloat(enEl.value)||0,np=parseInt(npEl.value)||1,tx=parseFloat(txEl.value)||0;
-            if(en<enMin){en=enMin;enEl.value=enMin.toFixed(2);}if(en>=vn){en=enMin;enEl.value=enMin.toFixed(2);}
+            var enRaw=parseFloat(enEl.value);
+            // Durante digitacao (forcarTrava=false): se campo vazio ou zero nao recalcula
+            if(!forcarTrava && (isNaN(enRaw)||enRaw<=0)) return;
+            var en=isNaN(enRaw)?enMin:enRaw;
+            var np=parseInt(npEl.value)||1,tx=parseFloat(txEl.value)||0;
+            // Trava de minimo apenas quando forcarTrava=true (blur/change) ou se tentou ir abaixo
+            if(forcarTrava && en<enMin){en=enMin;enEl.value=enMin.toFixed(2);}
+            if(en>=vn){en=vn-10;enEl.value=en.toFixed(2);}
             var vp=price(vn,en,np,tx),tt=en+vp*np;
             var pills=el('cs_pills');
             if(pills)pills.innerHTML='<div class="cs-pill'+(d.entradaAlta?' cs-pill-o':'')+'"> Entrada: <strong>'+R$(en)+'</strong></div><div class="cs-pill"> <strong>'+np+'x</strong> de <strong>'+R$(vp)+'</strong></div><div class="cs-pill cs-pill-j"> Juros: <strong>'+tx+'%am</strong></div><div class="cs-pill cs-pill-t"> Total: <strong>'+R$(tt)+'</strong></div>';
             var novoWpp=gerarWpp(produto,en,np,vp,d);var wEl=el('cs_wpp_txt');if(wEl)wEl.innerHTML=esc(novoWpp).replace(/\n/g,'<br>');
         }
-        ['cs_en','cs_np','cs_tx'].forEach(function(id){var i=el(id);if(i){var ni=i.cloneNode(true);i.parentNode.replaceChild(ni,i);ni.addEventListener('input',recalcular);ni.addEventListener('change',recalcular);}});
-        var enEl2=el('cs_en');if(enEl2){enEl2.addEventListener('blur',function(){if(parseFloat(enEl2.value)<enMin){enEl2.value=enMin.toFixed(2);recalcular();}});}
-        recalcular();
+        ['cs_np','cs_tx'].forEach(function(id){var i=el(id);if(i){var ni=i.cloneNode(true);i.parentNode.replaceChild(ni,i);ni.addEventListener('change',function(){recalcular(true);});}});
+        var enElW=el('cs_en');if(enElW){var newEnEl=enElW.cloneNode(true);enElW.parentNode.replaceChild(newEnEl,enElW);
+            newEnEl.addEventListener('input',function(){recalcular(false);});
+            newEnEl.addEventListener('blur',function(){recalcular(true);});}
+        recalcular(true);
     }
 
     function injectCSS(){
