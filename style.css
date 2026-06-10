@@ -2619,7 +2619,7 @@ tr, td, .card, .list-group-item {
     --primary-color-rgb: 239, 83, 80 !important;
     --glow-1: #8A2BE2 !important;
     --glow-2: #B71C1C !important;
-    --tertiary-color: #030303 !important;
+    --tertiary-color: #0d0303 !important;
     --glass-bg: rgba(28, 28, 28, 0.65) !important;
     --input-bg: rgba(44, 44, 46, 0.7) !important;
 }
@@ -2645,8 +2645,8 @@ body[data-color="green"] {
 }
 
 body[data-color="green"][data-theme="dark"] {
-    --tertiary-color: #050505 !important;
-    --glass-bg: rgba(20, 20, 20, 0.85) !important;
+    --tertiary-color: #030d05 !important;
+    --glass-bg: rgba(10, 30, 15, 0.85) !important;
 }
 
 body[data-color="purple"] {
@@ -2667,6 +2667,12 @@ body[data-color="orange"] {
     --primary-color-rgb: 255, 109, 0 !important;
     --glow-1: #FFAB00 !important;
     --glow-2: #FF3D00 !important;
+}
+
+body[data-color="orange"][data-theme="dark"] {
+    --tertiary-color: #0f0600 !important;
+    --glass-bg: rgba(40, 18, 5, 0.85) !important;
+    --input-bg: rgba(25, 10, 0, 0.5) !important;
 }
 
 body[data-color="pink"] {
@@ -3601,6 +3607,7 @@ body::after {
     display: flex;
     flex-direction: column;
     align-items: center;
+    overflow: hidden;
 }
 .gs-overlay.hidden { display: none; }
 
@@ -3616,7 +3623,8 @@ body::after {
 .gs-panel {
     position: relative;
     width: 100%;
-    max-width: 560px;
+    max-width: min(560px, 100vw);
+    box-sizing: border-box;
     background: var(--glass-bg);
     backdrop-filter: blur(24px);
     border-bottom: 1px solid var(--glass-border);
@@ -3643,6 +3651,7 @@ body::after {
 
 .gs-input-wrap {
     flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
     gap: 10px;
@@ -3650,6 +3659,11 @@ body::after {
     border: 1px solid var(--glass-border);
     border-radius: 12px;
     padding: 10px 14px;
+}
+
+.gs-input-wrap input {
+    min-width: 0;
+    width: 100%;
 }
 
 .gs-icon {
@@ -3844,7 +3858,7 @@ body::after {
 }
 #gsInput::placeholder { color: var(--text-secondary); opacity: .55; }
 .gs-clear { background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: .78rem; padding: 0; }
-.gs-cancel-btn { background: none; border: none; color: var(--primary-color); font-size: .88rem; font-weight: 600; cursor: pointer; white-space: nowrap; font-family: 'Poppins', sans-serif; }
+.gs-cancel-btn { background: none; border: none; color: var(--primary-color); font-size: .88rem; font-weight: 600; cursor: pointer; white-space: nowrap; font-family: 'Poppins', sans-serif; flex-shrink: 0; }
 
 /* Filtros */
 .gs-filters {
@@ -4499,45 +4513,37 @@ body.ctw-v2-active #globalSearchBtn {
 .ctw-top-pill {
     display: flex;
     align-items: center;
-    gap: 10px;
-    background: rgba(15, 20, 40, 0.72);
-    backdrop-filter: blur(18px) saturate(160%);
-    -webkit-backdrop-filter: blur(18px) saturate(160%);
-    border: 1px solid rgba(255,255,255,0.1);
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.28);
+    border: none;
     border-radius: 999px;
-    padding: 9px 16px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.35);
+    padding: 10px 18px;
+    box-shadow: none;
 }
 [data-theme="light"] .ctw-top-pill {
-    background: rgba(255,255,255,0.82);
-    border-color: rgba(0,0,0,0.1);
-    box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+    background: rgba(0, 0, 0, 0.07);
 }
 
 .ctw-top-search {
     flex: 1;
     display: flex;
     align-items: center;
-    gap: 8px;
-    background: rgba(255,255,255,0.07);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 999px;
-    padding: 7px 14px;
+    gap: 9px;
+    background: transparent;
+    border: none;
+    padding: 0;
     cursor: pointer;
-    transition: background 0.18s, border-color 0.18s;
     -webkit-tap-highlight-color: transparent;
 }
 .ctw-top-search:hover,
 .ctw-top-search:active {
-    background: rgba(255,255,255,0.12);
-    border-color: rgba(var(--primary-color-rgb), 0.4);
+    background: transparent;
 }
 [data-theme="light"] .ctw-top-search {
-    background: rgba(0,0,0,0.05);
-    border-color: rgba(0,0,0,0.1);
+    background: transparent;
 }
 [data-theme="light"] .ctw-top-search:hover {
-    background: rgba(0,0,0,0.09);
+    background: transparent;
 }
 .ctw-top-search i {
     font-size: .9rem;
@@ -4556,9 +4562,12 @@ body.ctw-v2-active #globalSearchBtn {
 
 /* Balanceamento vertical do mainMenu no v2 */
 body.ctw-v2-active #mainMenu {
-    padding-top: 170px;
-    padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px));
+    padding-top: 132px;
+    padding-bottom: 0;
     justify-content: flex-start;
+    height: 100dvh !important;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
 }
 
 /* Remove o h2 de boas-vindas no v2 (o nome já está no top pill) */
@@ -6598,3 +6607,146 @@ body.ctw-v2-active #documentsHome {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+/* ══════════════════════════════════════════════════════════════
+   MODO PERFORMANCE (body.perf-mode)
+   ══════════════════════════════════════════════════════════════ */
+
+/* 1. Mapeia --bg-color → --tertiary-color para Reposição e CreditoScan
+   ficarem com a cor do tema (ex: roxo usa #0F0720, pink usa #1F0510) */
+body.perf-mode {
+    --bg-color: var(--tertiary-color);
+}
+
+/* 2. Remove backdrop-filter em tudo — maior ganho de scroll (49 ocorrências) */
+body.perf-mode *,
+body.perf-mode *::before,
+body.perf-mode *::after {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+/* 3. Libera camadas GPU e agiliza transições */
+body.perf-mode * {
+    will-change: auto !important;
+    transition-duration: 0.12s !important;
+}
+
+/* 4. Pausa gradiente rotativo e ambilight — cor permanece, animação para */
+body.perf-mode::before {
+    animation-play-state: paused !important;
+}
+body.perf-mode::after {
+    animation-play-state: paused !important;
+    opacity: 0.35 !important;
+}
+
+/* 5. Esconde orbs (blobs flutuantes) e shine dos botões */
+body.perf-mode .orb-1,
+body.perf-mode .orb-2,
+body.perf-mode .btn-menu::after {
+    display: none !important;
+}
+
+/* 6. Pausa animações infinitas decorativas sem tocar nas funcionais */
+body.perf-mode .ctw-carousel-border,
+body.perf-mode .ctw-boot-msg,
+body.perf-mode .fav-tr-ring1,
+body.perf-mode .fav-tr-ring2,
+body.perf-mode .fav-transition-emoji,
+body.perf-mode .fav-transition-label,
+body.perf-mode .ctw-sp-dot-loader span,
+body.perf-mode .scan-ai-pulse {
+    animation-play-state: paused !important;
+}
+
+/* 7. Estilo Terminal nos cards — só no perf-mode */
+body.perf-mode .ctw-card,
+body.perf-mode .ctw-card.c-blue,
+body.perf-mode .ctw-card.c-cyan,
+body.perf-mode .ctw-card.c-orange,
+body.perf-mode .ctw-card.c-purple,
+body.perf-mode .ctw-card.c-green,
+body.perf-mode .ctw-card.c-rose,
+body.perf-mode .ctw-card.c-teal {
+    background: rgba(255, 255, 255, .03) !important;
+    border-color: rgba(255, 255, 255, .09) !important;
+}
+body.perf-mode .ctw-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.1), transparent);
+    pointer-events: none;
+}
+body.perf-mode .ctw-card-icon {
+    background: rgba(255, 255, 255, .06) !important;
+    color: rgba(255, 255, 255, .65) !important;
+}
+body.perf-mode .ctw-card-title {
+    color: rgba(255, 255, 255, .88) !important;
+}
+body.perf-mode .ctw-card-sub {
+    color: rgba(255, 255, 255, .3) !important;
+}
+
+/* 8. Nav + pill de busca — adaptam à cor do tema */
+body.perf-mode .ctw-bottom-nav {
+    background: rgba(var(--primary-color-rgb), 0.1) !important;
+    border-color: rgba(var(--primary-color-rgb), 0.2) !important;
+    box-shadow: 0 4px 20px rgba(0,0,0,.5) !important;
+}
+body.perf-mode .ctw-top-pill {
+    background: rgba(var(--primary-color-rgb), 0.08) !important;
+    border-color: rgba(var(--primary-color-rgb), 0.15) !important;
+    box-shadow: none !important;
+}
+
+/* Ring dos atalhos — tinta com a cor do tema */
+body.perf-mode .ctw-carousel-border {
+    background: rgba(var(--primary-color-rgb), 0.5) !important;
+}
+/* Círculo interno — usa a cor de fundo do tema */
+body.perf-mode .ctw-carousel-window {
+    background: var(--tertiary-color) !important;
+}
+body.perf-mode .ctw-carousel-window::before {
+    background: linear-gradient(90deg, var(--tertiary-color), transparent) !important;
+}
+body.perf-mode .ctw-carousel-window::after {
+    background: linear-gradient(-90deg, var(--tertiary-color), transparent) !important;
+}
+
+/* 9. Circles dos favoritos via JS — tinta com cor do tema */
+body.perf-mode #mainMenu [style*="gradient"],
+body.perf-mode #mainMenu [style*="conic"] {
+    background: rgba(var(--primary-color-rgb), 0.3) !important;
+    filter: none !important;
+}
+
+/* Botão toggle Modo Performance */
+.perf-toggle-btn {
+    width: 100%;
+    padding: 14px 16px;
+    border-radius: 12px;
+    border: 1.5px solid rgba(255, 255, 255, .1);
+    background: rgba(255, 255, 255, .04);
+    color: var(--text-color);
+    font-size: .9rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: background .2s, border-color .2s;
+    margin-bottom: 12px;
+    -webkit-tap-highlight-color: transparent;
+}
+.perf-toggle-btn:active { opacity: .8; }
+.perf-toggle-btn.active {
+    background: rgba(234, 179, 8, .12);
+    border-color: rgba(234, 179, 8, .4);
+    color: #eab308;
+}
+.perf-toggle-btn i { font-size: 1rem; }
