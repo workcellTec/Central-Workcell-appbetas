@@ -2,6 +2,59 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.9.1/firebas
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-auth.js";
 import { getDatabase, ref, push, update, remove, onValue, off, get, set, runTransaction } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-database.js";
 
+// ============================================================
+// 🩹 FIX SCROLL DEFINITIVO (celular fraco não rolava a tela)
+// Causa: os containers principais (#mainMenu, #stockContainer, etc.)
+// usam "animation: fadeInSlide 0.3s forwards" pra entrar suave. O
+// "forwards" nunca desliga a animação de verdade — ela fica "presa" no
+// frame final pra sempre, o que trava o elemento numa camada de GPU
+// própria (compositing layer) o tempo todo, não só nos 0.3s da entrada.
+// Em Chrome/WebView de celular fraco isso quebra a detecção nativa de
+// touch-scroll (a tela simplesmente não rola). No S25 Ultra a GPU é
+// forte o bastante pra disfarçar o problema, por isso só ali funcionava.
+// Correção: assim que a animação termina, zeramos ela via JS
+// (classe .ctw-anim-settled) — o elemento volta a ser um bloco normal,
+// sem camada própria, e o touch-scroll nativo passa a funcionar em
+// qualquer aparelho. Quando a tela é escondida de novo (.hidden), a
+// classe é removida para a animação poder tocar de novo da próxima vez.
+// ============================================================
+(function fixScrollAnimationLock() {
+    const ANIM_CONTAINER_IDS = [
+        'mainMenu', 'calculatorContainer', 'contractContainer',
+        'stockContainer', 'administracao', 'clientsContainer',
+        'reposicaoContainer'
+    ];
+
+    document.addEventListener('animationend', (e) => {
+        if (e.animationName !== 'fadeInSlide') return;
+        const el = e.target;
+        if (!(el instanceof HTMLElement)) return;
+        if (!ANIM_CONTAINER_IDS.includes(el.id)) return;
+        el.classList.add('ctw-anim-settled');
+    }, true);
+
+    const observer = new MutationObserver((mutations) => {
+        for (const m of mutations) {
+            const el = m.target;
+            if (!(el instanceof HTMLElement)) continue;
+            if (!ANIM_CONTAINER_IDS.includes(el.id)) continue;
+            if (el.classList.contains('hidden') && el.classList.contains('ctw-anim-settled')) {
+                // Tela foi escondida: solta o "trinco" pra animação
+                // poder tocar de novo (e travar de novo, de leve) da
+                // próxima vez que a tela for mostrada.
+                el.classList.remove('ctw-anim-settled');
+            }
+        }
+    });
+
+    document.addEventListener('DOMContentLoaded', () => {
+        ANIM_CONTAINER_IDS.forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) observer.observe(el, { attributes: true, attributeFilter: ['class'] });
+        });
+    });
+})();
+
 const firebaseConfig = {
     apiKey: "AIzaSyANdJzvmHr8JVqrjveXbP_ZV6ZRR6fcVQk",
     authDomain: "ctwbybrendon.firebaseapp.com",

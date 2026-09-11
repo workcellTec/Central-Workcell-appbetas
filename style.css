@@ -204,6 +204,18 @@ h2, h3, h4, h5 { font-weight: 600; text-align: center; color: var(--text-color);
     animation: fadeInSlide 0.3s forwards;
 }
 
+/* FIX SCROLL DEFINITIVO: "forwards" nunca solta o elemento da camada de
+   composição própria (GPU layer) mesmo depois dos 0.3s acabarem — é por
+   isso que o will-change ficava "transform, opacity" travado pra sempre
+   e o touch-scroll nativo parava de funcionar em celular fraco (ver
+   script scroll-fix.js, que zera a animação via JS assim que ela termina
+   e devolve o elemento pro fluxo normal de rolagem). Esta classe é só
+   o estado de "pouso" depois que o JS já limpou a animação. */
+.ctw-anim-settled {
+    animation: none !important;
+    will-change: auto !important;
+}
+
 
 
 
