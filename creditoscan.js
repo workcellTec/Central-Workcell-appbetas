@@ -2337,11 +2337,5 @@
     function init(){injectCSS();injectHTML();injectMenuBtns();wireEvents();}
     if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}else{init();}
     window._creditoScanOpen=openOverlay;
-
-    // Expõe o motor de IA (mesma chave/modelo do CreditoScan) para outros
-    // módulos reaproveitarem — usado pela Garantia (Bookip) com IA.
-    window._ctwAiVision = aiCallVision;
-    window._ctwAiGetApiKey = getApiKey;
-    window._ctwResizeToBase64 = resizeToBase64;
 })();
 
