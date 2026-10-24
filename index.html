@@ -4,31 +4,86 @@
     <meta charset="utf-8"/>
 
 
+
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=overlays-content">
 
 
-    <title>Central Workcell'</title>
+    <!-- Modo leve: decidido ANTES da primeira pintura (sem piscada). Escolha manual (localStorage 'ctwModoLeve': '1'/'0')
+         vale sempre; sem escolha, liga sozinho em celular fraco (pouca memória, poucos núcleos ou "reduzir animações"). -->
+    <script>
+        (function () {
+            var escolha = null;
+            try { escolha = localStorage.getItem('ctwModoLeve'); } catch (e) {}
+            var ligar = escolha === '1';
+            if (escolha !== '1' && escolha !== '0') {
+                var n = navigator;
+                ligar = !!((n.deviceMemory && n.deviceMemory <= 4) ||
+                           (n.hardwareConcurrency && n.hardwareConcurrency <= 4) ||
+                           (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches));
+            }
+            if (ligar) document.documentElement.classList.add('ctw-leve');
+        })();
+    </script>
+
+    <title>Central Workcell</title>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="theme-color" id="status-bar-color" content="#0B1120"/>
+    <meta name="theme-color" id="status-bar-color" content="#0E0E0F"/>
+
+    <!-- Tema: decidido ANTES da primeira pintura. Fundo e cor da barra de status já nascem iguais ao tema escolhido
+         (sem piscar escuro e sem faixa de outra cor no topo). Mesmos valores de --tertiary-color em style.css. -->
+    <script>
+        (function () {
+            var tema = 'dark';
+            try { tema = localStorage.getItem('ctwTheme') === 'light' ? 'light' : 'dark'; } catch (e) {}
+            document.documentElement.dataset.theme = tema;
+            var cor = tema === 'light' ? '#F3F7F5' : '#0E0E0F';
+            document.documentElement.style.backgroundColor = cor;
+            var meta = document.getElementById('status-bar-color');
+            if (meta) meta.setAttribute('content', cor);
+        })();
+    </script>
+
+    <!-- CSS crítico mínimo inline: evita tela branca (FOUC) no instante
+         entre o primeiro paint e o style.css terminar de carregar de forma
+         não-bloqueante (ver preload+onload abaixo). -->
+    <style>
+        html { box-sizing: border-box; height: 100%; }
+        body {
+            margin: 0;
+            font-family: 'Poppins', system-ui, sans-serif;
+            background-color: #0E0E0F;
+            color: #EEEEEF;
+            min-height: 100%;
+        }
+        html[data-theme="light"] body { background-color: #F3F7F5; color: #10261F; }
+    </style>
+
         <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png">
     <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
 
     <link rel="manifest" href="manifest.json">
-    <link href="https://fonts.googleapis.com" rel="preconnect"/>
-    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet"/>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    
-     <link rel="stylesheet" href="style.css?v=99">
+    <link rel="preload" href="fonts/poppins-400.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="fonts/poppins-600.woff2" as="font" type="font/woff2" crossorigin>
+
+    <!-- FIX COMPATIBILIDADE: o truque preload+onload (rel="preload" as="style"
+         com onload="...rel='stylesheet'") foi REMOVIDO. Em WebViews/Chrome
+         antigos ou fracos (aparelhos de entrada) o evento onload desse tipo
+         de link frequentemente não dispara, então o CSS nunca virava
+         stylesheet de verdade — nem o Bootstrap nem o style.css eram
+         aplicados, causando tela sem rolagem e componentes (checkboxes,
+         botões) sem estilo. <link rel="stylesheet"> direto é bloqueante
+         para a 1ª pintura, mas funciona igual em qualquer aparelho. -->
+    <link href="bootstrap-icons-lite.css?v=1" rel="stylesheet"/>
+    <link href="bootstrap-lite.css?v=1" rel="stylesheet">
+    <link rel="stylesheet" href="style.css?v=114">
 
 
 
 
 <!-- html2pdf: lazy loaded via app.js quando necessário -->
 
-    <script src="https://cdn.jsdelivr.net/npm/fuse.js@6.6.2/dist/fuse.min.js" defer></script>
+    <script src="fuse.min.js?v=6.6.2" defer></script>
     <!-- html2canvas: lazy loaded via app.js quando necessário -->
     
 
@@ -47,22 +102,6 @@
 </head>
 <body>
     
-<!-- ⚡ TELA DE TRANSIÇÃO DOS FAVORITOS -->
-<div id="favTransitionOverlay" class="fav-transition-overlay hidden">
-    <div class="fav-transition-circle">
-        <div class="fav-transition-ring fav-tr-ring1"></div>
-        <div class="fav-transition-ring fav-tr-ring2"></div>
-        <div class="fav-transition-emoji" id="favTransitionEmoji">📱</div>
-    </div>
-    <div class="fav-transition-label" id="favTransitionLabel">Abrindo...</div>
-</div>
-
-<div class="turbo-bg">
-    <div class="light-orb orb-1"></div>
-    <div class="light-orb orb-2"></div>
-</div>
-
-
     <div id="loadingOverlay" class="loading-overlay-full">
         <div class="ctw-boot-screen">
 
@@ -99,199 +138,19 @@
 
 
 
-<!-- TOP BAR v2 — pill com busca + nome (só no estilo 2.0) -->
-<div id="ctwTopBar">
-    <!-- Cabeçalho: título + saudação -->
-    <div class="ctw-top-header">
-        <div class="ctw-top-header-eyebrow">Central Workcell 2.0</div>
-        <div class="ctw-top-header-title">Bem‑vindo(a), <span id="ctwTopHeaderName">visitante</span></div>
-        <div class="ctw-top-header-sub">O que você quer fazer?</div>
-    </div>
-    <!-- Pill de busca -->
-    <div class="ctw-top-pill">
-        <button class="ctw-top-search" id="ctwTopSearchBtn" aria-label="Busca global">
-            <i class="bi bi-search"></i>
-            <span>Buscar em tudo...</span>
-        </button>
-    </div>
-</div>
-
-<div id="top-right-controls" class="top-right-controls-pos">
-    <button id="globalSearchBtn" class="gs-trigger-btn" title="Busca global">
-        <i class="bi bi-search"></i>
-    </button>
-
-    <div class="dropdown">
-        <button class="btn btn-link p-0 border-0" type="button" data-bs-toggle="dropdown" aria-expanded="false" class="btn-link-custom">
-            <div class="avatar-button-wrapper">
-                <i class="bi bi-person-fill fs-4"></i>
-            </div>
-            <span id="avatar-badge" class="position-absolute top-0 start-100 translate-middle p-1 bg-danger border border-light rounded-circle hidden" class="avatar-badge-size"></span>
-        </button>
-
-        <ul class="dropdown-menu dropdown-menu-end shadow-lg border-0" 
-class="dropdown-menu-custom">
-            
-            <li class="px-3 py-3 mb-1" class="dropdown-header-item">
-                <small class="d-block text-secondary text-uppercase fw-bold" class="text-uppercase-small">Logado como:</small>
-                <div class="d-flex align-items-center gap-2 mt-1">
-                    <span id="displayProfileIcon" class="profile-icon-online"></span>
-                    <span id="displayProfileName" class="fw-bold fs-5" class="text-color-custom">Visitante</span>
-                </div>
-            </li>
-            
-
-
-
-                                 <li id="menu-notification-area" class="hidden" class="menu-notification-area">
-                <button class="dropdown-item py-3" onclick="document.getElementById('notification-bell').click();" class="dropdown-item-normal-wrap">
-                    <div class="d-flex align-items-start gap-2">
-                        <div class="mt-1 position-relative">
-                            <i class="bi bi-bell-fill text-danger fs-5"></i>
-                            <span class="position-absolute top-0 start-100 translate-middle bg-danger rounded-circle" class="notification-badge-small"></span>
-                        </div>
-                        
-                        <div class="notification-text-container" style="max-width:210px;">
-                            <span class="d-block fw-bold mb-1" class="notification-title-text">
-                                Nova Mensagem
-                            </span>
-                            
-                            <small id="menu-notification-text" style="
-                                display: -webkit-box;
-                                -webkit-line-clamp: 2;
-                                -webkit-box-orient: vertical;
-                                overflow: hidden;
-                                text-overflow: ellipsis;
-                                white-space: normal;
-                                line-height: 1.4;
-                                word-break: break-word;
-                            ">Carregando...</small>
-
-                            <small style="
-                                display: block;
-                                margin-top: 4px;
-                                color: var(--primary-color, #00e5ff);
-                                font-size: .65rem;
-                                font-weight: 600;
-                                letter-spacing: .3px;
-                            ">Toque para ver completa →</small>
-                        </div>
-                    </div>
-                </button>
-            </li>
-            
-
-
-
-
-
-
-
-            <li class="p-2">
-                <button class="dropdown-item rounded py-2 d-flex align-items-center gap-2 text-color-custom" 
-                        onclick="document.getElementById('theme-toggle-checkbox').click();">
-                    <div class="icon-box bg-warning bg-opacity-10 text-warning"><i class="bi bi-moon-stars-fill"></i></div>
-                    <span>Alternar Tema</span>
-                </button>
-
-                <button class="dropdown-item rounded py-2 d-flex align-items-center gap-2 mt-1 text-color-custom" 
-                        onclick="document.getElementById('theme-palette-btn').click();">
-                    <div class="icon-box bg-info bg-opacity-10 text-info"><i class="bi bi-palette-fill"></i></div>
-                    <span>Mudar Cores</span>
-                </button>
-                <button class="dropdown-item rounded py-2 d-flex align-items-center gap-2 mt-1 text-color-custom"
-                        onclick="window.toggleNotifPref()">
-                    <div class="icon-box bg-danger bg-opacity-10 text-danger"><i class="bi bi-bell-fill"></i></div>
-                    <div style="display:flex;flex-direction:column;gap:1px;">
-                        <span>Notificações</span>
-                        <small id="notifPrefLabel" style="font-size:.62rem;opacity:.6;">Carregando...</small>
-                    </div>
-                </button>
-                
-                <div id="installAppOption" class="hidden-inline">
-                    <button class="dropdown-item rounded py-2 d-flex align-items-center gap-2 mt-1 text-color-custom" 
-                            onclick="if(window.installApp) window.installApp()">
-                        <div class="icon-box bg-success bg-opacity-10 text-success"><i class="bi bi-download"></i></div>
-                        <span>Instalar App</span>
-                    </button>
-                <li class="p-2">
-                <button class="dropdown-item rounded py-2 d-flex align-items-center gap-2 text-color-custom" 
-                        onclick="document.getElementById('profileSelectorModal').classList.add('active');">
-                    <div class="icon-box bg-primary bg-opacity-10 text-primary">
-                        <i class="bi bi-people-fill"></i>
-                    </div>
-                    <span>Trocar Usuário</span>
-                </button>
-            </li>
-
-                <li class="p-2" id="style20MenuItem">
-                <button class="dropdown-item rounded py-2 d-flex align-items-center gap-2 mt-1 text-color-custom"
-                        onclick="window.ativarEstilo20()">
-                    <div class="icon-box text-warning" style="background:rgba(255,193,7,0.12);">
-                        <i class="bi bi-stars"></i>
-                    </div>
-                    <div style="display:flex;flex-direction:column;gap:1px;">
-                        <span id="style20MenuLabel">Testar novo estilo 2.0</span>
-                        <small style="font-size:.6rem;color:var(--text-secondary);font-weight:400;" id="style20MenuSub">Novo layout visual</small>
-                    </div>
-                </button>
-            </li>
-
-            <!-- Sair — versão clássica -->
-            <li class="p-2">
-                <button class="dropdown-item rounded py-2 d-flex align-items-center gap-2 mt-1"
-                        onclick="window.sairDoPerfil()"
-                        style="color:#ef4444;">
-                    <div class="icon-box" style="background:rgba(239,68,68,.15);color:#ef4444;">
-                        <i class="bi bi-box-arrow-right"></i>
-                    </div>
-                    <div style="display:flex;flex-direction:column;gap:1px;">
-                        <span style="font-weight:600;">Sair</span>
-                        <small style="font-size:.6rem;opacity:.6;">Trocar ou bloquear usuário</small>
-                    </div>
-                </button>
-            </li>
-        </ul>
-    </div>
-
     <div class="hidden-important">
         <input type="checkbox" id="theme-toggle-checkbox">
-        <div id="theme-palette-btn"></div>
-        <div id="notification-bell"><span class="notification-badge hidden"></span></div> 
     </div>
 
     <script>
-        // ── Modo Performance ──────────────────────────────────────
+        // Modo Performance removido a pedido (era um toggle opcional para
+        // reduzir efeitos visuais em celulares fracos — o app manteve os
+        // efeitos completos por padrão, comportamento agora fixo).
+
+        // ── Proxy html2canvas: garante frame limpo antes de capturar ──
+        // (usado na geração de PDF de contratos — independente do modo
+        // performance, mantido como estava)
         (function () {
-            function syncPerfUI(active) {
-                const adminBtn  = document.getElementById('perfModeAdminBtn');
-                const adminLbl  = document.getElementById('perfModeAdminLabel');
-                const adminSub  = document.getElementById('perfModeAdminSub');
-                const sheetLbl  = document.getElementById('perfModeLabelSheet');
-                if (active) {
-                    document.body.classList.add('perf-mode');
-                    if (adminBtn)  adminBtn.classList.add('active');
-                    if (adminLbl)  adminLbl.textContent = 'Desativar Modo Performance';
-                    if (adminSub)  adminSub.textContent = 'Ativado ⚡ — efeitos visuais reduzidos';
-                    if (sheetLbl)  sheetLbl.textContent = 'Ativado ⚡';
-                } else {
-                    document.body.classList.remove('perf-mode');
-                    if (adminBtn)  adminBtn.classList.remove('active');
-                    if (adminLbl)  adminLbl.textContent = 'Ativar Modo Performance';
-                    if (adminSub)  adminSub.textContent = 'Desativado — efeitos visuais completos';
-                    if (sheetLbl)  sheetLbl.textContent = 'Desativado';
-                }
-            }
-            // Aplica ao carregar
-            syncPerfUI(localStorage.getItem('ctw_perf_mode') === '1');
-
-            window.togglePerfMode = function () {
-                const next = localStorage.getItem('ctw_perf_mode') !== '1';
-                localStorage.setItem('ctw_perf_mode', next ? '1' : '0');
-                syncPerfUI(next);
-            };
-
-            // ── Proxy html2canvas: garante frame limpo antes de capturar ──
             // html2canvas é lazy-loaded; intercepta no momento em que é atribuído ao window
             let _h2c = null;
             Object.defineProperty(window, 'html2canvas', {
@@ -324,163 +183,86 @@ class="dropdown-menu-custom">
             else window.addEventListener('resize', setVH);
         })();
     </script>
-    <script>
-        (function(){
-            const oldBadge = document.querySelector('#notification-bell .notification-badge');
-            const avatarBadge = document.getElementById('avatar-badge');
-            const menuArea = document.getElementById('menu-notification-area');
-            const menuText = document.getElementById('menu-notification-text');
-
-            function atualizarEstado() {
-                const temNotificacao = !oldBadge.classList.contains('hidden') && oldBadge.style.display !== 'none';
-                if (temNotificacao) {
-                    avatarBadge.classList.remove('hidden');
-                    menuArea.classList.remove('hidden');
-                    const textoSalvo = localStorage.getItem('sys_ultimo_aviso');
-                    menuText.innerText = (textoSalvo && textoSalvo.trim() !== "") ? textoSalvo : "Toque para ver os detalhes.";
-                } else {
-                    avatarBadge.classList.add('hidden');
-                    menuArea.classList.add('hidden');
-                }
-            }
-            if (oldBadge) {
-                new MutationObserver(atualizarEstado).observe(oldBadge, { attributes: true, attributeFilter: ['class', 'style'] });
-                setTimeout(atualizarEstado, 1500); 
-            }
-        })();
-    </script>
-</div>
 
 
  
-    <div class="container text-center" id="mainMenu">
-        <h2 class="mb-4" id="mainMenuTitle">Bem-vindo(a) à Central Workcell,<br/>O que você quer fazer?</h2>
-
-        <!-- ⭐ FAVORITOS -->
-        <div class="fav-section" id="favSection">
-            <div class="fav-header">
-                <span class="fav-title">⭐ Favoritos</span>
-                <button class="fav-edit-btn" id="favEditBtn" title="Personalizar">
-                    <i class="bi bi-pencil-fill"></i>
-                </button>
+    <div class="container" id="mainMenu">
+        <!-- Cabeçalho: avatar (com bolinha online/offline), saudação e sino de alertas -->
+        <header class="ui-top" id="ctwTopBar">
+            <button type="button" class="ui-go ui-avatar" id="ctwHomeAvatar" aria-label="Abrir Mais">
+                <img id="ctwHomeAvatarImg" alt="" hidden>
+                <span id="ctwHomeAvatarLetter">B</span>
+                <span id="ctwConnStatus" class="ctw-conn-status ctw-conn-checking" title="Verificando conexão..."><span class="ctw-conn-label" hidden></span></span>
+            </button>
+            <div class="ui-grow">
+                <div class="ui-cap"><span id="ctwGreeting">Olá</span>,</div>
+                <div class="ui-hello" id="ctwTopHeaderName">visitante</div>
             </div>
-            <div class="fav-stories-wrap" id="favStoriesWrap"></div>
-        </div>
+            <button type="button" class="ui-rb" id="ctwTopBell" aria-label="Alertas">
+                <svg class="ui-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10 21a2 2 0 0 0 4 0"/></svg>
+                <span class="ui-dot" id="ctwTopBellDot" hidden></span>
+            </button>
+        </header>
 
-        <!-- Modal edição -->
-        <div class="fav-modal-overlay hidden" id="favModalOverlay">
-            <div class="fav-modal">
-                <div class="fav-modal-header">
-                    <span>Escolha até 5 favoritos</span>
-                    <button class="fav-modal-close" id="favModalClose"><i class="bi bi-x-lg"></i></button>
-                </div>
-                <div class="fav-modal-grid" id="favModalGrid"></div>
-                <button class="fav-modal-save" id="favModalSave">Salvar</button>
+        <!-- Calculadora por aparelho: o uso mais frequente fica no topo -->
+        <section class="ui-card ui-hero">
+            <div class="ui-hero-head">
+                <span class="ui-bub ui-bub-sm"><svg class="ui-ic ui-ic-s" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M11 18h2"/></svg></span>
+                <span>Calculadora por aparelho</span>
             </div>
+            <div class="ui-hero-title">Qual aparelho o<br>cliente quer?</div>
+            <form class="ui-inset ui-hero-search" id="ctwHeroForm" autocomplete="off">
+                <svg class="ui-ic ui-ic-s ui-mute" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+                <input type="search" id="ctwHeroSearch" placeholder="iPhone 15, Galaxy A15…" enterkeyhint="search" aria-label="Buscar aparelho">
+                <button type="submit" class="ui-go" aria-label="Buscar"><svg class="ui-ic ui-ic-s" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+            </form>
+            <div class="ui-pills ui-pills-hero" id="ctwHeroRecentes" hidden></div>
+        </section>
+
+        <div class="ui-lab">Mais usados</div>
+        <div class="ui-tiles">
+            <button type="button" class="ui-card ui-tile" id="ctwGoGarantia">
+                <span class="ui-bub"><svg class="ui-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg></span>
+                <span><b>Garantia</b><small>Nova garantia</small></span>
+            </button>
+            <button type="button" class="ui-card ui-tile" id="goToContract">
+                <span class="ui-bub"><svg class="ui-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h6"/></svg></span>
+                <span><b>Contrato</b><small>Contrato e boleto</small></span>
+            </button>
+            <button type="button" class="ui-card ui-tile" id="goCS2">
+                <span class="ui-bub"><svg class="ui-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4"/></svg></span>
+                <span><b>CreditoScan</b><small>Análise de crédito</small></span>
+            </button>
         </div>
 
-        <!-- ESTILO CLÁSSICO (lista) -->
-        <div class="d-grid gap-2" id="menuClassic">
-            <button class="btn-menu" id="goToCalculator"><i class="bi bi-calculator-fill"></i> Calculadora de Taxa</button>
-            <button class="btn-menu" id="goToContract"><i class="bi bi-file-earmark-text-fill"></i> Documentos</button>
-            <button class="btn-menu" id="goToStock"><i class="bi bi-box-seam"></i> Controle de Estoque</button>
-            <button class="btn-menu" id="goToAdmin"><i class="bi bi-gear"></i> Administração</button>
-            <button class="btn-menu" id="goToRepairs"><i class="bi bi-wrench-adjustable-circle-fill"></i> Gerenc. de Consertos</button>
-            <button class="btn-menu" id="goToReposicao" style="position:relative;">
-                <i class="bi bi-cart-fill"></i> Lista de Reposição
-                <span id="repoBadge" class="repo-badge hidden">0</span>
-            </button>
+        <div class="ui-lab">Outras ferramentas</div>
+        <div class="ui-tools">
+            <button type="button" id="ctwGoOrcamento"><span class="ui-bub"><svg class="ui-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/></svg></span>Orçamento</button>
+            <button type="button" id="goToStock"><span class="ui-bub"><svg class="ui-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8l-9-5-9 5v8l9 5 9-5zM3 8l9 5 9-5M12 13v8"/></svg></span>Estoque</button>
+            <button type="button" id="goToRepairs"><span class="ui-bub"><svg class="ui-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5 5L3 18l3 3 6.7-6.7a4 4 0 0 0 5-5l-2.5 2.5-2.5-.5-.5-2.5z"/></svg></span>Consertos</button>
+            <button type="button" id="goToReposicao"><span class="ui-bub"><svg class="ui-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2l2.4 11h10.2L20 7H6.2M9 20h.01M17 20h.01"/></svg><span id="repoBadge2" class="ui-badge hidden">0</span></span>Reposição</button>
         </div>
 
-        <!-- ESTILO 2.0 (grid de cards) — oculto por padrão -->
-        <div class="ctw-card-grid ctw-menu-hide" id="menuCards">
-            <button class="ctw-card c-blue" id="goToCalculator2">
-                <div class="ctw-card-icon"><i class="bi bi-calculator-fill"></i></div>
-                <span class="ctw-card-title">Calculadora</span>
-                <span class="ctw-card-sub">de Taxa</span>
-            </button>
-            <button class="ctw-card c-cyan" id="goToContract2">
-                <div class="ctw-card-icon"><i class="bi bi-file-earmark-text-fill"></i></div>
-                <span class="ctw-card-title">Documentos</span>
-                <span class="ctw-card-sub">& Garantias</span>
-            </button>
-            <button class="ctw-card c-orange" id="goToStock2">
-                <div class="ctw-card-icon"><i class="bi bi-box-seam"></i></div>
-                <span class="ctw-card-title">Estoque</span>
-                <span class="ctw-card-sub">de produtos</span>
-            </button>
-            <button class="ctw-card c-rose" id="goCS2">
-                <div class="ctw-card-icon"><i class="bi bi-cpu-fill"></i></div>
-                <span class="ctw-card-title">CreditoScan</span>
-                <span class="ctw-card-sub">Análise de crédito IA</span>
-            </button>
-
-            <button class="ctw-card c-teal" id="goToRepairs2">
-                <div class="ctw-card-icon"><i class="bi bi-wrench-adjustable-circle-fill"></i></div>
-                <span class="ctw-card-title">Consertos</span>
-                <span class="ctw-card-sub">Gerenciamento</span>
-            </button>
-            <button class="ctw-card c-green" id="goToReposicao2" style="position:relative;">
-                <div class="ctw-card-icon"><i class="bi bi-cart-fill"></i></div>
-                <span class="ctw-card-title">Reposição</span>
-                <span class="ctw-card-sub">Lista de compras</span>
-                <span id="repoBadge2" class="repo-badge-card hidden">0</span>
-            </button>
-        </div>
+        <!-- Avisos de hoje (aniversário, avisos da loja, consertos): só aparece quando há algo -->
+        <div id="ctwHomeAvisos" class="ui-avisos" hidden></div>
     </div>
-    
+
+    <!-- Taxas: uma tela só. Este cabeçalho (voltar + abas em pílula) fica por cima de todas as sub-telas da calculadora -->
     <div id="calculatorContainer" class="hidden">
-                <div class="container text-center" id="calculatorHome">
-            <div class="w-100 d-flex justify-content-start mb-2">
-                <button aria-label="Voltar ao Menu" class="btn-back btn-back-large" id="backFromCalculatorHome">
-                    <i class="bi bi-arrow-left"></i>
-                </button>
+        <header class="ui-screen-head" id="calcHeader">
+            <div class="ui-top">
+                <button aria-label="Voltar" class="ui-rb" id="backFromCalc"><svg class="ui-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button>
+                <h1>Taxas</h1>
+                <button type="button" class="ui-rb" id="calcHistBtn" onclick="abrirHistoricoAparelho()" aria-label="Ver histórico" hidden><svg class="ui-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5M12 7v5l3 2"/></svg></button>
             </div>
-
-            <h2 class="mb-4">Calculadora de Taxas,<br/>O que você quer fazer?</h2>
-            <!-- ESTILO CLÁSSICO -->
-            <div class="d-grid gap-2" id="calcMenuClassic">
-                <button class="btn-menu" id="openFecharVenda"><i class="bi bi-cash-coin"></i> Fechar uma venda</button>
-                <button class="btn-menu" id="openRepassarValores"><i class="bi bi-arrow-left-right"></i> Repassar valores</button>
-                <button class="btn-menu" id="openEmprestarValores"><i class="bi bi-people-fill"></i> Emprestar valores</button>
-                <button class="btn-menu" id="openCalcularEmprestimo"><i class="bi bi-bank"></i> Calcular Empréstimo</button>
-                <button class="btn-menu" id="openCalcularPorAparelho"><i class="bi bi-phone"></i> Calcular por aparelho</button>
-            </div>
-            <!-- ESTILO 2.0 — grid 3+2 -->
-            <div class="ctw-card-grid ctw-grid-5 ctw-menu-hide" id="calcMenuCards">
-                <div class="ctw-grid-row3">
-                    <button class="ctw-card c-green" id="openFecharVenda2">
-                        <div class="ctw-card-icon"><i class="bi bi-cash-coin"></i></div>
-                        <span class="ctw-card-title">Fechar</span>
-                        <span class="ctw-card-sub">Venda</span>
-                    </button>
-                    <button class="ctw-card c-blue" id="openRepassarValores2">
-                        <div class="ctw-card-icon"><i class="bi bi-arrow-left-right"></i></div>
-                        <span class="ctw-card-title">Repassar</span>
-                        <span class="ctw-card-sub">Valores</span>
-                    </button>
-                    <button class="ctw-card c-cyan" id="openEmprestarValores2">
-                        <div class="ctw-card-icon"><i class="bi bi-people-fill"></i></div>
-                        <span class="ctw-card-title">Emprestar</span>
-                        <span class="ctw-card-sub">Valores</span>
-                    </button>
-                </div>
-                <div class="ctw-grid-row2">
-                    <button class="ctw-card c-orange" id="openCalcularEmprestimo2">
-                        <div class="ctw-card-icon"><i class="bi bi-bank"></i></div>
-                        <span class="ctw-card-title">Calcular</span>
-                        <span class="ctw-card-sub">Empréstimo</span>
-                    </button>
-                    <button class="ctw-card c-purple" id="openCalcularPorAparelho2">
-                        <div class="ctw-card-icon"><i class="bi bi-phone"></i></div>
-                        <span class="ctw-card-title">Por</span>
-                        <span class="ctw-card-sub">Aparelho</span>
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        </div>
+            <nav class="ui-pills" id="calcPills" aria-label="Tipo de cálculo">
+                <button type="button" class="ui-pill" id="openRepassarValores">Repassar</button>
+                <button type="button" class="ui-pill" id="openCalcularEmprestimo">Empréstimo</button>
+                <button type="button" class="ui-pill" id="openCalcularPorAparelho">Por aparelho</button>
+                <button type="button" class="ui-pill" id="openFecharVenda">Fechar venda</button>
+            </nav>
+        </header>
+    </div>
 
 
 
@@ -565,10 +347,6 @@ class="dropdown-menu-custom">
 
 <div id="fecharVenda" style="display:none;"></div>
         <div class="container" id="repassarValores" class="hidden">
-            <div class="section-header">
-                <h3>Repassar Valores</h3>
-                <button aria-label="Voltar" class="btn-back" id="backFromRepassarValores"><i class="bi bi-arrow-left"></i></button>
-            </div>
             <div class="content-card w-100">
                 <div class="row mb-3 w-100 justify-content-center">
                     <div class="col-12 col-md-6 mb-3"><label class="form-label">Maquininha</label>
@@ -616,10 +394,6 @@ class="dropdown-menu-custom">
             </div>
         </div>
         <div class="container" id="calcularEmprestimo" class="hidden">
-            <div class="section-header">
-                <h3>Calcular Empréstimo</h3>
-                <button aria-label="Voltar" class="btn-back" id="backFromCalcularEmprestimo"><i class="bi bi-arrow-left"></i></button>
-            </div>
             <div class="content-card w-100">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <div class="lucro-display" id="emprestimoLucroDisplay"></div>
@@ -652,17 +426,6 @@ class="dropdown-menu-custom">
             </div>
         </div>
         <div class="container" id="calcularPorAparelho" class="hidden">
-         <div class="section-header d-flex align-items-center justify-content-between">
-    <h3>Calcular por Aparelho</h3> <div class="d-flex gap-2">
-        <button class="btn-back" onclick="abrirHistoricoAparelho()" class="btn-back-custom-border" title="Ver Histórico">
-            <i class="bi bi-clock-history text-warning"></i>
-        </button>
-
-        <button aria-label="Voltar" class="btn-back" id="backFromCalcularPorAparelho">
-            <i class="bi bi-arrow-left"></i>
-        </button>
-    </div>
-</div>
 
             <div class="content-card w-100">
                 <div id="aparelhoContentWrapper">
@@ -743,34 +506,28 @@ class="dropdown-menu-custom">
         </div>
         
         <div class="admin-section w-100">
-            <h5 class="text-center mb-3">Selecione o que deseja gerenciar</h5>
-            <div class="row row-cols-2 g-2 mb-3" id="admin-nav-buttons">
+            <div class="admin-nav-title">Gerenciar</div>
+            <div class="row row-cols-2 g-2 mb-1" id="admin-nav-buttons">
                 <div class="col d-grid">
-                    <button type="button" class="btn btn-outline-secondary active" data-admin-section="adminProductsContent">Produtos</button>
+                    <button type="button" class="btn btn-outline-secondary active" data-admin-section="adminProductsContent"><i class="bi bi-box-seam"></i> Produtos</button>
                 </div>
                 <div class="col d-grid">
-                    <button type="button" class="btn btn-outline-secondary" data-admin-section="adminNotificationsContent">Notificações</button>
+                    <button type="button" class="btn btn-outline-secondary" data-admin-section="adminNotificationsContent"><i class="bi bi-bell"></i> Notificações</button>
                 </div>
                 <div class="col d-grid">
-                    <button type="button" class="btn btn-outline-secondary" data-admin-section="adminRatesContent">Taxas</button>
+                    <button type="button" class="btn btn-outline-secondary" data-admin-section="adminRatesContent"><i class="bi bi-percent"></i> Taxas</button>
                 </div>
                 <div class="col d-grid">
-                    <button type="button" class="btn btn-outline-secondary" data-admin-section="adminTagsContent">Etiquetas</button>
+                    <button type="button" class="btn btn-outline-secondary" data-admin-section="adminTagsContent"><i class="bi bi-tag"></i> Etiquetas</button>
                 </div>
-
                 <div class="col d-grid">
-                    <button type="button" class="btn btn-outline-secondary" id="btnAdminClients">
-                        <i class="bi bi-people-fill"></i> Clientes
-                    </button>
+                    <button type="button" class="btn btn-outline-secondary" id="btnAdminClients"><i class="bi bi-people-fill"></i> Clientes</button>
                 </div>
-
                 <div class="col d-grid">
-                    <button type="button" class="btn btn-outline-warning" onclick="window.abrirGerenciarPerfis()">
-                        <i class="bi bi-people-fill"></i> Perfis e Usuários
-                    </button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="window.abrirGerenciarPerfis()"><i class="bi bi-person-gear"></i> Perfis e usuários</button>
                 </div>
-                <div class="col-12 d-grid mt-2">
-                    <button type="button" class="btn btn-outline-primary" data-admin-section="adminSettingsContent"><i class="bi bi-receipt"></i> Config. Recibo & Garantia</button>
+                <div class="col-12 d-grid">
+                    <button type="button" class="btn btn-outline-secondary" data-admin-section="adminSettingsContent"><i class="bi bi-receipt"></i> Config. Recibo &amp; Garantia</button>
                 </div>
             </div>
         </div>
@@ -952,15 +709,6 @@ class="dropdown-menu-custom">
 
 
 
-            <!-- Modo Performance -->
-            <button class="perf-toggle-btn" id="perfModeAdminBtn" onclick="window.togglePerfMode()">
-                <i class="bi bi-lightning-charge-fill"></i>
-                <div style="display:flex;flex-direction:column;gap:1px;text-align:left;">
-                    <span id="perfModeAdminLabel">Ativar Modo Performance</span>
-                    <small id="perfModeAdminSub" style="font-size:.65rem;opacity:.65;font-weight:400;">Desativado — efeitos visuais completos</small>
-                </div>
-            </button>
-
             <button class="btn btn-success w-100 py-3" id="saveSettingsBtn">
                 <i class="bi bi-save-fill"></i> Salvar Configurações
             </button>
@@ -981,70 +729,20 @@ class="dropdown-menu-custom">
 <div id="contractContainer" class="hidden">
 
 
-        <div class="container text-center" id="documentsHome">
-            
-            <div class="w-100 d-flex justify-content-start mb-2">
-                <button aria-label="Voltar ao Menu" class="btn-back" id="backFromDocumentsHome" style="font-size: 1.5rem; padding: 10px;">
-                    <i class="bi bi-arrow-left"></i>
-                </button>
+        <!-- Documentos: uma tela só, com abas em pílula no topo -->
+        <header class="ui-screen-head" id="docsHeader">
+            <div class="ui-top">
+                <button aria-label="Voltar" class="ui-rb" id="backFromDocs"><svg class="ui-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button>
+                <h1>Documentos</h1>
             </div>
-
-            <h2 class="mb-4">Documentos & Garantias,
-<br/>
-do que você precisa??</h2>
-            
-            
-            <!-- ESTILO CLÁSSICO -->
-            <div class="d-grid gap-2" id="docsMenuClassic">
-                <button class="btn-menu" id="openContratoView"><i class="bi bi-file-text-fill"></i> Contratos P/Boleto </button>
-                <button class="btn-menu" id="openBookipView"><i class="bi bi-receipt"></i> Garantias (Bookip)</button>
-                <button class="btn-menu" onclick="window.abrirReciboSimples()"><i class="bi bi-receipt"></i> Novo Recibo</button>
-                <button class="btn-menu" disabled style="opacity: 0.5; cursor: not-allowed; filter: grayscale(100%); background-color: rgba(255, 255, 255, 0.05); border-color: rgba(255, 255, 255, 0.1);">
-                    <i class="bi bi-clipboard-check-fill"></i> Ord. Serviços
-                    <span style="font-size: 0.75rem; margin-left: auto; color: var(--text-secondary);">(Em breve)</span>
-                </button>
-            </div>
-            <!-- ESTILO 2.0 -->
-            <div class="ctw-card-grid ctw-menu-hide" id="docsMenuCards">
-                <button class="ctw-card c-blue" id="openContratoView2">
-                    <div class="ctw-card-icon"><i class="bi bi-file-text-fill"></i></div>
-                    <span class="ctw-card-title">Contrato</span>
-                    <span class="ctw-card-sub">/ Boleto</span>
-                </button>
-                <button class="ctw-card c-cyan" id="openBookipView2">
-                    <div class="ctw-card-icon"><i class="bi bi-receipt"></i></div>
-                    <span class="ctw-card-title">Garantia</span>
-                    <span class="ctw-card-sub">Bookip</span>
-                </button>
-                <button class="ctw-card c-green" id="openReciboView2">
-                    <div class="ctw-card-icon"><i class="bi bi-receipt-cutoff"></i></div>
-                    <span class="ctw-card-title">Recibo</span>
-                    <span class="ctw-card-sub">Simples</span>
-                </button>
-                <button class="ctw-card c-disabled" disabled>
-                    <span class="ctw-card-soon">Em breve</span>
-                    <div class="ctw-card-icon"><i class="bi bi-clipboard-check-fill"></i></div>
-                    <span class="ctw-card-title">Ord.</span>
-                    <span class="ctw-card-sub">Serviços</span>
-                </button>
-            </div>
-
-        </div>
-
-
-
-    
-
-
-
-
-
+            <nav class="ui-pills" id="docsPills" aria-label="Tipo de documento">
+                <button type="button" class="ui-pill" id="openBookipView">Garantia</button>
+                <button type="button" class="ui-pill" id="openContratoView">Contrato</button>
+                <button type="button" class="ui-pill" id="openOrcamentoView">Orçamento</button>
+            </nav>
+        </header>
 
         <div id="areaContratoWrapper" class="container hidden">
-            <div class="section-header">
-                <h3>Contrato</h3>
-                <button aria-label="Voltar" class="btn-back" id="backFromContratoView"><i class="bi bi-arrow-left"></i></button>
-            </div>
             
             <div class="toggle-switch">
                 <input type="checkbox" id="boletoModeToggle">
@@ -1056,6 +754,9 @@ do que você precisa??</h2>
             
             <div id="newBoletoContent">
                 <div class="content-card w-100">
+                    <div class="d-flex justify-content-end mb-2">
+                        <button type="button" id="btnLimparContrato" class="btn btn-sm btn-outline-danger"><i class="bi bi-eraser-fill"></i> Limpar campos</button>
+                    </div>
                     <form id="contractForm">
                         
                         <h5 class="form-section-title">Dados do Cliente (Locatário)</h5>
@@ -1105,7 +806,7 @@ do que você precisa??</h2>
 
                             <div class="col-12 mb-3">
                                 <label for="primeiroVencimento" class="form-label">Data 1º Vencimento</label>
-                                <input type="date" class="form-control" id="primeiroVencimento">
+                                <input type="date" class="form-control" id="primeiroVencimento" required>
                             </div>
 
                             <!-- Prazo calculado automaticamente — readonly -->
@@ -1132,10 +833,7 @@ do que você precisa??</h2>
                             <button type="button" id="btnImprimir" class="btn btn-primary">
  <i class="bi bi-check-circle-fill"></i> Finalizar e Salvar Documento
                                 </button>
-                            <button type="button" id="btnLimparCampos" class="btn btn-secondary"><i class='bi bi-eraser'></i> Limpar Campos</button>
-                            <button type="button" id="btnApagarRascunho" class="btn btn-outline-danger"><i class='bi bi-trash'></i> Apagar Rascunho</button>
                         </div>
-                        <div id="draftStatus" class="text-secondary small mt-2 text-center" style="height: 1.2em;"></div>
                         <input type="hidden" id="editingBoletoId" value="">
                     </form>
                 </div>
@@ -1146,10 +844,6 @@ do que você precisa??</h2>
 
 
         <div id="areaBookipWrapper" class="container hidden">
-            <div class="section-header">
-                <h3>Garantia (Bookip)</h3>
-                <button aria-label="Voltar" class="btn-back" id="backFromBookipView"><i class="bi bi-arrow-left"></i></button>
-            </div>
 
 <div id="bookipDraftNotice" class="alert alert-warning d-flex justify-content-between align-items-center p-2 mb-3 hidden" style="border-radius: 10px;">
     <span class="small"><i class="bi bi-hdd-fill"></i> Há um rascunho salvo.</span>
@@ -1165,18 +859,23 @@ do que você precisa??</h2>
             <div class="toggle-switch">
                 <input type="checkbox" id="bookipModeToggle">
                 <label for="bookipModeToggle">
-                    <span><i class="bi bi-plus-lg"></i> Nova Garantia</span>
+                    <span id="txtToggleNovo"><i class="bi bi-plus-lg"></i> Nova Garantia</span>
                     <span><i class="bi bi-clock-history"></i> Histórico</span>
                 </label>
             </div>
 
             <div id="newBookipContent">
                 <div class="content-card w-100">
-                    <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <h5 class="form-section-title mb-0"><i class="bi bi-person-lines-fill"></i> Dados do Cliente</h5>
-    <button id="btnZapMagico" class="btn btn-sm btn-success" onclick="abrirModalColarZap()" style="border-radius: 20px;">
-        <i class="bi bi-whatsapp"></i> Colar do Zap
-    </button>
+    <div class="d-flex gap-2">
+        <button id="btnZapMagico" class="zap-btn zap-btn-primary" onclick="abrirModalColarZap()">
+            <i class="bi bi-whatsapp"></i> Colar do Zap
+        </button>
+        <button id="btnZapIA" class="zap-btn zap-btn-ia" onclick="window.abrirModalColarZapIA()" title="Preenche cliente, produto e pagamento automaticamente via IA">
+            <i class="bi bi-stars"></i> IA
+        </button>
+    </div>
 </div>
 
                     <div class="row">
@@ -1281,7 +980,7 @@ do que você precisa??</h2>
 
 
 
-                    <h6 class="text-secondary small mb-2">Itens no Recibo:</h6>
+                    <h6 class="text-secondary small mb-2" id="bookipItensLabel">Itens no Recibo:</h6>
                     <ul class="list-group mb-3" id="bookipListaItens">
                         <li class="list-group-item text-center text-muted small bg-transparent">Nenhum item adicionado.</li>
                     </ul>
@@ -1291,11 +990,23 @@ do que você precisa??</h2>
 
                     <h5 class="form-section-title mb-3 mt-4"><i class="bi bi-sliders"></i> Detalhes Finais</h5>
                     <div class="mb-3">
-                        <label class="form-label">Data da Venda (Para Garantias anteriores)</label>
+                        <label class="form-label" id="bookipDataManualLabel">Data da Venda (Para Garantias anteriores)</label>
                         <input type="date" class="form-control" id="bookipDataManual">
                     </div>
 
-                    <div class="mb-3">
+                    <div class="mb-3 hidden" id="blocoValidadeOrc">
+                        <label class="form-label">Validade do Orçamento</label>
+                        <select class="form-select" id="orcValidadeSelect">
+                            <option value="3">3 Dias</option>
+                            <option value="7" selected>7 Dias (Padrão)</option>
+                            <option value="15">15 Dias</option>
+                            <option value="30">30 Dias</option>
+                            <option value="custom">Manual (Digitar Dias)</option>
+                        </select>
+                        <input type="number" min="1" max="365" class="form-control mt-2 hidden" id="orcValidadeCustomInput" placeholder="Digite a quantidade de dias (Ex: 10)">
+                    </div>
+
+                    <div class="mb-3" id="blocoGarantia">
                         <label class="form-label">Tempo de Garantia</label>
                         <select class="form-select" id="bookipGarantiaSelect">
                             <option value="365" selected>1 Ano (Padrão)</option>
@@ -1308,7 +1019,7 @@ do que você precisa??</h2>
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label d-block">Forma(s) de Pagamento</label>
+                        <label class="form-label d-block" id="bookipPagamentoLabel">Forma(s) de Pagamento</label>
                         <div class="d-flex flex-wrap gap-3 p-2 rounded" style="background: rgba(0,0,0,0.2);">
                             <div class="form-check">
                                 <input class="form-check-input check-pagamento" type="checkbox" value="Dinheiro/Pix" id="pagPix">
@@ -1384,7 +1095,7 @@ do que você precisa??</h2>
                                 </button>
                             </div>
                             <button id="btnNewBookipCycle" class="btn btn-link text-secondary mt-3 text-decoration-none" style="font-size: 0.9rem;">
-                                <i class="bi bi-plus-circle"></i> Começar um Novo Recibo
+                                <i class="bi bi-plus-circle"></i> <span id="txtNovoCiclo">Começar um Novo Recibo</span>
                             </button>
                         </div>
                     </div>
@@ -1393,10 +1104,8 @@ do que você precisa??</h2>
 
 <div id="bookipSearchContainer" class="mb-2 w-100 hidden">
     <div class="input-group position-relative" 
-         style="background: rgba(0, 0, 0, 0.25); /* Fundo vidro escuro */
-                backdrop-filter: blur(5px);       /* Desfoque leve atrás */
-                -webkit-backdrop-filter: blur(5px);
-                border: 1px solid rgba(255, 255, 255, 0.15); /* Borda fina clara */
+         style="background: var(--input-bg);
+                border: 1px solid var(--input-border);
                 border-radius: 12px;              /* Cantos arredondados */
                 overflow: hidden;"> 
         
@@ -1443,35 +1152,28 @@ do que você precisa??</h2>
 
     <div id="stockContainer" class="container hidden">
         <div class="section-header">
-            <h3>Controle de Estoque</h3>
+            <h3>Estoque</h3>
             <button aria-label="Voltar" class="btn-back" id="backFromStock"><i class="bi bi-arrow-left"></i></button>
+            <button class="ui-rb" id="toggleIgnoredBtn" title="Mostrar produtos ignorados" aria-label="Mostrar produtos ignorados"><i class="bi bi-eye-slash-fill"></i></button>
+            <button class="ui-rb" id="generateReportBtn" title="Relatório" aria-label="Relatório"><i class="bi bi-printer"></i></button>
         </div>
-        <div class="content-card w-100">
-            <div class="d-flex justify-content-between align-items-center mb-1 flex-wrap gap-2">
-                <div style="display:flex;align-items:center;flex:1;min-width:180px;position:relative;">
-                    <input class="form-control pe-4" id="stockSearchInput" placeholder="Filtrar produtos..." style="flex:1;" type="text">
-                    <button id="stockSearchClear" onclick="document.getElementById('stockSearchInput').value='';document.getElementById('stockSearchInput').dispatchEvent(new Event('input'));this.style.display='none';" style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-secondary);font-size:.85rem;cursor:pointer;padding:0;line-height:1;" title="Limpar">✕</button>
+        <div class="w-100">
+            <div id="stockProgressContainer" class="ui-card stock-progress">
+                <div class="stock-progress-row">
+                    <span id="stockProgressCount" class="stock-progress-count">0</span>
+                    <small id="stockProgressText" class="stock-progress-text">Calculando...</small>
+                    <button class="ui-mini" id="resetCountBtn" title="Resetar Contagem">Resetar</button>
                 </div>
-                <div class="btn-group">
-                    <button class="btn btn-outline-secondary btn-sm" id="toggleIgnoredBtn" title="Mostrar produtos ignorados"><i class="bi bi-eye-slash-fill"></i></button>
-                    <button class="btn btn-outline-danger btn-sm" id="resetCountBtn" title="Resetar Contagem"><i class="bi bi-arrow-counterclockwise"></i></button>
-                    <button class="btn btn-info btn-sm" id="generateReportBtn"><i class="bi bi-printer"></i> Relatório</button>
-<!-- Scan IA removido — substituído pelo botão 📷 em cada card do estoque -->
+                <div class="progress stock-progress-track">
+                    <div id="stockProgressBar" class="progress-bar" role="progressbar" style="width: 0%;"></div>
                 </div>
             </div>
+            <div class="stock-search">
+                <input class="form-control" id="stockSearchInput" placeholder="Filtrar produtos..." type="text">
+                <button id="stockSearchClear" onclick="document.getElementById('stockSearchInput').value='';document.getElementById('stockSearchInput').dispatchEvent(new Event('input'));this.style.display='none';" title="Limpar" aria-label="Limpar">✕</button>
+            </div>
             <div id="stockNotFoundHint"></div>
-            <div id="stockProgressContainer" class="mb-3" style="background: rgba(0,0,0,0.2); padding: 10px 15px; border-radius: 15px; border: 1px solid var(--glass-border);">
-    <div class="d-flex justify-content-between align-items-center mb-2">
-        <small class="text-secondary" style="font-weight: 500;"><i class="bi bi-clipboard-check"></i> Progresso da Contagem</small>
-        <small id="stockProgressText" class="fw-bold text-success" style="font-size: 0.9rem;">Calculando...</small>
-    </div>
-    <div class="progress" style="height: 8px; background-color: rgba(255,255,255,0.1); border-radius: 10px; overflow: hidden;">
-        <div id="stockProgressBar" class="progress-bar bg-success" role="progressbar" style="width: 0%; transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 0 10px rgba(74, 222, 128, 0.5);"></div>
-    </div>
-</div>
-
-            
-            <            <div class="stock-list-container" id="stockTableBody"></div>
+            <div class="stock-list-container" id="stockTableBody"></div>
         </div>
     </div>
     
@@ -1493,23 +1195,14 @@ do que você precisa??</h2>
         </div>
         
         <div class="content-card w-100">
-            <div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
-                <div class="input-group" style="flex: 1; min-width: 200px;">
-                    <span class="input-group-text bg-transparent border-end-0 text-secondary"><i class="bi bi-search"></i></span>
-                    <input type="text" class="form-control border-start-0 ps-0" id="clientSearchInput" placeholder="Buscar por nome ou CPF...">
-                </div>
-                
-                <<button class="btn btn-outline-success btn-sm" id="btnImportClients" title="Importar CSV">
-    <i class="bi bi-file-earmark-spreadsheet-fill"></i> Importar
-</button>
-
-<input type="file" id="csvFileInput" accept=".csv" class="hidden">
-
-<button class="btn btn-outline-danger btn-sm ms-1" onclick="limparImportacaoErrada()" title="Limpar Lixo">
-    <i class="bi bi-trash3-fill"></i> Limpar Lixo
-</button>
-
-
+            <div class="clients-search mb-2">
+                <i class="bi bi-search"></i>
+                <input type="text" class="form-control" id="clientSearchInput" placeholder="Buscar por nome ou CPF...">
+            </div>
+            <div class="clients-actions mb-3">
+                <button class="btn btn-outline-secondary btn-sm" id="btnImportClients" title="Importar CSV"><i class="bi bi-file-earmark-spreadsheet-fill"></i> Importar CSV</button>
+                <input type="file" id="csvFileInput" accept=".csv" class="hidden">
+                <button class="btn btn-outline-secondary btn-sm clients-danger" onclick="limparImportacaoErrada()" title="Limpar Lixo"><i class="bi bi-trash3-fill"></i> Limpar lixo</button>
             </div>
 
             <div class="d-flex justify-content-between align-items-center mb-2 px-1">
@@ -1517,9 +1210,9 @@ do que você precisa??</h2>
                 <small class="text-primary fw-bold" id="totalClientsCount">0 clientes</small>
             </div>
 
-            <div class="table-responsive" style="max-height: 500px; overflow-y: auto; border-radius: 8px; border: 1px solid var(--glass-border);">
-                <table class="table table-hover align-middle mb-0" style="background: transparent; color: var(--text-color);">
-                    <thead style="background-color: rgba(var(--primary-color-rgb), 0.1); position: sticky; top: 0;">
+            <div class="table-responsive clients-table-wrap">
+                <table class="table table-hover align-middle mb-0 clients-table">
+                    <thead>
                         <tr>
                             <th class="border-0">Nome / CPF</th>
                             <th class="border-0 text-end">Ações</th>
@@ -1601,7 +1294,6 @@ do que você precisa??</h2>
 
 
     <div id="reportPreview"></div>
-    <div class="user-id-display" id="userIdDisplay" class="hidden"></div>
     
     <div class="custom-modal-overlay" id="customModalOverlay">
         <div class="custom-modal-content">
@@ -1732,48 +1424,11 @@ do que você precisa??</h2>
         </div>
     </div>
     
-    <div class="offcanvas offcanvas-end" tabindex="-1" id="notificationPanel" aria-labelledby="notificationPanelLabel">
-        <div class="offcanvas-header">
-            <h5 class="offcanvas-title" id="notificationPanelLabel"><i class="bi bi-bell-fill me-2"></i>Notificações</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
-        </div>
-        <div class="offcanvas-body">
-            <div id="notificationList" class="list-group list-group-flush"></div>
-        </div>
-    </div>
-
-
-    <div class="custom-modal-overlay" id="themeSelectorModal">
-        <div class="custom-modal-content">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h5 class="mb-0">Escolha seu Estilo</h5>
-                <button class="btn-back" id="closeThemeModal"><i class="bi bi-x-lg"></i></button>
-            </div>
-            <div class="d-flex justify-content-center gap-3 flex-wrap p-2">
-                <button class="theme-option-btn" data-color="red" style="background: linear-gradient(135deg, #EF5350, #B71C1C);" title="Vermelho Original"></button>
-                <button class="theme-option-btn" data-color="blue" style="background: linear-gradient(135deg, #2979FF, #0D47A1);" title="Cyber Blue"></button>
-                <button class="theme-option-btn" data-color="green" style="background: linear-gradient(135deg, #00E676, #1B5E20);" title="Emerald Green"></button>
-                <button class="theme-option-btn" data-color="purple" style="background: linear-gradient(135deg, #8B5CF6, #4A148C);" title="Deep Purple"></button>
-                <button class="theme-option-btn" data-color="orange" style="background: linear-gradient(135deg, #FF9800, #E65100);" title="Sunset Orange"></button>
-
-<button class="theme-option-btn" data-color="pink" style="background: linear-gradient(135deg, #FF4081, #C51162); box-shadow: 0 4px 15px rgba(255, 64, 129, 0.4);"></button>
-
-<button class="theme-option-btn" data-color="cyan" style="background: linear-gradient(135deg, #00E5FF, #00B8D4); box-shadow: 0 4px 15px rgba(0, 229, 255, 0.4);"></button>
-
-<button class="theme-option-btn" data-color="yellow" style="background: linear-gradient(135deg, #FFD740, #FFAB00); box-shadow: 0 4px 15px rgba(255, 215, 64, 0.4);"></button>
-
-
-            </div>
-            <p class="text-secondary small mt-3">Sua escolha ficará salva neste dispositivo.</p>
-        </div>
-    </div>
-
-
     <div id="postSaveOptions" class="hidden">
         <div class="popup-backdrop"></div> <div class="popup-card">           <div class="mb-4">
                 <i class="bi bi-check-circle-fill text-success" style="font-size: 3.5rem;"></i>
                 <h4 class="mt-2 fw-bold text-light">Sucesso!</h4>
-                <p class="text-secondary small">Garantia já salva na Nuvem.</p>
+                <p class="text-secondary small" id="postSaveMsg">Garantia já salva na Nuvem.</p>
             </div>
 
             <div class="row g-2 mb-3">
@@ -1787,7 +1442,7 @@ do que você precisa??</h2>
 
 
         <button id="btnResetSuccess" class="btn btn-outline-light w-100 py-2 rounded-pill mt-2">
-    <i class="bi bi-plus-lg"></i>  Sair e Começar Nova Garantia
+    <i class="bi bi-plus-lg"></i> <span id="txtResetSuccess">Sair e Começar Nova Garantia</span>
 </button>
 
         </div>
@@ -1825,8 +1480,8 @@ do que você precisa??</h2>
             "description": "Calculadora de taxas e gerador de contratos para facilitar suas vendas.",
             "start_url": ".",
             "display": "standalone",
-            "background_color": "#000000",
-            "theme_color": "#000000",
+            "background_color": "#0E0E0F",
+            "theme_color": "#0E0E0F",
             "orientation": "portrait-primary",
             "icons": [
                 { "src": "icon-192.png",  "type": "image/png", "sizes": "192x192",  "purpose": "any maskable" },
@@ -1836,48 +1491,14 @@ do que você precisa??</h2>
         }
     </script>
 
-    <script type="text/plain" id="sw-script">
-        const CACHE_NAME = 'centrar-workcell-cache-v80';
-        const urlsToCache = [ '/', '/index.html', 'https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap', 'https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css', 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css', 'https://cdn.jsdelivr.net/npm/fuse.js/dist/fuse.min.js', 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js', 'https://www.gstatic.com/firebasejs/11.9.1/firebase-app.js', 'https://www.gstatic.com/firebasejs/11.9.1/firebase-auth.js', 'https://www.gstatic.com/firebasejs/11.9.1/firebase-database.js' ];
-        self.addEventListener('install', event => { event.waitUntil( caches.open(CACHE_NAME).then(cache => { console.log('Cache aberto'); return cache.addAll(urlsToCache); }) ); });
-        self.addEventListener('fetch', event => { event.respondWith( caches.match(event.request).then(response => { if (response) { return response; } return fetch(event.request).then( response => { if(!response || response.status !== 200 || response.type !== 'basic') { return response; } const responseToCache = response.clone(); caches.open(CACHE_NAME).then(cache => { cache.put(event.request, responseToCache); }); return response; } ); }) ); });
-        self.addEventListener('activate', event => { const cacheWhitelist = [CACHE_NAME]; event.waitUntil( caches.keys().then(cacheNames => { return Promise.all( cacheNames.map(cacheName => { if (cacheWhitelist.indexOf(cacheName) === -1) { return caches.delete(cacheName); } }) ); }) ); });
-
-        // 🔔 Recebe mensagem do app e exibe notificação nativa
-        self.addEventListener('message', event => {
-            if (event.data && event.data.tipo === 'MOSTRAR_NOTIFICACAO') {
-                const { titulo, corpo, tag } = event.data;
-                self.registration.showNotification(titulo, {
-                    body: corpo,
-                    icon: '/icon-192.png',
-                    badge: '/icon-192.png',
-                    tag: tag || 'ctw-notif',
-                    renotify: false,
-                    vibrate: [200, 100, 200]
-                });
-            }
-        });
-
-        // Ao clicar na notificação, abre/foca o app
-        self.addEventListener('notificationclick', event => {
-            event.notification.close();
-            event.waitUntil(
-                clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
-                    for (const client of clientList) {
-                        if ('focus' in client) return client.focus();
-                    }
-                    if (clients.openWindow) return clients.openWindow('/');
-                })
-            );
-        });
-    </script>
     
 
 
 
 
 
-<script src="app.js?v=1001" type="module" defer></script>
+<script src="ctw-ui.js?v=3" defer></script>
+<script src="app.js?v=1011" type="module" defer></script>
 <script>
 window.addEventListener('load', function() {
     var s = document.createElement('script');
@@ -1888,18 +1509,34 @@ window.addEventListener('load', function() {
 
     <!-- Módulos independentes — carregam em paralelo após app.js -->
     <script type="module" defer>
-        // Carrega módulos após o app estar pronto
+        // Módulos independentes. Os leves (avisos, recibo, fechar venda) carregam ao abrir;
+        // os pesados (Consertos, Reposição, CreditoScan = ~280 KB) esperam a tela inicial aparecer e
+        // entram em segundo plano — ou na hora, se a pessoa abrir um deles antes disso.
+        const pesados = {
+            repairs:     () => import('./repairs.js?v=5').then(m => { window._repairsModule = m; return m; }),
+            reposicao:   () => import('./reposicao.js').then(m => { window._reposicaoModule = m; return m; }),
+            creditoscan: () => import('./creditoscan.js').then(m => { window._csReady = true; return m; })
+        };
+        const carregados = {};
+        window.ctwCarregarModulo = (nome) => carregados[nome] || (carregados[nome] = pesados[nome]());
+
+        // Toque no cartão do CreditoScan antes do módulo carregar: carrega agora e repete o toque.
+        const cardCS = document.getElementById('goCS2');
+        if (cardCS) cardCS.addEventListener('click', (e) => {
+            if (window._csReady) return;
+            e.stopImmediatePropagation();
+            window.ctwCarregarModulo('creditoscan').then(() => cardCS.click());
+        }, true);
+
         async function loadModules() {
             await Promise.all([
                 import('./notifications.js'),
-                import('./ambilight.js'),
-                import('./Favorites.js'),
-                import('./repairs.js?v=2').then(m => { window._repairsModule = m; }),
                 import('./Bookip.js'),
-                import('./reposicao.js').then(m => { window._reposicaoModule = m; }),
                 import('./fecharVenda.js'),
-                import('./creditoscan.js'),
             ]);
+            const emSegundoPlano = () => Promise.all(Object.keys(pesados).map(window.ctwCarregarModulo));
+            if ('requestIdleCallback' in window) requestIdleCallback(emSegundoPlano, { timeout: 4000 });
+            else setTimeout(emSegundoPlano, 2000);
         }
         // Módulos carregam assim que o DOM está pronto
         // Cada módulo espera internamente pelas dependências que precisa
@@ -1911,20 +1548,25 @@ window.addEventListener('load', function() {
     </script>
 
     
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" defer></script>
-
+    
 <script>
 (function() {
     console.log("🚀 Sistema de Navegação CSS Computado Iniciado (Corrigido)...");
 
-    // 1. GATILHO: Adiciona histórico ao clicar para abrir telas
+    // 1. GATILHO: cada tela aberta ganha uma entrada no histórico (o botão voltar do celular fecha a tela, não o app)
+    function posicaoNav() { return (history.state && history.state.ctwD) || 0; }
+    window._ctwPushNav = function() { history.pushState({ ctwD: posicaoNav() + 1 }, "", ""); };
     document.addEventListener('click', function(e) {
-        // Pega qualquer botão que pareça ser de navegação ou ação
-        const target = e.target.closest('.btn-menu, .btn-action-sm, #btnAdminClients');
-        if (target) {
-            window.history.pushState({ time: Date.now() }, "", "");
-        }
+        // Botões de navegação/ação + cards que abrem telas sem passar por .btn-menu
+        // (a barra inferior e o Início empilham o histórico por conta própria, em ctwIrParaSecao)
+        const target = e.target.closest('.btn-action-sm, #btnAdminClients, #goCS2');
+        if (target) window._ctwPushNav();
     }, true);
+    // Na 1ª interação do usuário cria a entrada-base: sem ela, voltar na tela inicial fecharia o app sem perguntar
+    // (o navegador ignora entradas criadas sem toque do usuário, por isso não é feito no carregamento).
+    document.addEventListener('pointerdown', function() {
+        if (posicaoNav() === 0) window._ctwPushNav();
+    }, { capture: true, once: true });
 
     // 2. FUNÇÃO INFALÍVEL PARA CHECAR VISIBILIDADE
     function isRealmenteVisivel(id) {
@@ -1933,81 +1575,104 @@ window.addEventListener('load', function() {
         
         const style = window.getComputedStyle(el);
         
+        // getClientRects: vazio quando o elemento ou algum ancestral está com display:none
         return style.display !== 'none' && 
                style.visibility !== 'hidden' && 
-               !el.classList.contains('hidden');
+               !el.classList.contains('hidden') &&
+               el.getClientRects().length > 0;
     }
 
-    // 3. REAÇÃO AO BOTÃO VOLTAR
-    window.addEventListener('popstate', function(event) {
-        console.log("🔙 Voltar detectado. Analisando tela ativa...");
+    // Devolve true se fechou alguma tela
+    function tratarVoltar() {
+        // === NIVEL 0: folhas ("Criar novo", "Alertas") fecham antes de qualquer tela ===
+        if (typeof window.ctwFecharFolhas === 'function' && window.ctwFecharFolhas()) return true;
 
-        // === NIVEL 1: TELAS FILHAS (PRIORIDADE MÁXIMA) ===
-        
-        // --- CORREÇÃO FEITA AQUI: ID EXATO DO SEU HTML ---
-        if (isRealmenteVisivel('emprestarValores')) {
-            document.getElementById('backFromEmprestarValores').click(); return;
-        }
-        // -------------------------------------------------
+        // === NIVEL 0: CreditoScan (camadas próprias: resultado, histórico, configurações) ===
+        if (typeof window._creditoScanBack === 'function' && window._creditoScanBack()) return true;
 
-        if (isRealmenteVisivel('fecharVenda')) {
-            document.getElementById('backFromFecharVenda').click(); return;
-        }
-        if (isRealmenteVisivel('repassarValores')) {
-            document.getElementById('backFromRepassarValores').click(); return;
-        }
-        if (isRealmenteVisivel('calcularEmprestimo')) {
-            document.getElementById('backFromCalcularEmprestimo').click(); return;
-        }
-        if (isRealmenteVisivel('calcularPorAparelho')) {
-            document.getElementById('backFromCalcularPorAparelho').click(); return;
-        }
-        
-        // Docs (Filhos)
-        if (isRealmenteVisivel('areaContratoWrapper')) {
-            document.getElementById('backFromContratoView').click(); return;
-        }
-        if (isRealmenteVisivel('areaBookipWrapper')) {
-            document.getElementById('backFromBookipView').click(); return;
+        // === NIVEL 1: Taxas (todas as abas voltam para o Início) ===
+        if (['emprestarValores', 'fecharVenda', 'repassarValores', 'calcularEmprestimo', 'calcularPorAparelho'].some(isRealmenteVisivel)) {
+            document.getElementById('backFromCalc').click(); return true;
         }
 
-
-        // === NIVEL 2: MENUS INTERMEDIÁRIOS ===
-        
-        if (isRealmenteVisivel('calculatorHome')) {
-            document.getElementById('backFromCalculatorHome').click(); return;
-        }
-        if (isRealmenteVisivel('documentsHome')) {
-            document.getElementById('backFromDocumentsHome').click(); return;
+        // === NIVEL 1: Documentos (Garantia, Contrato e Orçamento voltam para o Início) ===
+        if (isRealmenteVisivel('areaContratoWrapper') || isRealmenteVisivel('areaBookipWrapper')) {
+            document.getElementById('backFromDocs').click(); return true;
         }
 
+        // === NIVEL 2: tela Mais ===
+        if (isRealmenteVisivel('maisContainer')) {
+            if (typeof showMainSection === 'function') showMainSection('main'); return true;
+        }
 
         // === NIVEL 3: TELAS INDEPENDENTES ===
         
         if (isRealmenteVisivel('stockContainer')) {
-            document.getElementById('backFromStock').click(); return;
+            document.getElementById('backFromStock').click(); return true;
         }
         if (isRealmenteVisivel('clientsContainer')) {
-            document.getElementById('backFromClients').click(); return;
+            document.getElementById('backFromClients').click(); return true;
         }
         if (isRealmenteVisivel('administracao')) {
-            document.getElementById('backFromAdmin').click(); return;
+            document.getElementById('backFromAdmin').click(); return true;
         }
 
         // Se chegou aqui, força o Menu Principal
         const mainMenu = document.getElementById('mainMenu');
         if (mainMenu && window.getComputedStyle(mainMenu).display === 'none') {
              if(typeof showMainSection === 'function') showMainSection('main');
+             return window.getComputedStyle(mainMenu).display !== 'none';
         }
+        return false;
+    }
+
+    // Tela inicial: pergunta antes de sair do app
+    function perguntarSair() {
+        if (document.getElementById('ctwSairApp')) return;
+        const ov = document.createElement('div');
+        ov.id = 'ctwSairApp';
+        ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:24px;';
+        ov.innerHTML = '<div style="background:var(--card-bg,#1d1e23);color:var(--text-color,#ecedee);border:1px solid var(--glass-border,rgba(255,255,255,.1));border-radius:20px;padding:22px;width:100%;max-width:340px;text-align:center;font-family:inherit">' +
+            '<div style="font-size:18px;font-weight:700;margin-bottom:6px">Deseja sair do app?</div>' +
+            '<div style="font-size:13px;color:var(--text-secondary,#9a9ca4);margin-bottom:18px">Aperte voltar de novo para sair, ou toque em Ficar.</div>' +
+            '<div style="display:flex;gap:10px"><button type="button" id="ctwSairNao" style="flex:1;height:48px;border-radius:14px;border:none;background:var(--primary-color,#6FBF8B);color:#0d1f15;font-weight:700;font-size:15px">Ficar</button>' +
+            '<button type="button" id="ctwSairSim" style="flex:1;height:48px;border-radius:14px;border:1px solid var(--glass-border,rgba(255,255,255,.2));background:transparent;color:var(--text-color,#ecedee);font-weight:600;font-size:15px">Sair</button></div></div>';
+        document.body.appendChild(ov);
+        const fechar = function() { ov.remove(); };
+        document.getElementById('ctwSairNao').addEventListener('click', function() {
+            fechar();
+            if (posicaoNav() === 0) window._ctwPushNav(); // volta a proteger a tela inicial
+        });
+        document.getElementById('ctwSairSim').addEventListener('click', function() {
+            fechar();
+            try { window.close(); } catch (e) {}
+            // Alguns navegadores não deixam o site se fechar; a próxima volta do celular sai de vez
+            const t = document.createElement('div');
+            t.textContent = 'Aperte voltar mais uma vez para sair.';
+            t.style.cssText = 'position:fixed;left:50%;bottom:110px;transform:translateX(-50%);z-index:100000;background:#222;color:#fff;padding:10px 16px;border-radius:12px;font-size:13px;';
+            document.body.appendChild(t); setTimeout(function() { t.remove(); }, 2500);
+        });
+    }
+
+    // 3. REAÇÃO AO BOTÃO VOLTAR
+    window.addEventListener('popstate', function() {
+        const tratou = tratarVoltar();
+        if (tratou) {
+            // Sempre sobra uma entrada de histórico enquanto o app estiver aberto
+            if (posicaoNav() === 0) window._ctwPushNav();
+            return;
+        }
+        const mainMenu = document.getElementById('mainMenu');
+        if (mainMenu && window.getComputedStyle(mainMenu).display !== 'none') perguntarSair();
     });
 
     // 4. Estado Inicial
-    window.history.replaceState(null, "", "");
+    window.history.replaceState({ ctwD: 0 }, "", "");
 
 })();
 </script>
 
-<div id="loadingOverlay" class="d-none" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 99999; display: flex; flex-direction: column; align-items: center; justify-content: center; backdrop-filter: blur(5px);">
+<div id="loadingOverlay" class="d-none" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 99999; display: flex; flex-direction: column; align-items: center; justify-content: center;">
     <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status"></div>
     <h5 class="mt-3 text-white fw-light" id="loadingText">Processando...</h5>
 </div>
@@ -2015,150 +1680,124 @@ window.addEventListener('load', function() {
 
 
 
-<!-- Overlay de Navegação da Busca Global (Sherlock) -->
-<div id="gsNavOverlay" style="display:none;position:fixed;inset:0;z-index:99998;background:rgba(7,13,26,0.97);backdrop-filter:blur(8px);flex-direction:column;align-items:center;justify-content:center;gap:20px;">
-    <div style="font-size:3.5rem;animation:sherlockBob 1s ease-in-out infinite alternate;">🔍</div>
-    <div style="font-family:Poppins,sans-serif;font-size:1rem;font-weight:600;color:#00e5ff;letter-spacing:2px;text-transform:uppercase;" id="gsNavMsg">Encontrando...</div>
-    <div style="display:flex;gap:6px;margin-top:4px;">
-        <span style="width:8px;height:8px;border-radius:50%;background:#00e5ff;animation:dotPulse 1.2s ease-in-out infinite;animation-delay:0s;display:block;"></span>
-        <span style="width:8px;height:8px;border-radius:50%;background:#00e5ff;animation:dotPulse 1.2s ease-in-out infinite;animation-delay:0.2s;display:block;"></span>
-        <span style="width:8px;height:8px;border-radius:50%;background:#00e5ff;animation:dotPulse 1.2s ease-in-out infinite;animation-delay:0.4s;display:block;"></span>
-    </div>
-</div>
-<style>
-@keyframes sherlockBob { from { transform: translateY(0) rotate(-8deg); } to { transform: translateY(-10px) rotate(8deg); } }
-@keyframes dotPulse { 0%,80%,100% { opacity:0.2; transform:scale(0.8); } 40% { opacity:1; transform:scale(1.2); } }
-</style>
+<!-- Busca global removida a pedido (HTML residual limpo: overlay de
+     navegação "Sherlock" e painel de busca gsOverlay/gsInput/etc — não
+     tinham mais JS controlando, ficaram visíveis sem querer). -->
 
-<!-- BUSCA GLOBAL -->
-<div id="gsOverlay" class="gs-overlay gs-hidden">
-    <div class="gs-backdrop" id="gsBackdrop"></div>
-    <div class="gs-panel">
-        <div class="gs-header">
-            <div class="gs-input-wrap">
-                <i class="bi bi-search gs-icon-sm"></i>
-                <input type="text" id="gsInput" placeholder="Buscar clientes, contratos, garantias..." autocomplete="off" autocorrect="off" spellcheck="false">
-                <button class="gs-clear gs-hidden" id="gsClearBtn"><i class="bi bi-x-lg"></i></button>
-            </div>
-            <button class="gs-cancel-btn" id="gsCancelBtn">Cancelar</button>
+<!-- ═══════════════════════════════════════════════
+     MAIS — tela com perfil, alertas, tema e conta
+═══════════════════════════════════════════════ -->
+<div class="container hidden" id="maisContainer" style="display:none;">
+    <div class="ui-top"><h1>Mais</h1></div>
+
+    <div class="ui-card ui-user">
+        <div class="ui-go ui-avatar ui-avatar-lg" id="ctwSheetAvatar" onclick="document.getElementById('avatarPhotoInput').click()" title="Toque para trocar a foto">
+            <img id="avatarPhotoImg" src="" alt="" style="display:none;">
+            <span id="avatarPhotoIcon">B</span>
         </div>
-        <div class="gs-filters" id="gsFilters">
-            <button class="gs-filter active" data-filter="all">Tudo</button>
-            <button class="gs-filter" data-filter="cliente">👥 Clientes</button>
-            <button class="gs-filter" data-filter="bookip">📒 Bookips</button>
-            <button class="gs-filter" data-filter="boleto">📋 Contratos</button>
-            <button class="gs-filter" data-filter="conserto">🔧 Consertos</button>
+        <input type="file" id="avatarPhotoInput" accept="image/*" style="display:none;">
+        <div class="ui-grow">
+            <b id="ctwSheetProfileName">Visitante</b>
+            <div class="ui-cap">Logado neste aparelho</div>
         </div>
-        <div class="gs-status-bar" id="gsStatus">Digite para buscar</div>
-        <div class="gs-results" id="gsResults"></div>
     </div>
+
+    <div class="ui-card ui-list">
+        <div class="ui-mrow">
+            <span class="ui-bub ui-bub-sm"><svg class="ui-ic ui-ic-s" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg></span>
+            <span class="ui-grow">Tema</span>
+            <div class="ui-seg" role="group" aria-label="Tema">
+                <button type="button" id="ctwThemeLight" data-theme-btn="light">Claro</button>
+                <button type="button" id="ctwThemeDark" data-theme-btn="dark">Noturno</button>
+            </div>
+        </div>
+        <div class="ui-mrow" id="ctwSheetLeve">
+            <span class="ui-bub ui-bub-sm"><svg class="ui-ic ui-ic-s" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></span>
+            <div class="ui-grow">Modo leve<div class="ui-cap" id="ctwLeveSub">Desligado</div></div>
+            <button type="button" class="ui-sw" id="ctwLeveSwitch" role="switch" aria-checked="false" aria-label="Modo leve"></button>
+        </div>
+        <button type="button" class="ui-mrow" id="ctwSheetNotif">
+            <span class="ui-bub ui-bub-sm"><svg class="ui-ic ui-ic-s" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z"/></svg></span>
+            <div class="ui-grow">Notificações<div class="ui-cap" id="notifPrefLabelSheet">Carregando...</div></div>
+            <svg class="ui-ic ui-ic-s ui-mute" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+    </div>
+
+    <div class="ui-card ui-list">
+        <button type="button" class="ui-mrow" id="ctwSheetTrocar">
+            <span class="ui-bub ui-bub-sm"><svg class="ui-ic ui-ic-s" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span>
+            <span class="ui-grow">Trocar usuário</span>
+            <svg class="ui-ic ui-ic-s ui-mute" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+        <button type="button" class="ui-mrow" id="goToAdmin">
+            <span class="ui-bub ui-bub-sm"><svg class="ui-ic ui-ic-s" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg></span>
+            <span class="ui-grow">Administração</span>
+            <svg class="ui-ic ui-ic-s ui-mute" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+        <button type="button" class="ui-mrow ui-danger" id="ctwSheetSair">
+            <span class="ui-bub ui-bub-sm"><svg class="ui-ic ui-ic-s" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg></span>
+            <span class="ui-grow">Sair</span>
+        </button>
+    </div>
+    <div class="ui-versao" id="ctwVersaoApp">Central Workcell · versão ctw-231</div>
 </div>
 
 <!-- ═══════════════════════════════════════════════
-     BOTTOM NAV — Estilo 2.0
-     Só aparece quando ctwMenuStyle === 'v2'
+     BARRA INFERIOR — Início · Taxas · [+] · Docs · Mais
 ═══════════════════════════════════════════════ -->
-<nav id="ctwBottomNav" class="ctw-bottom-nav ctw-menu-hide" aria-label="Navegação principal">
-    <!-- Casa -->
-    <button class="ctw-nav-btn" id="ctwNavHome" title="Início">
-        <span class="ctw-nav-icon"><i class="bi bi-house-fill"></i></span>
-        <span class="ctw-nav-label">Início</span>
+<nav id="ctwBottomNav" class="ui-nav" aria-label="Navegação principal">
+    <button type="button" class="ui-nav-it" id="ctwNavHome">
+        <svg class="ui-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Início
     </button>
-
-    <!-- Sino -->
-    <button class="ctw-nav-btn" id="ctwNavBell" title="Notificações">
-        <span class="ctw-nav-icon">
-            <i class="bi bi-bell-fill"></i>
-            <span class="ctw-nav-badge" id="ctwNavBellBadge" style="display:none;"></span>
-        </span>
-        <span class="ctw-nav-label">Alertas</span>
+    <button type="button" class="ui-nav-it" id="ctwNavTaxas">
+        <svg class="ui-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="2.5" width="14" height="19" rx="2"/><path d="M8 7h8M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01"/></svg>Taxas
     </button>
-
-    <!-- Perfil -->
-    <button class="ctw-nav-btn" id="ctwNavProfile" title="Perfil">
-        <span class="ctw-nav-icon"><i class="bi bi-person-fill"></i></span>
-        <span class="ctw-nav-label" id="ctwNavProfileLabel">Perfil</span>
+    <button type="button" class="ui-nav-mid" id="ctwNavCriar" aria-label="Criar novo" aria-haspopup="dialog">
+        <svg class="ui-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+    <button type="button" class="ui-nav-it" id="ctwNavDocs">
+        <svg class="ui-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h6"/></svg>Docs
+    </button>
+    <button type="button" class="ui-nav-it" id="ctwNavMais">
+        <span class="ui-nav-ic"><svg class="ui-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><rect x="14" y="14" width="6" height="6" rx="1.5"/></svg></span>Mais
     </button>
 </nav>
 
-<!-- Profile Sheet (abre para cima, só v2) -->
-<div id="ctwProfileSheet" class="ctw-sheet-backdrop" style="display:none;" aria-hidden="true">
-    <div class="ctw-sheet" role="dialog" aria-modal="true">
-        <!-- Handle -->
-        <div class="ctw-sheet-handle"></div>
+<!-- Folha "Criar novo" -->
+<div class="ui-sheet-wrap" id="ctwCriarSheet" hidden>
+    <button type="button" class="ui-dim" data-fechar-folha aria-label="Fechar"></button>
+    <div class="ui-sheet" role="dialog" aria-modal="true" aria-label="Criar novo">
+        <div class="ui-grab"></div>
+        <div class="ui-sheet-title">Criar novo</div>
+        <button type="button" class="ui-srow" data-criar="garantia">
+            <span class="ui-bub"><svg class="ui-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg></span>
+            <span class="ui-grow"><b>Garantia</b><small>Cliente, produtos e prazo</small></span><svg class="ui-ic ui-ic-s ui-mute" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+        <button type="button" class="ui-srow" data-criar="contrato">
+            <span class="ui-bub"><svg class="ui-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h6"/></svg></span>
+            <span class="ui-grow"><b>Contrato</b><small>Parcelado, com boleto</small></span><svg class="ui-ic ui-ic-s ui-mute" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+        <button type="button" class="ui-srow" data-criar="credito">
+            <span class="ui-bub"><svg class="ui-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4"/></svg></span>
+            <span class="ui-grow"><b>Análise CreditoScan</b><small>Extrato do cliente</small></span><svg class="ui-ic ui-ic-s ui-mute" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+        <button type="button" class="ui-srow" data-criar="orcamento">
+            <span class="ui-bub"><svg class="ui-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/></svg></span>
+            <span class="ui-grow"><b>Orçamento</b><small>Enviar proposta</small></span><svg class="ui-ic ui-ic-s ui-mute" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+    </div>
+</div>
 
-        <!-- Header usuário -->
-        <div class="ctw-sheet-user">
-            <div class="ctw-sheet-avatar" id="ctwSheetAvatar" onclick="document.getElementById('avatarPhotoInput').click()" style="cursor:pointer;overflow:hidden;position:relative;" title="Toque para trocar foto">
-                <img id="avatarPhotoImg" src="" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:none;">
-                <i class="bi bi-person-fill" id="avatarPhotoIcon"></i>
-                <div id="avatarPhotoHint" style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.55);font-size:.45rem;text-align:center;padding:2px 0;color:#fff;border-radius:0 0 50% 50%;">📷</div>
-            </div>
-            <input type="file" id="avatarPhotoInput" accept="image/*" style="display:none;">
-            <div>
-                <div class="ctw-sheet-user-role">Logado como</div>
-                <div class="ctw-sheet-user-name" id="ctwSheetProfileName">Visitante</div>
-            </div>
+<!-- Folha "Alertas" -->
+<div class="ui-sheet-wrap" id="ctwAlertasSheet" hidden>
+    <button type="button" class="ui-dim" data-fechar-folha aria-label="Fechar"></button>
+    <div class="ui-sheet" role="dialog" aria-modal="true" aria-label="Alertas">
+        <div class="ui-grab"></div>
+        <div class="ui-sheet-head">
+            <div class="ui-sheet-title">Alertas</div>
+            <button type="button" class="ui-clear" id="ctwAlertasLimpar" hidden>Limpar</button>
         </div>
-
-        <div class="ctw-sheet-divider"></div>
-
-        <!-- Ações -->
-        <div class="ctw-sheet-actions">
-            <button class="ctw-sheet-item" onclick="document.getElementById('theme-toggle-checkbox').click(); window.closeCtwSheet();">
-                <div class="ctw-sheet-item-icon bg-warn"><i class="bi bi-moon-stars-fill"></i></div>
-                <span>Alternar Tema</span>
-            </button>
-            <button class="ctw-sheet-item" onclick="document.getElementById('theme-palette-btn').click(); window.closeCtwSheet();">
-                <div class="ctw-sheet-item-icon bg-info"><i class="bi bi-palette-fill"></i></div>
-                <span>Mudar Cores</span>
-            </button>
-            <button class="ctw-sheet-item" onclick="window.togglePerfMode(); window.closeCtwSheet();">
-                <div class="ctw-sheet-item-icon" style="background:rgba(234,179,8,.12);color:#eab308;"><i class="bi bi-lightning-charge-fill"></i></div>
-                <div style="display:flex;flex-direction:column;gap:1px;text-align:left;">
-                    <span>Modo Performance</span>
-                    <small id="perfModeLabelSheet" style="font-size:.6rem;opacity:.6;">Desativado</small>
-                </div>
-            </button>
-            <button class="ctw-sheet-item" onclick="window.toggleNotifPref(); window.closeCtwSheet();">
-                <div class="ctw-sheet-item-icon" style="background:rgba(239,68,68,.12);color:#ef4444;"><i class="bi bi-bell-fill"></i></div>
-                <div style="display:flex;flex-direction:column;gap:1px;text-align:left;">
-                    <span>Notificações</span>
-                    <small id="notifPrefLabelSheet" style="font-size:.6rem;opacity:.6;">Carregando...</small>
-                </div>
-            </button>
-            <button class="ctw-sheet-item" onclick="document.getElementById('profileSelectorModal').classList.add('active'); window.closeCtwSheet();">
-                <div class="ctw-sheet-item-icon bg-primary"><i class="bi bi-people-fill"></i></div>
-                <span>Trocar Usuário</span>
-            </button>
-            <button class="ctw-sheet-item" onclick="window.ativarEstilo20(); window.closeCtwSheet();">
-                <div class="ctw-sheet-item-icon bg-stars"><i class="bi bi-stars"></i></div>
-                <div style="display:flex;flex-direction:column;gap:1px;text-align:left;">
-                    <span id="ctwSheetStyleLabel">Voltar ao estilo clássico</span>
-                    <small style="font-size:.6rem;opacity:.6;" id="ctwSheetStyleSub">Layout em lista original</small>
-                </div>
-            </button>
-
-            <!-- Administração -->
-            <button class="ctw-sheet-item" onclick="window.showMainSection('administracao'); window.closeCtwSheet();">
-                <div class="ctw-sheet-item-icon bg-purple"><i class="bi bi-gear-wide-connected"></i></div>
-                <div style="display:flex;flex-direction:column;gap:1px;text-align:left;">
-                    <span>Administração</span>
-                    <small style="font-size:.6rem;opacity:.6;">&amp; equipe</small>
-                </div>
-            </button>
-
-            <!-- Sair -->
-            <button class="ctw-sheet-item" onclick="window.closeCtwSheet(); setTimeout(window.sairDoPerfil, 320);" style="margin-top:4px;">
-                <div class="ctw-sheet-item-icon" style="background:rgba(239,68,68,.15);color:#ef4444;">
-                    <i class="bi bi-box-arrow-right"></i>
-                </div>
-                <div style="display:flex;flex-direction:column;gap:1px;text-align:left;">
-                    <span style="color:#ef4444;font-weight:600;">Sair</span>
-                    <small style="font-size:.6rem;opacity:.6;">Trocar ou bloquear usuário</small>
-                </div>
-            </button>
-        </div>
+        <div id="ctwAlertasLista"></div>
     </div>
 </div>
 
@@ -2173,7 +1812,7 @@ window.addEventListener('load', function() {
         <button aria-label="Voltar" class="btn-back" id="backFromRepairs">
             <i class="bi bi-arrow-left"></i>
         </button>
-        <h3 style="margin:0;"><i class="bi bi-wrench-adjustable-circle-fill"></i> Consertos</h3>
+        <h3>Consertos</h3>
         <button id="repCfgBtn" class="btn-back" title="Configurações dos Consertos" style="font-size:.95rem;">
             <i class="bi bi-gear-fill"></i>
         </button>
@@ -2251,6 +1890,24 @@ window.addEventListener('load', function() {
             <div class="rep-field">
                 <label><i class="bi bi-phone-fill"></i> Modelo do Aparelho</label>
                 <input type="text" id="repFormModelo" class="form-control" placeholder="Ex: iPhone 13, Samsung A54..." autocomplete="off">
+            </div>
+            <!-- Senha do aparelho (para o técnico desbloquear e testar) -->
+            <div class="rep-field">
+                <label><i class="bi bi-key-fill"></i> Senha do Aparelho</label>
+                <select id="repFormSenhaTipo" class="form-select">
+                    <option value="">Sem senha</option>
+                    <option value="pin">PIN / senha numérica</option>
+                    <option value="texto">Senha (letras e números)</option>
+                    <option value="desenho">Desenho (padrão)</option>
+                </select>
+                <input type="text" id="repFormSenhaTexto" class="form-control" maxlength="64" autocomplete="off" autocapitalize="off" spellcheck="false" style="display:none;">
+                <div id="repFormSenhaDesenho" style="display:none;">
+                    <div id="repSenhaPad" class="rep-senha-pad"></div>
+                    <div class="rep-senha-barra">
+                        <small id="repSenhaDica">Arraste o dedo pelos pontos (mínimo 4).</small>
+                        <button type="button" id="repSenhaRefazer" class="rep-btn rep-btn-ghost rep-btn-sm"><i class="bi bi-arrow-counterclockwise"></i> Refazer</button>
+                    </div>
+                </div>
             </div>
             <div class="rep-field">
                 <label><i class="bi bi-exclamation-triangle-fill"></i> Descrição do Defeito *</label>
@@ -2434,7 +2091,7 @@ window.addEventListener('load', function() {
 <div class="rep-modal-overlay" id="repDocOverlay" style="display:none;">
     <div class="rep-modal">
         <div class="rep-modal-header">
-            <span><i class="bi bi-file-earmark-text-fill" style="color:#6da037;margin-right:6px;"></i>Emitir Recibo / Garantia</span>
+            <span><i class="bi bi-file-earmark-text-fill" style="color:var(--primary-color);margin-right:6px;"></i>Emitir Recibo / Garantia</span>
             <button class="rep-modal-close" id="repDocCloseBtn"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="rep-modal-body">
@@ -2442,7 +2099,7 @@ window.addEventListener('load', function() {
             <!-- Serviço realizado -->
             <div class="rep-field">
                 <label style="font-size:.8rem;opacity:.7;font-weight:600;text-transform:uppercase;letter-spacing:.5px;">
-                    <i class="bi bi-wrench-fill" style="color:#6da037;"></i> Serviço Realizado
+                    <i class="bi bi-wrench-fill" style="color:var(--primary-color);"></i> Serviço Realizado
                 </label>
                 <input type="text" id="repDocSolucao" class="form-control" style="margin-top:6px;"
                     placeholder="Ex: Troca de tela, Bateria substituída...">
@@ -2452,7 +2109,7 @@ window.addEventListener('load', function() {
             <!-- Prazo -->
             <div class="rep-field" style="margin-top:14px;">
                 <label style="font-size:.8rem;opacity:.7;font-weight:600;text-transform:uppercase;letter-spacing:.5px;">
-                    <i class="bi bi-shield-check-fill" style="color:#6da037;"></i> Prazo de Garantia
+                    <i class="bi bi-shield-check-fill" style="color:var(--primary-color);"></i> Prazo de Garantia
                 </label>
                 <select id="repDocPrazo" class="form-select" style="margin-top:6px;">
                     <option value="0">Sem Garantia (Recibo Simples)</option>
@@ -2495,13 +2152,13 @@ window.addEventListener('load', function() {
 <div class="rep-modal-overlay" id="repCfgOverlay" style="display:none;">
     <div class="rep-modal">
         <div class="rep-modal-header">
-            <span><i class="bi bi-gear-fill" style="color:#6da037;margin-right:6px;"></i>Configurações — Consertos</span>
+            <span><i class="bi bi-gear-fill" style="color:var(--primary-color);margin-right:6px;"></i>Configurações — Consertos</span>
             <button class="rep-modal-close" id="repCfgCloseBtn"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="rep-modal-body" style="padding-bottom:240px;">
             <!-- Logo própria dos consertos -->
             <div class="rep-field" style="margin-bottom:18px;">
-                <label><i class="bi bi-image-fill" style="color:#6da037;"></i> Logo dos Consertos</label>
+                <label><i class="bi bi-image-fill" style="color:var(--primary-color);"></i> Logo dos Consertos</label>
                 <input type="file" id="repCfgLogoInput" accept="image/*" style="display:none;">
                 <div style="display:flex;align-items:center;gap:12px;margin-top:8px;">
                     <div id="repCfgLogoPlaceholder" style="width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.06);border:1px dashed rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.3);font-size:1.4rem;flex-shrink:0;">
@@ -2517,7 +2174,7 @@ window.addEventListener('load', function() {
                 </div>
             </div>
             <div class="rep-field">
-                <label><i class="bi bi-shield-fill-check" style="color:#6da037;"></i> Termo de Garantia dos Consertos</label>
+                <label><i class="bi bi-shield-fill-check" style="color:var(--primary-color);"></i> Termo de Garantia dos Consertos</label>
                 <textarea id="repCfgTerms" class="form-control" rows="5"
                     placeholder="Ex: O serviço tem garantia de 90 dias contra o mesmo defeito..."></textarea>
                 <small style="opacity:.45;font-size:.68rem;display:block;margin-top:4px;">Aparece no PDF. Se vazio, usa um texto padrão.</small>
@@ -2538,48 +2195,10 @@ window.addEventListener('load', function() {
     </div>
 </div>
 
-<!-- ─── BANNER: EXPERIMENTAR LAYOUT 2.0 ─── -->
-<div id="v2PromoBanner" class="v2-promo-overlay" style="display:none;" aria-modal="true" role="dialog">
-    <div class="v2-promo-card">
-        <!-- Ícone topo -->
-        <div class="v2-promo-icon-wrap">
-            <div class="v2-promo-icon-ring">
-                <i class="bi bi-stars"></i>
-            </div>
-        </div>
-
-        <!-- Badge novidade -->
-        <span class="v2-promo-badge">✨ Novidade</span>
-
-        <!-- Título -->
-        <h3 class="v2-promo-title">Layout 2.0 disponível!</h3>
-
-        <!-- Descrição -->
-        <p class="v2-promo-desc">
-            Seu app foi atualizado com um novo visual moderno — navegação flutuante, acesso rápido e uma experiência muito mais limpa.
-        </p>
-
-        <!-- Nota rodapé -->
-        <p class="v2-promo-note">
-            <i class="bi bi-arrow-left-right"></i>
-            Você pode voltar ao layout clássico a qualquer momento em
-            <strong>Perfil → Voltar ao estilo clássico</strong>
-        </p>
-
-        <!-- Botões -->
-        <div class="v2-promo-actions">
-            <button class="v2-promo-btn-no"  id="v2PromoBtnNo">Agora não</button>
-            <button class="v2-promo-btn-yes" id="v2PromoBtnYes">
-                <i class="bi bi-lightning-charge-fill"></i> Experimentar!
-            </button>
-        </div>
-    </div>
-</div>
-
 <!-- ═══════════════════════════════════════
      CUSTOM DATETIME PICKER — Consertos
 ═══════════════════════════════════════ -->
-<div id="ctwDatetimePicker" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);align-items:flex-end;justify-content:center;">
+<div id="ctwDatetimePicker" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.75);align-items:flex-end;justify-content:center;">
     <div style="width:100%;max-width:480px;background:var(--bg-color,#0b1325);border:1px solid var(--glass-border);border-bottom:none;border-radius:22px 22px 0 0;padding:0 0 24px;animation:dtPickerUp .28s cubic-bezier(.34,1.2,.64,1) both;">
         
         <!-- Handle -->
@@ -2660,7 +2279,7 @@ window.addEventListener('load', function() {
             <button onclick="window._dtLimpar()" style="flex:1;padding:12px;border-radius:12px;background:rgba(255,255,255,.05);border:1px solid var(--glass-border);color:var(--text-secondary);font-weight:600;font-size:.85rem;cursor:pointer;">
                 🗑️ Limpar
             </button>
-            <button onclick="window._dtConfirmar()" style="flex:2;padding:12px;border-radius:12px;background:var(--primary-color);border:none;color:#fff;font-weight:700;font-size:.9rem;cursor:pointer;">
+            <button onclick="window._dtConfirmar()" style="flex:2;padding:12px;border-radius:12px;background:var(--primary-color);border:none;color:var(--on-primary);font-weight:700;font-size:.9rem;cursor:pointer;">
                 ✓ Confirmar
             </button>
         </div>
@@ -2719,7 +2338,7 @@ window.addEventListener('load', function() {
 }
 .dt-dia-btn:hover   { background: rgba(255,255,255,.08); }
 .dt-dia-btn.hoje    { border: 1px solid rgba(var(--primary-color-rgb),.5); color: var(--primary-color); }
-.dt-dia-btn.selecionado { background: var(--primary-color) !important; color: #fff !important; font-weight: 700; border: none; }
+.dt-dia-btn.selecionado { background: var(--primary-color) !important; color: var(--on-primary) !important; font-weight: 700; border: none; }
 .dt-dia-btn.outro-mes  { opacity: .28; }
 </style>
 
@@ -2871,7 +2490,7 @@ window.addEventListener('load', function() {
 ═══════════════════════════════════════ -->
 
 <!-- PICKER PRINCIPAL -->
-<div id="ctwBirthdayPicker" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);align-items:flex-end;justify-content:center;">
+<div id="ctwBirthdayPicker" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.75);align-items:flex-end;justify-content:center;">
     <div style="width:100%;max-width:480px;background:var(--bg-color,#0b1325);border:1px solid var(--glass-border);border-bottom:none;border-radius:22px 22px 0 0;padding:0 0 28px;animation:dtPickerUp .28s cubic-bezier(.34,1.2,.64,1) both;">
         <div style="display:flex;justify-content:center;padding:10px 0 4px;">
             <div style="width:40px;height:4px;border-radius:2px;background:rgba(255,255,255,.12);"></div>
@@ -2918,13 +2537,13 @@ window.addEventListener('load', function() {
         <!-- Botões -->
         <div style="display:flex;gap:10px;padding:0 20px;">
             <button onclick="window._bdLimpar()" style="flex:1;padding:12px;border-radius:12px;background:rgba(255,255,255,.05);border:1px solid var(--glass-border);color:var(--text-secondary);font-weight:600;font-size:.85rem;cursor:pointer;">🗑️ Limpar</button>
-            <button onclick="window._bdConfirmar()" style="flex:2;padding:12px;border-radius:12px;background:var(--primary-color);border:none;color:#fff;font-weight:700;font-size:.9rem;cursor:pointer;">✓ Confirmar</button>
+            <button onclick="window._bdConfirmar()" style="flex:2;padding:12px;border-radius:12px;background:var(--primary-color);border:none;color:var(--on-primary);font-weight:700;font-size:.9rem;cursor:pointer;">✓ Confirmar</button>
         </div>
     </div>
 </div>
 
 <!-- GRADE DE DIAS -->
-<div id="ctwBdDiaGrid" style="display:none;position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);align-items:center;justify-content:center;">
+<div id="ctwBdDiaGrid" style="display:none;position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.6);align-items:center;justify-content:center;">
     <div style="width:calc(100% - 40px);max-width:380px;background:var(--bg-color,#0b1325);border:1px solid var(--glass-border);border-radius:20px;padding:20px;animation:dtPickerUp .2s ease both;">
         <div style="font-weight:700;font-size:.95rem;color:var(--text-color);margin-bottom:14px;text-align:center;">Selecione o dia</div>
         <div id="bdDiaGridItems" style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;"></div>
@@ -2933,7 +2552,7 @@ window.addEventListener('load', function() {
 </div>
 
 <!-- GRADE DE MESES -->
-<div id="ctwBdMesGrid" style="display:none;position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);align-items:center;justify-content:center;">
+<div id="ctwBdMesGrid" style="display:none;position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.6);align-items:center;justify-content:center;">
     <div style="width:calc(100% - 40px);max-width:380px;background:var(--bg-color,#0b1325);border:1px solid var(--glass-border);border-radius:20px;padding:20px;animation:dtPickerUp .2s ease both;">
         <div style="font-weight:700;font-size:.95rem;color:var(--text-color);margin-bottom:14px;text-align:center;">Selecione o mês</div>
         <div id="bdMesGridItems" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;"></div>
@@ -2942,7 +2561,7 @@ window.addEventListener('load', function() {
 </div>
 
 <!-- GRADE DE ANOS -->
-<div id="ctwBdAnoGrid" style="display:none;position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);align-items:center;justify-content:center;">
+<div id="ctwBdAnoGrid" style="display:none;position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.6);align-items:center;justify-content:center;">
     <div style="width:calc(100% - 40px);max-width:380px;background:var(--bg-color,#0b1325);border:1px solid var(--glass-border);border-radius:20px;padding:20px;animation:dtPickerUp .2s ease both;">
         <div style="font-weight:700;font-size:.95rem;color:var(--text-color);margin-bottom:14px;text-align:center;">Selecione o ano</div>
         <div id="bdAnoGridItems" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;max-height:52vh;overflow-y:auto;"></div>
@@ -3262,12 +2881,11 @@ window.addEventListener('load', function() {
 
     <!-- Header -->
     <div class="repo-header">
-        <button class="btn-back btn-back-large" id="backFromReposicao">
+        <button class="btn-back" id="backFromReposicao">
             <i class="bi bi-arrow-left"></i>
         </button>
         <div class="repo-header-title">
-            <i class="bi bi-cart-fill"></i>
-            <span>Lista de Reposição</span>
+            <span>Reposição</span>
         </div>
         <button class="repo-btn-add" id="repoBtnNovo" title="Adicionar item">
             <i class="bi bi-plus-lg"></i>
@@ -3372,6 +2990,33 @@ window.addEventListener('load', function() {
 
     </div>
 </div>
+
+
+<script>
+/* Suporte: abrir o app com ?diag=1 mostra um selo discreto no rodapé (não cobre a tela) com
+   versão, área segura do topo, posição da saudação e modo de exibição. */
+(function () {
+    try {
+        if (!/[?&]diag=1/.test(location.search)) return;
+        window.addEventListener('load', function () {
+            setTimeout(function () {
+                var barra = document.getElementById('ctwTopBar');
+                var r = barra ? barra.getBoundingClientRect() : null;
+                var sonda = document.createElement('div');
+                sonda.style.cssText = 'position:fixed;top:0;height:env(safe-area-inset-top,0px);width:1px;';
+                document.body.appendChild(sonda);
+                var topo = Math.round(sonda.getBoundingClientRect().height);
+                sonda.remove();
+                var selo = document.createElement('div');
+                selo.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:2147483000;font:10px/1.3 monospace;background:rgba(0,0,0,.8);color:#0f0;padding:3px 6px;pointer-events:none;';
+                selo.textContent = 'ctw-231 | areaSeguraTopo=' + topo + 'px | saudacao=' + (r && r.width ? Math.round(r.top) + '→' + Math.round(r.bottom) + 'px' : 'oculta') +
+                    ' | modo=' + (matchMedia('(display-mode: standalone)').matches ? 'app instalado' : 'navegador') + ' | tela=' + innerWidth + 'x' + innerHeight;
+                document.body.appendChild(selo);
+            }, 2500);
+        });
+    } catch (e) { /* diagnóstico opcional */ }
+})();
+</script>
 
 </body>
 </html>
