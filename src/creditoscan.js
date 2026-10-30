@@ -170,6 +170,33 @@
     var OR_TENTATIVAS = 3;
     var OR_TIMEOUT_MS = 180000;
 
+    // Servidor (Supabase Edge Function): a IA roda la, entao o Android pode congelar o app
+    // (ex.: voce foi ao WhatsApp) que a analise continua. Sem senha salva, usa o caminho direto.
+    var SRV_URL_PADRAO = 'https://mgjkjwsotzwmhrcwefhg.supabase.co/functions/v1/cs-ia';
+    var SRV_URL_LS = 'ctwServerUrl';     // endereco da funcao escolhido em Configuracoes (vazio = o padrao acima)
+    var SRV_TOKEN_LS = 'ctwServerToken';
+    var SRV_POLL_MS = 2000;
+    var SRV_ESPERA_MAX_MS = 600000;      // desiste de esperar o servidor depois de 10 min
+    var _srvFalhouEm = 0;                // quando o servidor falhou: nao insiste por 5 min
+
+    // Endereco da funcao: so https://<projeto>.supabase.co/functions/v1/<nome> (a senha do servidor e enviada para la).
+    // Devolve o endereco limpo (sem ?query, #, nem barra no fim) ou '' se nao serve.
+    function normalizarUrlServidor(txt) {
+        var s = String(txt == null ? '' : txt).trim().replace(/[?#].*$/, '').replace(/\/+$/, '');
+        return /^https:\/\/[a-z0-9-]+\.supabase\.co\/functions\/v1\/[A-Za-z0-9_-]+$/i.test(s) ? s : '';
+    }
+    function srvUrl() { return normalizarUrlServidor(safeGet(SRV_URL_LS)) || SRV_URL_PADRAO; }
+
+    // Outro aparelho pode ter mudado o endereco: o do Firebase vale (so troca quando e valido)
+    async function urlServidorSincronizar() {
+        try {
+            await esperarFirebase(8000); if (!window._firebaseDB) return;
+            var fb = await import('https://www.gstatic.com/firebasejs/11.9.1/firebase-database.js');
+            var u = normalizarUrlServidor((await fb.get(fb.ref(window._firebaseDB, 'settings/serverUrl'))).val());
+            if (u && u !== safeGet(SRV_URL_LS)) localStorage.setItem(SRV_URL_LS, u);
+        } catch (e) {}
+    }
+
     function pausa(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
     function aguardarAppPronto(maxMs) {
@@ -185,23 +212,156 @@
 
     function fmtMB(chars) { return chars < 1048576 ? Math.round(chars / 1024) + ' KB' : (chars / 1048576).toFixed(1).replace('.', ',') + ' MB'; }
 
-    async function openRouterCall(model, messages) {
+    async function getServerToken() {
+        var local = safeGet(SRV_TOKEN_LS);
+        if (local) return local;
+        try {
+            var fb = await import('https://www.gstatic.com/firebasejs/11.9.1/firebase-database.js');
+            var db = window._firebaseDB; if (!db) return '';
+            var snap = await fb.get(fb.ref(db, 'settings/serverToken'));
+            var tk = snap.val() || '';
+            if (tk) try { localStorage.setItem(SRV_TOKEN_LS, tk); } catch (e) {}
+            if (tk) await urlServidorSincronizar();   // aparelho novo: pega tambem o endereco da funcao
+            return tk;
+        } catch (e) { return ''; }
+    }
+
+    function novoIdJob() {
+        if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+        var b = new Uint8Array(16); crypto.getRandomValues(b);
+        b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128;
+        var h = Array.prototype.map.call(b, function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
+        return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
+    }
+
+    // Id fixo de uma chamada da analise (uid da analise + etapa + tentativa) no formato UUID que o servidor aceita.
+    // Se o app for fechado e reaberto, a mesma chamada gera o mesmo id e o servidor devolve a resposta que ja guardou.
+    async function idFixoChamada(chave, tent) {
+        try {
+            if (!chave || !chave.uid || !(window.crypto && crypto.subtle && crypto.subtle.digest)) return '';
+            var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(chave.uid + '|' + chave.passo + '|' + tent));
+            var h = Array.prototype.map.call(new Uint8Array(buf).slice(0, 16), function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
+            return h.slice(0, 8) + '-' + h.slice(8, 12) + '-4' + h.slice(13, 16) + '-a' + h.slice(17, 20) + '-' + h.slice(20, 32);
+        } catch (e) { return ''; }
+    }
+
+    // Apaga do servidor as respostas guardadas de uma analise (fim, erro ou cancelamento). O que sobrar expira em 1 hora.
+    async function limparRespostasServidor(ids) {
+        if (!ids || !ids.length) return;
+        var lista = ids.splice(0, ids.length);
+        var tk = safeGet(SRV_TOKEN_LS); if (!tk) return;
+        lista.forEach(function (id) { fetchComTempo(srvUrl() + '?id=' + id, { method: 'DELETE', headers: srvHeaders(tk) }, 15000).catch(function () {}); });
+    }
+
+    function srvHeaders(token) { return { 'Content-Type': 'application/json', 'x-app-token': token }; }
+
+    // Espera ate 'ms' ou ate o app voltar a ficar visivel (o que vier primeiro)
+    function esperarOuVoltar(ms) {
+        return new Promise(function (resolve) {
+            var feito = false;
+            function fim() { if (feito) return; feito = true; document.removeEventListener('visibilitychange', onVis); clearTimeout(tm); resolve(); }
+            function onVis() { if (!document.hidden) fim(); }
+            var tm = setTimeout(fim, ms);
+            document.addEventListener('visibilitychange', onVis);
+        });
+    }
+
+    // fetch que desiste depois de 'ms' (rede movel as vezes deixa a requisicao pendurada)
+    async function fetchComTempo(url, init, ms) {
+        var ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+        var tm = ctl ? setTimeout(function () { ctl.abort(); }, ms) : null;
+        try { init.signal = ctl ? ctl.signal : undefined; return await fetch(url, init); }
+        finally { if (tm) clearTimeout(tm); }
+    }
+
+    function erroSrvIndisponivel(msg) { var e = new Error(msg); e.srvIndisponivel = true; return e; }
+
+    // Manda o pedido ao servidor e espera o resultado. Devolve algo parecido com a resposta do fetch
+    // ({ ok, status, json() }) para o resto do codigo nao mudar. Se o servidor nao responde/recusa o
+    // pedido, lanca erro com srvIndisponivel=true e o chamador usa o caminho direto.
+    async function chamarViaServidor(token, corpo, idFixo, ids) {
+        var id = idFixo || novoIdJob(), inicio = Date.now(), aceito = false;
+        if (idFixo && ids) ids.push(id);   // com id fixo a resposta fica guardada ate a analise acabar (permite retomar)
+        // 1) entrega o pedido (repetir o mesmo id e seguro: o servidor nao chama a IA duas vezes)
+        for (var tp = 0; tp < 3 && !aceito; tp++) {
+            try {
+                var rp = await fetchComTempo(srvUrl(), { method: 'POST', headers: srvHeaders(token), body: '{"id":"' + id + '","corpo":' + corpo + '}' }, 90000);
+                if (rp.status === 202) aceito = true;
+                else throw erroSrvIndisponivel('servidor recusou o pedido (HTTP ' + rp.status + ')');
+            } catch (e) {
+                if (e && e.srvIndisponivel) throw e;
+                if (tp === 2) throw erroSrvIndisponivel('sem conexao com o servidor');
+                await aguardarAppPronto(60000); await pausa(1200 * (tp + 1));
+            }
+        }
+        // 2) consulta o resultado ate sair (o servidor continua trabalhando mesmo com o app congelado)
+        var falhas = 0;
+        while (Date.now() - inicio < SRV_ESPERA_MAX_MS) {
+            await esperarOuVoltar(SRV_POLL_MS);
+            var j = null;
+            try {
+                var rg = await fetchComTempo(srvUrl() + '?id=' + id, { method: 'GET', headers: srvHeaders(token) }, 20000);
+                if (rg.status === 404) { var e404 = new Error('servidor perdeu o pedido'); e404.name = 'TypeError'; throw e404; }
+                if (!rg.ok) throw new TypeError('HTTP ' + rg.status);
+                j = await rg.json(); falhas = 0;
+            } catch (e) {
+                if (e && e.message === 'servidor perdeu o pedido') throw e;
+                // falha com o app em segundo plano ou sem internet nao conta: so conta com o app aberto e online
+                if (!document.hidden && navigator.onLine !== false && ++falhas >= 15) { var ef = new Error('sem resposta do servidor'); ef.name = 'TypeError'; throw ef; }
+                continue;
+            }
+            if (j.status === 'done') {
+                if (!idFixo) fetchComTempo(srvUrl() + '?id=' + id, { method: 'DELETE', headers: srvHeaders(token) }, 15000).catch(function () {});   // nao deixa a resposta guardada
+                var corpoResp; try { corpoResp = JSON.parse(j.resposta); } catch (e) { corpoResp = {}; }
+                return { ok: j.http >= 200 && j.http < 300, status: j.http, json: function () { return Promise.resolve(corpoResp); } };
+            }
+            if (j.status === 'error') {
+                var ee = new Error(j.erro || 'erro no servidor');
+                if (j.tipo === 'rede') ee.name = 'AbortError';
+                ee.doServidor = true;
+                throw ee;
+            }
+        }
+        var et = new Error('sem resposta do servidor em ' + Math.round(SRV_ESPERA_MAX_MS / 60000) + ' min'); et.name = 'AbortError'; et.doServidor = true; throw et;
+    }
+
+    async function fetchDireto(key, corpo) {
+        var ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+        var timer = ctl ? setTimeout(function () { ctl.abort(); }, OR_TIMEOUT_MS) : null;
+        try {
+            return await fetch(OR_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+                body: corpo,
+                signal: ctl ? ctl.signal : undefined
+            });
+        } finally { if (timer) clearTimeout(timer); }
+    }
+
+    async function openRouterCall(model, messages, chave) {
         var key = await getApiKey();
-        if (!key) throw new Error('Chave OpenRouter nao configurada. Salve em Firebase > settings/openrouterKey');
+        var tokenSrv = await getServerToken();
+        var usarServidor = !!tokenSrv && (Date.now() - _srvFalhouEm > 300000);
+        if (!key && !usarServidor) throw new Error('Chave OpenRouter nao configurada. Salve em Firebase > settings/openrouterKey');
         var corpo = JSON.stringify({ model: model, max_tokens: 6000, temperature: 0, messages: messages });
         var erroRede = null, t0 = Date.now(), tent = 0;
         while (tent < OR_TENTATIVAS) {
             tent++;
-            var ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-            var timer = ctl ? setTimeout(function () { ctl.abort(); }, OR_TIMEOUT_MS) : null;
             try {
-                var resp = await fetch(OR_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-                    body: corpo,
-                    signal: ctl ? ctl.signal : undefined
-                });
-                if (timer) clearTimeout(timer);
+                var resp;
+                if (usarServidor) {
+                    try { resp = await chamarViaServidor(tokenSrv, corpo, await idFixoChamada(chave, tent), chave && chave.ids); }
+                    catch (eSrv) {
+                        if (!(eSrv && eSrv.srvIndisponivel)) throw eSrv;
+                        // servidor fora do ar ou recusou: segue pelo caminho direto (como antes)
+                        usarServidor = false; _srvFalhouEm = Date.now();
+                        console.warn('[CreditoScan] servidor indisponivel, usando caminho direto:', eSrv.message);
+                        if (!key) throw new Error('Servidor indisponivel (' + eSrv.message + ') e chave OpenRouter nao configurada.');
+                        resp = await fetchDireto(key, corpo);
+                    }
+                } else {
+                    resp = await fetchDireto(key, corpo);
+                }
                 if (!resp.ok) {
                     var e = await resp.json().catch(function () { return {}; });
                     var msg = (e.error && e.error.message) || 'HTTP ' + resp.status;
@@ -212,7 +372,6 @@
                 var d = await resp.json();
                 return ((d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content) || '').trim();
             } catch (err) {
-                if (timer) clearTimeout(timer);
                 var ehRede = err && (err.name === 'TypeError' || err.name === 'AbortError');
                 if (!ehRede) throw err;
                 erroRede = err;
@@ -220,13 +379,63 @@
                 if (tent < OR_TENTATIVAS) { await aguardarAppPronto(120000); await pausa(1500 * tent); }
             }
         }
-        var motivo = (erroRede && erroRede.name === 'AbortError') ? 'sem resposta em ' + Math.round(OR_TIMEOUT_MS / 1000) + 's' : ((erroRede && erroRede.message) || 'falha de rede');
+        var motivo = (erroRede && erroRede.doServidor) ? erroRede.message : (erroRede && erroRede.name === 'AbortError') ? 'sem resposta em ' + Math.round(OR_TIMEOUT_MS / 1000) + 's' : ((erroRede && erroRede.message) || 'falha de rede');
         throw new Error(motivo + ' [envio ' + fmtMB(corpo.length) + ' · ' + tent + ' tentativas · ' + Math.round((Date.now() - t0) / 1000) + 's · ' +
             (navigator.onLine === false ? 'sem internet' : 'online') + (document.hidden ? ' · app em segundo plano' : '') + ']');
     }
 
+    // Configuracoes: guarda a senha do servidor (aparelho + Firebase) e testa se o servidor aceita
+    async function testarServidor(token, base) {
+        base = base || srvUrl();
+        try {
+            var r = await fetchComTempo(base + '?id=' + novoIdJob(), { method: 'GET', headers: srvHeaders(token) }, 15000);
+            if (r.status === 401 || r.status === 403) {
+                var j401 = await r.json().catch(function () { return {}; });
+                // resposta da NOSSA funcao = senha errada; qualquer outra = o Supabase barrou antes de chegar nela
+                if (j401 && j401.erro === 'nao autorizado') return { ok: false, msg: 'Senha não confere com a do servidor (APP_TOKEN).' };
+                var det = (j401 && (j401.message || j401.msg || j401.error_description)) ? ' Resposta: "' + String(j401.message || j401.msg || j401.error_description).slice(0, 80) + '".' : ' (HTTP ' + r.status + ')';
+                return { ok: false, msg: 'O Supabase barrou antes de chegar na função.' + det + ' Confira se "Verify JWT" está desligado e SALVO (Edge Functions > cs-ia > Settings > Save changes).' };
+            }
+            if (r.status === 404 && !(await r.clone().json().catch(function () { return {}; })).status) return { ok: false, msg: 'Função não encontrada nesse endereço. Copie o endereço completo da função no painel do Supabase (Edge Functions) e cole no campo de cima.' };
+            if (r.status === 404 || r.status === 200) {
+                var fila = null;
+                try { var rs = await fetchComTempo(base + '/status', { method: 'GET', headers: srvHeaders(token) }, 15000); var js = await rs.json().catch(function () { return {}; }); fila = !!(rs.status === 200 && js && js.fila); if (fila && js.banco && js.banco !== 'ok') return { ok: false, msg: 'A função nova está no ar, mas o banco não está pronto: ' + js.banco + '.' }; } catch (e) {}
+                _fila.suporte = fila === null ? null : fila; _fila.suporteTs = Date.now();
+                return { ok: true, msg: 'Servidor respondeu e aceitou a senha.' + (fila ? ' Fila de análises ativa.' : fila === false ? ' Atenção: a função no servidor é a versão antiga (sem fila). Cole a nova versão para a análise rodar toda no servidor.' : '') };
+            }
+            if (r.status === 500) { var j = await r.json().catch(function () { return {}; }); return { ok: false, msg: 'Servidor com problema: ' + (j.erro || 'HTTP 500') }; }
+            return { ok: false, msg: 'Servidor respondeu HTTP ' + r.status + '. Confira o endereço da função.' };
+        } catch (e) { return { ok: false, msg: 'Não consegui falar com o servidor (sem internet, ou o endereço da função está errado).' }; }
+    }
+
+    async function salvarSenhaServidor() {
+        var inp = el('cs_cfg_srv'), st = el('cs_cfg_srv_status'); if (!inp || !st) return;
+        var tk = inp.value.trim(), urlTxt = (el('cs_cfg_url') || { value: '' }).value.trim();
+        var cor = function (ok) { return ok ? 'var(--primary-color)' : 'var(--cs-bad)'; };
+        if (!tk) {   // vazio = desligar o servidor e voltar ao caminho direto
+            try { localStorage.removeItem(SRV_TOKEN_LS); } catch (e) {}
+            try { var fb0 = await import('https://www.gstatic.com/firebasejs/11.9.1/firebase-database.js'); if (window._firebaseDB) fb0.remove(fb0.ref(window._firebaseDB, 'settings/serverToken')); } catch (e) {}
+            _srvFalhouEm = 0;
+            st.innerHTML = '<span style="color:' + cor(true) + '">Servidor desligado: a IA volta a rodar direto no celular.</span>'; return;
+        }
+        if (tk.length < 12 || /\s/.test(tk)) { st.innerHTML = '<span style="color:' + cor(false) + '">Use uma senha com 12+ caracteres, sem espaços.</span>'; return; }
+        var urlNova = normalizarUrlServidor(urlTxt);
+        if (urlTxt && !urlNova) { st.innerHTML = '<span style="color:' + cor(false) + '">Endereço inválido. Use o formato https://…supabase.co/functions/v1/nome-da-funcao (copie do painel do Supabase) ou deixe vazio.</span>'; return; }
+        st.textContent = 'Testando...';
+        var r = await testarServidor(tk, urlNova || SRV_URL_PADRAO);
+        if (r.ok) {
+            try { localStorage.setItem(SRV_TOKEN_LS, tk); if (urlNova) localStorage.setItem(SRV_URL_LS, urlNova); else localStorage.removeItem(SRV_URL_LS); } catch (e) {}
+            try {
+                var fb = await import('https://www.gstatic.com/firebasejs/11.9.1/firebase-database.js');
+                if (window._firebaseDB) { fb.set(fb.ref(window._firebaseDB, 'settings/serverToken'), tk); if (urlNova) fb.set(fb.ref(window._firebaseDB, 'settings/serverUrl'), urlNova); else fb.remove(fb.ref(window._firebaseDB, 'settings/serverUrl')); }
+            } catch (e) {}
+            _srvFalhouEm = 0;
+        }
+        st.innerHTML = '<span style="color:' + cor(r.ok) + '">' + (r.ok ? '✅ Salvo. ' : '❌ Não salvei. ') + r.msg + '</span>';
+    }
+
     // Motor Vision: manda imagens + texto pro Qwen-VL via OpenRouter
-    async function aiCallVision(imagens, textoExtra, prompt) {
+    async function aiCallVision(imagens, textoExtra, prompt, chave) {
         var content = [];
         imagens.forEach(function(img) {
             content.push({
@@ -238,12 +447,12 @@
             content.push({ type: 'text', text: textoExtra });
         }
         content.push({ type: 'text', text: prompt });
-        return openRouterCall(OR_MODEL_VL, [{ role: 'user', content: content }]);
+        return openRouterCall(OR_MODEL_VL, [{ role: 'user', content: content }], chave);
     }
 
     // ── Qwen3-235B texto — análise financeira consistente ──
-    async function aiCallTexto(prompt) {
-        return openRouterCall(OR_MODEL_TXT, [{ role: 'user', content: prompt }]);
+    async function aiCallTexto(prompt, chave) {
+        return openRouterCall(OR_MODEL_TXT, [{ role: 'user', content: prompt }], chave);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -255,17 +464,20 @@
     var DESTOA_PCT    = 0.40;   // mes que foge mais de 40% da mediana = fora do padrao
     var DIAS_MINIMO   = 80;     // comprovante com menos dias que isso = curto (o ideal sao os 3 ultimos meses)
     var NOTA_REPROVA  = 50;     // nota 50 ou menos = reprovado (regra do dono)
-    var MAX_MESES     = 6;      // seguranca: ignora lista absurda vinda da IA
+    var MAX_MESES     = 3;      // so valem os 3 meses mais recentes do comprovante (regra do dono)
+    var JANELA_MESES  = 4;      // extrato de "3 meses" costuma tocar 4 meses de calendario (pontas parciais)
+    var TOL_SOMA_PCT  = 0.05;   // soma lida pela IA x 'Total de creditos' impresso no extrato: tolerancia de 5%
+    var DUVIDOSA_PCT  = 0.60;   // mais que isso das entradas excluidas = renda duvidosa (confira o extrato)
     var MESES_ABREV   = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
     // Regras de renda: UM texto so, usado no prompt de texto e no de imagem
     var REGRAS_RENDA =
-'Voce NAO calcula a renda final nem media: voce CLASSIFICA e SOMA as entradas validas de cada mes. O sistema faz media, mediana e abatimentos.\n'+
-'Classifique cada entrada valida em um destes 3 grupos:\n'+
+'Voce NAO calcula a renda final nem media: voce CLASSIFICA e SOMA as entradas (creditos) de cada mes. O sistema faz media, mediana e abatimentos.\n'+
+'Classifique cada entrada em um destes grupos:\n'+
 '  fixa     = salario/proventos (holerite: valor LIQUIDO), beneficio (INSS, aposentadoria, pensao) ou qualquer pagador FIXO que paga todo mes. TED "Proventos"/"Salario" do mesmo CPF vindo de outro banco tambem e fixa.\n'+
-'  variavel = Pix/TED de TERCEIROS: clientes, vendas, servicos, comissoes. Transferencia de familiar/conjuge (mesmo sobrenome, descricao "mae", "esposa", "ajuda") SO entra aqui se se repetir em 2+ meses; se aparecer em 1 mes so, e excluida.\n'+
+'  variavel = Pix/TED recebido de TERCEIROS: clientes, vendas, servicos, comissoes, repasses, maquininha. CONTE como variavel MESMO QUE a pessoa repasse tudo depois (conta de passagem nao importa: o sistema ja aplica o desconto de custo). Transferencia de familiar/conjuge (mesmo sobrenome, descricao "mae", "esposa", "ajuda") SO entra aqui se se repetir em 2+ meses; se aparecer em 1 mes so, e excluida.\n'+
 '  app      = repasses de apps de transporte/entrega (Uber, 99, InDrive, iFood, Rappi, Loggi...). Informe o valor BRUTO: o sistema desconta o custo operacional. NAO desconte nada voce mesmo.\n'+
-'NAO SAO RENDA (some em "excluidas"):\n'+
+'SO SAO EXCLUIDAS (campo "excluidas") as entradas que SE ENQUADRAM CLARAMENTE em um destes casos:\n'+
 '  - autotransferencia: Pix/TED do proprio CPF/nome entre contas proprias\n'+
 '  - credito de emprestimo, financiamento, consignado, antecipacao, saque-aniversario FGTS\n'+
 '  - estorno, reembolso, devolucao de Pix, cashback, rendimento, juros, correcao monetaria\n'+
@@ -273,9 +485,13 @@
 '  - deposito em dinheiro sem origem identificavel\n'+
 '  - premio ou saque de casa de aposta\n'+
 '  - 13o salario, ferias, PLR, rescisao (nao se repetem todo mes)\n'+
-'  - entrada unica e muito acima do padrao dos outros meses, sem relacao com a atividade (venda de bem, acerto, emprestimo entre pessoas)\n'+
-'Um item por MES CALENDARIO coberto pelos documentos (maximo os 3 mais recentes). NUNCA some meses diferentes no mesmo item; mes sem entradas = item com zeros. Informe tambem o periodo coberto em periodoDocumentos (primeira e ultima data dos documentos). Formato de cada item:\n'+
-'  {"mes":"AAAA-MM","fixa":0.00,"variavel":0.00,"app":0.00,"excluidas":0.00,"parcial":false}\n'+
+'  - venda de bem (carro, moto, imovel) ou emprestimo entre pessoas, SO quando a descricao disser isso\n'+
+'NA DUVIDA, CONTE (variavel). Nao exclua uma entrada so porque o valor e alto ou diferente das outras.\n'+
+'Confira a conta: fixa + variavel + app + excluidas = TUDO que entrou no mes. Se o extrato imprime o total (ex.: "Total de Creditos", "Total de entradas"), copie em totalCreditos; se nao imprime, use 0.\n'+
+'Em cada mes, liste em "pagadores" os ATE 6 MAIORES pagadores do grupo variavel (nome do pagador como aparece no extrato + soma que ele pagou naquele mes). O sistema usa isso para reconhecer quem paga TODO MES (salario sem holerite, cliente fixo) e nao descontar o custo desse valor.\n'+
+'Liste em excluidasDetalhe as MAIORES entradas excluidas (ate 8, mes + valor + motivo curto, ex.: "autotransferencia", "estorno") para o vendedor conferir.\n'+
+'Um item por MES CALENDARIO coberto pelos documentos. NUNCA some meses diferentes no mesmo item; mes sem entradas = item com zeros. Informe tambem o periodo coberto em periodoDocumentos (primeira e ultima data dos documentos). Formato de cada item:\n'+
+'  {"mes":"AAAA-MM","fixa":0.00,"variavel":0.00,"app":0.00,"excluidas":0.00,"totalCreditos":0.00,"parcial":false,"pagadores":[{"nome":"","valor":0.00}]}\n'+
 'Valores em reais, numero puro (ex.: 2350.90), sem texto. parcial=true SO se o documento cobre apenas parte daquele mes (ex.: comeca no dia 20). Confira a soma de cada mes antes de responder.\n';
 
     // ── Utilitarios ──────────────────────────────────────────────────
@@ -305,8 +521,91 @@
         if (!a || !b) return null;
         var n = (+b[1] - +a[1]) * 12 + (+b[2] - +a[2]) + 1;
         if (!(n >= 1 && n <= 12)) return null;
-        var dias = a[3] && b[3] ? Math.round((Date.UTC(+b[1], +b[2] - 1, +b[3]) - Date.UTC(+a[1], +a[2] - 1, +a[3])) / 86400000) + 1 : null;
-        return { meses: n, dias: dias !== null && dias >= 1 ? dias : null };
+        var ini = a[3] ? Date.UTC(+a[1], +a[2] - 1, +a[3]) : null, fim = b[3] ? Date.UTC(+b[1], +b[2] - 1, +b[3]) : null;
+        var dias = ini !== null && fim !== null ? Math.round((fim - ini) / 86400000) + 1 : null;
+        return { meses: n, dias: dias !== null && dias >= 1 ? dias : null, ini: ini, fim: fim };
+    }
+
+    function fmtDataUtc(ms) { var d = new Date(ms); return ('0' + d.getUTCDate()).slice(-2) + '/' + ('0' + (d.getUTCMonth() + 1)).slice(-2) + '/' + String(d.getUTCFullYear()).slice(-2); }
+
+    // O mes esta so em parte nos documentos? (decide pelas DATAS do periodo, nao pelo palpite da IA). null = sem como saber.
+    function mesParcialPeloPeriodo(mes, per) {
+        var mm = /^(\d{4})-(\d{1,2})$/.exec(String(mes || '').trim());
+        if (!mm || !per || per.ini === null || per.fim === null) return null;
+        var primeiro = Date.UTC(+mm[1], +mm[2] - 1, 1), ultimo = Date.UTC(+mm[1], +mm[2], 0);
+        return per.ini > primeiro + 2 * 86400000 || per.fim < ultimo - 2 * 86400000;
+    }
+
+    // Conferencia da leitura da IA: soma por mes x "Total de creditos" do extrato, e peso das entradas excluidas
+    function auditarMeses(meses, obj) {
+        var divergentes = [], excl = 0, tot = 0;
+        meses.forEach(function (m) {
+            var soma = m.fixa + m.variavel + m.app + m.excluidas;
+            excl += m.excluidas; tot += soma;
+            if (m.totalCreditos > 0) {
+                var dif = Math.abs(soma - m.totalCreditos);
+                if (dif > Math.max(m.totalCreditos * TOL_SOMA_PCT, 20)) divergentes.push({ mes: m.mes, soma: arred2(soma), total: arred2(m.totalCreditos) });
+            }
+        });
+        var pct = tot > 0 ? excl / tot : 0;
+        var det = (Array.isArray(obj && obj.excluidasDetalhe) ? obj.excluidasDetalhe : []).filter(function (e) { return e && typeof e === 'object' && numPos(e.valor) > 0; })
+            .map(function (e) { return { mes: String(e.mes || ''), valor: numPos(e.valor), motivo: String(e.motivo || '').slice(0, 60) }; })
+            .sort(function (a, b) { return b.valor - a.valor; }).slice(0, 8);
+        return { divergentes: divergentes, excluidasTotal: arred2(excl), pctExcluido: pct, excluidasDetalhe: det, duvidosa: divergentes.length > 0 || (tot > 0 && pct > DUVIDOSA_PCT) };
+    }
+
+    // ── Pagador FIXO: quem paga todo mes (salario sem holerite, cliente fixo) nao leva o desconto de custo ──
+    // A IA/leitor listam, por mes, os maiores pagadores do grupo "variavel". Quem aparece em 2+ meses com valor parecido
+    // (dentro de 35% da mediana e pelo menos PAGADOR_MIN) passa de "variavel" para "fixa". Nunca altera o objeto original.
+    var PAGADOR_MIN = 300, PAGADOR_VARIACAO = 0.35;
+    function chavePagador(nome) { return nuSemAcento(nome).replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
+    function somarPagadores(a, b) {
+        var mapa = {}, ordem = [];
+        [a, b].forEach(function (l) {
+            (Array.isArray(l) ? l : []).forEach(function (p) {
+                if (!p || typeof p !== 'object') return;
+                var k = chavePagador(p.nome), v = numPos(p.valor);
+                if (!k || !(v > 0)) return;
+                if (!mapa[k]) { mapa[k] = { nome: String(p.nome).trim().slice(0, 60), valor: 0 }; ordem.push(k); }
+                mapa[k].valor = arred2(mapa[k].valor + v);
+            });
+        });
+        return ordem.map(function (k) { return mapa[k]; }).sort(function (x, y) { return y.valor - x.valor; }).slice(0, 12);
+    }
+    function promoverPagadoresFixos(lista) {
+        var porNome = {}, meses = {};
+        lista.forEach(function (m) {
+            var mes = String(m.mes || '').trim();
+            if (!mes || !Array.isArray(m.pagadores)) return;
+            meses[mes] = true;
+            somarPagadores(m.pagadores, null).forEach(function (p) {
+                var k = chavePagador(p.nome);
+                if (!porNome[k]) porNome[k] = { nome: p.nome, porMes: {} };
+                porNome[k].porMes[mes] = arred2((porNome[k].porMes[mes] || 0) + p.valor);
+            });
+        });
+        var fixos = {}, detalhe = [];
+        Object.keys(porNome).forEach(function (k) {
+            var vs = Object.keys(porNome[k].porMes).map(function (x) { return porNome[k].porMes[x]; });
+            if (vs.length < 2) return;
+            var ord = vs.slice().sort(function (a, b) { return a - b; }), med = ord.length % 2 ? ord[(ord.length - 1) / 2] : (ord[ord.length / 2 - 1] + ord[ord.length / 2]) / 2;
+            if (med < PAGADOR_MIN) return;
+            if (vs.some(function (v) { return Math.abs(v - med) / med > PAGADOR_VARIACAO; })) return;
+            fixos[k] = true;
+            detalhe.push({ nome: porNome[k].nome, meses: vs.length, media: arred2(vs.reduce(function (a, v) { return a + v; }, 0) / vs.length) });
+        });
+        if (!detalhe.length) return { lista: lista, detalhe: [] };
+        var nova = lista.map(function (m) {
+            if (!Array.isArray(m.pagadores)) return m;
+            var mover = 0;
+            somarPagadores(m.pagadores, null).forEach(function (p) { if (fixos[chavePagador(p.nome)]) mover += p.valor; });
+            mover = Math.min(mover, numPos(m.variavel));
+            if (!(mover > 0)) return m;
+            var c = Object.assign({}, m);
+            c.variavel = arred2(numPos(m.variavel) - mover); c.fixa = arred2(numPos(m.fixa) + mover);
+            return c;
+        });
+        return { lista: nova, detalhe: detalhe.sort(function (a, b) { return b.media - a.media; }) };
     }
 
     // ── Calculo da renda ─────────────────────────────────────────────
@@ -315,15 +614,29 @@
     //  - 'ia': a IA nao detalhou os meses; usa o numero que ela deu (formato antigo)
     function calcularRenda(obj) {
         if (!obj) return null;
+        var lm = Array.isArray(obj.rendaMeses) ? obj.rendaMeses.filter(function (m) { return m && typeof m === 'object'; }) : [];
+        var fx = lm.length > 1 ? promoverPagadoresFixos(lm) : { lista: lm, detalhe: [] };
+        var r = calcularRendaBase(fx.detalhe.length ? Object.assign({}, obj, { rendaMeses: fx.lista }) : obj);
+        if (r && fx.detalhe.length) r.pagadoresFixos = fx.detalhe;
+        return r;
+    }
+    function calcularRendaBase(obj) {
+        if (!obj) return null;
         var iaNum = numPos(obj.rendaEstimada) || numPos(obj.rendaMensal);
         var lista = Array.isArray(obj.rendaMeses) ? obj.rendaMeses.filter(function (m) { return m && typeof m === 'object'; }) : [];
-        if (lista.length > MAX_MESES) lista = lista.slice(-MAX_MESES);
+        // so os MAX_MESES mais recentes (a lista pode vir fora de ordem ou com mais meses que o pedido)
+        if (lista.every(function (m) { return /^\d{4}-\d{1,2}$/.test(String(m.mes || '').trim()); })) {
+            lista = lista.slice().sort(function (a, b) { return String(a.mes).trim().localeCompare(String(b.mes).trim(), 'en', { numeric: true }); });
+        }
+        if (lista.length > JANELA_MESES) lista = lista.slice(-JANELA_MESES);
+        var per = periodoDoc(obj.periodoDocumentos);
 
         var meses = lista.map(function (m) {
             var fixa = numPos(m.fixa), variavel = numPos(m.variavel), app = numPos(m.app);
             return {
                 mes: String(m.mes || ''), fixa: fixa, variavel: variavel, app: app, excluidas: numPos(m.excluidas),
-                parcial: m.parcial === true || m.parcial === 'true',
+                totalCreditos: numPos(m.totalCreditos),
+                parcial: (function () { var pp = mesParcialPeloPeriodo(m.mes, per); return pp !== null ? pp : (m.parcial === true || m.parcial === 'true'); })(),
                 liquido: arred2(fixa + variavel * (1 - DESC_VARIAVEL) + app * (1 - DESC_APP)),
                 abatido: arred2(variavel * DESC_VARIAVEL + app * DESC_APP)
             };
@@ -337,24 +650,49 @@
             return meses.length ? { renda: 0, fonte: 'codigo', meses: meses, usados: meses, media: 0, mediana: 0, destoa: false, abatidoMedio: 0, parciaisIgnorados: 0 } : null;
         }
 
-        // A IA deve listar 1 item por mes do periodo. Se listou menos (somou varios meses num so item,
-        // ou pulou um), o total e dividido pelos meses do periodo: nunca superestima a renda.
-        var per = periodoDoc(obj.periodoDocumentos), span = per ? per.meses : 1;
+        // Periodo informado pela IA (limitado aos MAX_MESES mais recentes). Meses que a IA nao listou NAO diluem a renda:
+        // usa-se a media dos meses lidos e o aviso fica na tela. So quando a IA enfiou o periodo inteiro num unico item
+        // (impossivel saber o que e de cada mes) o total e dividido pelos meses do periodo.
+        var aud = auditarMeses(meses, obj);
+        var span = per ? Math.min(per.meses, MAX_MESES) : 1;
         var curto = per && per.dias !== null ? per.dias < DIAS_MINIMO : meses.length < 3;
         var distintos = {};
         meses.forEach(function (m, i) { distintos[m.mes || ('#' + i)] = true; });
         var nItens = Object.keys(distintos).length;
-        if (span > 1 && nItens < span) {
+        var faltando = span > nItens ? span - nItens : 0;
+        if (span > 1 && nItens === 1) {
             var totalLiq = meses.reduce(function (a, m) { return a + m.liquido; }, 0);
             return {
                 renda: arred2(totalLiq / span), fonte: 'codigo', meses: meses, usados: meses, media: arred2(totalLiq / span), mediana: arred2(totalLiq / span),
-                destoa: false, abatidoMedio: 0, parciaisIgnorados: 0, agrupado: true, span: span, itens: nItens, total: arred2(totalLiq), curto: curto, dias: per ? per.dias : null
+                destoa: false, abatidoMedio: 0, parciaisIgnorados: 0, agrupado: true, span: span, itens: nItens, total: arred2(totalLiq), curto: curto, dias: per ? per.dias : null,
+                divergentes: aud.divergentes, excluidasTotal: aud.excluidasTotal, pctExcluido: aud.pctExcluido, excluidasDetalhe: aud.excluidasDetalhe, duvidosa: true
             };
         }
 
-        // mes parcial so e ignorado se sobrar pelo menos um mes completo
+        // Menos de MAX_MESES meses completos mas ha pontas parciais (ex.: 24/jul a 24/out): usa o PERIODO INTEIRO,
+        // total dos dias cobertos / (dias / 30,4). Assim "3 meses de extrato" valem 3 meses, nao 2.
         var completos = meses.filter(function (m) { return !m.parcial; });
-        var usados = completos.length ? completos : meses;
+        if (per && per.ini !== null && completos.length < MAX_MESES && completos.length < meses.length) {
+            var mp = /^(\d{4})-(\d{1,2})$/.exec(String(meses[0].mes).trim());
+            var iniEf = mp ? Math.max(per.ini, Date.UTC(+mp[1], +mp[2] - 1, 1)) : per.ini;
+            var diasEf = Math.round((per.fim - iniEf) / 86400000) + 1;
+            if (diasEf >= 28) {
+                var eq = diasEf / 30.4;
+                var totLiqP = meses.reduce(function (a, m) { return a + m.liquido; }, 0), totAbP = meses.reduce(function (a, m) { return a + m.abatido; }, 0);
+                var mf = /^(\d{4})-(\d{1,2})$/.exec(new Date(per.fim).toISOString().slice(0, 7));
+                var esperados = mp && mf ? (+mf[1] - +mp[1]) * 12 + (+mf[2] - +mp[2]) + 1 : nItens;
+                var faltaP = Math.max(0, esperados - nItens);
+                return {
+                    renda: arred2(totLiqP / eq), fonte: 'codigo', meses: meses, usados: meses, media: arred2(totLiqP / eq), mediana: arred2(totLiqP / eq),
+                    destoa: false, abatidoMedio: arred2(totAbP / eq), parciaisIgnorados: 0, metodo: 'periodo', diasPeriodo: diasEf, equivMeses: arred2(eq), totalLiquido: arred2(totLiqP),
+                    periodoTxt: fmtDataUtc(per.ini) + ' a ' + fmtDataUtc(per.fim), curto: per.dias < DIAS_MINIMO, dias: per.dias, faltando: faltaP,
+                    divergentes: aud.divergentes, excluidasTotal: aud.excluidasTotal, pctExcluido: aud.pctExcluido, excluidasDetalhe: aud.excluidasDetalhe,
+                    duvidosa: aud.duvidosa || faltaP > 0
+                };
+            }
+        }
+        // mes parcial so e ignorado se sobrar pelo menos um mes completo; valem os MAX_MESES completos mais recentes
+        var usados = completos.length ? completos.slice(-MAX_MESES) : meses.slice(-MAX_MESES);
         var valores = usados.map(function (m) { return m.liquido; });
         var media = valores.reduce(function (a, v) { return a + v; }, 0) / valores.length;
         var ord = valores.slice().sort(function (a, b) { return a - b; });
@@ -368,8 +706,305 @@
         return {
             renda: arred2(base), fonte: 'codigo', meses: meses, usados: usados, media: arred2(media), mediana: arred2(mediana),
             destoa: destoa, abatidoMedio: arred2(abatidoMedio), parciaisIgnorados: completos.length ? meses.length - completos.length : 0,
-            curto: curto, dias: per ? per.dias : null
+            periodoTxt: per && per.ini !== null ? fmtDataUtc(per.ini) + ' a ' + fmtDataUtc(per.fim) : '',
+            curto: curto, dias: per ? per.dias : null, faltando: faltando,
+            divergentes: aud.divergentes, excluidasTotal: aud.excluidasTotal, pctExcluido: aud.pctExcluido, excluidasDetalhe: aud.excluidasDetalhe,
+            duvidosa: aud.duvidosa || faltando > 0
         };
+    }
+
+    // Une as leituras de renda de varios PDFs (1 chamada de IA por arquivo) em um unico objeto no formato de calcularRenda.
+    // Mesmo mes em dois arquivos:
+    //  - periodos que se sobrepoem (mais de 3 dias): e o mesmo extrato lido duas vezes, fica o de maior soma;
+    //  - periodos em sequencia (ex.: 21/jul-20/ago e 21/ago-20/set): cada arquivo traz uma METADE do mes, as metades SOMAM.
+    // Periodo unido = do menor inicio ao maior fim.
+    function sobreposicaoDias(a, b) {
+        if (!a || !b || a.ini === null || b.ini === null || a.fim === null || b.fim === null) return Infinity;   // sem datas: trata como o mesmo extrato
+        return Math.round((Math.min(a.fim, b.fim) - Math.max(a.ini, b.ini)) / 86400000) + 1;
+    }
+    function unirPeriodos(a, b) {
+        if (!a || !b || a.ini === null || b.ini === null || a.fim === null || b.fim === null) return a && a.ini !== null ? a : b;
+        return { ini: Math.min(a.ini, b.ini), fim: Math.max(a.fim, b.fim) };
+    }
+    function unirRendaArquivos(lista) {
+        var porMes = {}, ordem = [], ini = '', fim = '', det = [], titular = '';
+        (lista || []).forEach(function (o) {
+            if (!o || typeof o !== 'object') return;
+            if (!titular && o.titular) titular = String(o.titular);
+            var p = o.periodoDocumentos, pd = periodoDoc(p);
+            if (p && typeof p === 'object') {
+                if (p.inicio && (!ini || String(p.inicio) < ini)) ini = String(p.inicio);
+                if (p.fim && (!fim || String(p.fim) > fim)) fim = String(p.fim);
+            }
+            var per = pd && pd.ini !== null ? { ini: pd.ini, fim: pd.fim } : null;
+            (Array.isArray(o.rendaMeses) ? o.rendaMeses : []).forEach(function (m) {
+                if (!m || typeof m !== 'object') return;
+                var k = String(m.mes || '').trim() || ('#' + ordem.length);
+                var v = numPos(m.fixa) + numPos(m.variavel) + numPos(m.app) + numPos(m.excluidas);
+                var atual = porMes[k];
+                if (!atual) { ordem.push(k); porMes[k] = { v: v, m: Object.assign({}, m), per: per }; return; }
+                if (sobreposicaoDias(atual.per, per) > 3) {
+                    if (v > atual.v) { atual.m = Object.assign({}, m); atual.v = v; }
+                } else {
+                    ['fixa', 'variavel', 'app', 'excluidas', 'totalCreditos'].forEach(function (f) { atual.m[f] = numPos(atual.m[f]) + numPos(m[f]); });
+                    if (Array.isArray(m.pagadores) || Array.isArray(atual.m.pagadores)) atual.m.pagadores = somarPagadores(atual.m.pagadores, m.pagadores);
+                    atual.v += v;
+                }
+                atual.per = unirPeriodos(atual.per, per);
+            });
+            if (Array.isArray(o.excluidasDetalhe)) det = det.concat(o.excluidasDetalhe);
+        });
+        return {
+            titular: titular, periodoDocumentos: ini && fim ? { inicio: ini, fim: fim } : null,
+            rendaMeses: ordem.map(function (k) { return porMes[k].m; }), excluidasDetalhe: det
+        };
+    }
+
+    // ── Leitura do extrato em TRECHOS ─────────────────────────────────
+    // A IA erra a soma quando precisa somar de cabeca 50-60 Pix de um mes numa resposta so (perde entradas e ate meses).
+    // Entao o extrato e lido em trechos pequenos (em paralelo) e o CODIGO soma os trechos e confere com o total impresso.
+    var LIMITE_RENDA_ARQUIVO = 240000;   // caracteres lidos por PDF na etapa de renda (a leitura e em trechos, entao cabe bem mais que o limite da analise final)
+    var ALVO_TRECHO  = 7000;    // caracteres por trecho (≈ 3 a 4 paginas de extrato)
+    var MIN_TRECHO   = 2500;    // na releitura o trecho encolhe, mas nunca abaixo disso
+    var MAX_TRECHOS  = 16;      // por arquivo
+    var PARALELO_IA  = 6;       // chamadas de IA simultaneas por analise
+
+    // Corta o texto do arquivo (paginas separadas por SEP_PAGINA) em trechos de ~alvo caracteres, sempre entre paginas
+    // (ou entre linhas, se uma pagina sozinha for maior que o alvo).
+    function dividirTrechos(texto, alvo) {
+        texto = String(texto || '');
+        alvo = Math.max(MIN_TRECHO / 2, alvo || ALVO_TRECHO);
+        alvo = Math.max(alvo, Math.ceil(texto.length / MAX_TRECHOS));
+        if (texto.length <= alvo * 1.3) return [texto];
+        var partes = [];
+        texto.split(SEP_PAGINA).forEach(function (pg) {
+            if (pg.length <= alvo * 1.3) { partes.push(pg); return; }
+            var cur = '';
+            pg.split('\n').forEach(function (ln) {
+                if (cur && cur.length + ln.length + 1 > alvo) { partes.push(cur); cur = ''; }
+                cur += (cur ? '\n' : '') + ln;
+            });
+            if (cur) partes.push(cur);
+        });
+        var trechos = [], atual = '';
+        partes.forEach(function (pg) {
+            if (atual && atual.length + pg.length > alvo) { trechos.push(atual); atual = ''; }
+            atual += (atual ? SEP_PAGINA : '') + pg;
+        });
+        if (atual) trechos.push(atual);
+        return trechos.length > MAX_TRECHOS ? dividirTrechos(texto, Math.ceil(alvo * 1.25)) : trechos;   // empacotamento deixou sobra: folga maior
+    }
+
+    // Soma as leituras de varios trechos do MESMO arquivo: valores somam, o total impresso e o maior visto,
+    // o periodo e a uniao. (Diferente de unirRendaArquivos, que trata arquivos que podem se sobrepor.)
+    function somarTrechos(lista) {
+        var porMes = {}, ordem = [], ini = '', fim = '', det = [], titular = '';
+        (lista || []).forEach(function (o) {
+            if (!o || typeof o !== 'object') return;
+            if (!titular && o.titular) titular = String(o.titular);
+            var p = o.periodoDocumentos;
+            if (p && typeof p === 'object') {
+                if (p.inicio && (!ini || String(p.inicio) < ini)) ini = String(p.inicio);
+                if (p.fim && (!fim || String(p.fim) > fim)) fim = String(p.fim);
+            }
+            (Array.isArray(o.rendaMeses) ? o.rendaMeses : []).forEach(function (m) {
+                if (!m || typeof m !== 'object') return;
+                var k = String(m.mes || '').trim().replace(/^(\d{4})-(\d)$/, '$1-0$2');   // 2026-8 e 2026-08 sao o mesmo mes
+                if (!k) return;
+                var a = porMes[k];
+                if (!a) { ordem.push(k); a = porMes[k] = { mes: k, fixa: 0, variavel: 0, app: 0, excluidas: 0, totalCreditos: 0, parcial: false }; }
+                ['fixa', 'variavel', 'app', 'excluidas'].forEach(function (f) { a[f] = arred2(a[f] + numPos(m[f])); });
+                if (Array.isArray(m.pagadores)) a.pagadores = somarPagadores(a.pagadores, m.pagadores);
+                a.totalCreditos = Math.max(a.totalCreditos, numPos(m.totalCreditos));
+                if (m.parcial === true || m.parcial === 'true') a.parcial = true;
+            });
+            if (Array.isArray(o.excluidasDetalhe)) det = det.concat(o.excluidasDetalhe);
+        });
+        return {
+            titular: titular, periodoDocumentos: ini && fim ? { inicio: ini, fim: fim } : null,
+            rendaMeses: ordem.map(function (k) { return porMes[k]; }), excluidasDetalhe: det
+        };
+    }
+
+    // ── Leitura DETERMINISTICA de extrato Nubank (sem IA) ──────────────
+    // O extrato do Nubank imprime o "Total de entradas" de CADA DIA e do mes. O codigo le cada entrada, soma e CONFERE com esses totais:
+    // so aceita se TODOS os dias e o mes fecharem ao centavo; senao devolve null e a leitura volta para a IA (outros bancos, fotos, layout diferente).
+    // A IA errava a soma de 150+ lancamentos (perdia uns, contava outros duas vezes) e o aviso amarelo "nao bate com o extrato" aparecia.
+    var NU_MES_ABREV = { JAN: 1, FEV: 2, MAR: 3, ABR: 4, MAI: 5, JUN: 6, JUL: 7, AGO: 8, SET: 9, OUT: 10, NOV: 11, DEZ: 12 };
+    var NU_MES_NOME = { JANEIRO: 1, FEVEREIRO: 2, MARCO: 3, ABRIL: 4, MAIO: 5, JUNHO: 6, JULHO: 7, AGOSTO: 8, SETEMBRO: 9, OUTUBRO: 10, NOVEMBRO: 11, DEZEMBRO: 12 };
+    function nuSemAcento(s) { return String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase(); }
+    function nuValor(s) { return parseFloat(String(s).replace(/\./g, '').replace(',', '.')); }
+    function nuIsoMes(a, m) { return a + '-' + (m < 10 ? '0' : '') + m; }
+    function nuIsoData(a, m, d) { return nuIsoMes(a, m) + '-' + (d < 10 ? '0' : '') + d; }
+    // Nome de quem pagou: o texto entre a descricao ("Transferencia recebida pelo Pix") e o primeiro " - " (CPF/CNPJ do pagador)
+    function nuPagador(txt) {
+        var t = String(txt || '').replace(/^(Transfer[eê]ncia recebida pelo Pix|Transfer[eê]ncia Recebida|Pix recebido|Transfer[eê]ncia recebida)\s+/i, '');
+        var i = t.indexOf(' - ');
+        return (i > 0 ? t.slice(0, i) : t).replace(/\s+/g, ' ').trim().slice(0, 60);
+    }
+    // Classifica UMA entrada pelas mesmas regras do prompt. Devolve { g: 'fixa'|'variavel'|'app'|'excluidas', motivo }
+    function nuClassificar(txt, titular, cpfMeio) {
+        var u = nuSemAcento(txt);
+        if (/^RESGATE (RDB|DE |CDB|INVEST)|^RESGATE/.test(u)) return { g: 'excluidas', motivo: 'resgate RDB' };
+        if (/^(REEMBOLSO|ESTORNO|DEVOLUCAO)/.test(u)) return { g: 'excluidas', motivo: u.indexOf('ESTORNO') === 0 ? 'estorno' : 'reembolso' };
+        if (/^(RENDIMENTO|JUROS|CASHBACK)/.test(u)) return { g: 'excluidas', motivo: 'rendimento' };
+        if (/^CREDITO EM CONTA/.test(u)) return { g: 'excluidas', motivo: 'crédito em conta sem origem' };
+        if (/EMPRESTIMO|FINANCIAMENTO|CONSIGNADO|ANTECIPACAO|SAQUE.ANIVERSARIO/.test(u)) return { g: 'excluidas', motivo: 'empréstimo' };
+        if ((titular && u.indexOf(titular) !== -1) || (cpfMeio && u.indexOf(cpfMeio) !== -1)) return { g: 'excluidas', motivo: 'autotransferência' };
+        if (/\b(UBER|99 ?TECNOLOGIA|99 ?POP|INDRIVER|IFOOD|RAPPI|LOGGI)\b/.test(u)) return { g: 'app', motivo: '' };
+        if (/SALARIO|PROVENTOS|FOLHA DE PAG|\bINSS\b|APOSENTADORIA|PENSAO|BENEFICIO/.test(u)) return { g: 'fixa', motivo: '' };
+        return { g: 'variavel', motivo: '' };
+    }
+    // texto = texto do PDF (como montarTextoDigital entrega). Devolve o objeto no formato de somarTrechos ou null.
+    var NU_ULTIMO = 0;   // numero do motivo da ultima recusa (diagnostico)
+    function nuNao(n) { NU_ULTIMO = n; return null; }
+    function lerExtratoNubank(texto) {
+        var linhas = String(texto || '').split('\n').map(function (l) { return l.replace(/\s+/g, ' ').trim(); }).filter(Boolean);
+        var ini = 0;
+        while (ini < linhas.length && /^(===|---)/.test(linhas[ini])) ini++;
+        var nome = linhas[ini] || '', cab = linhas[ini + 1] || '';
+        if (!/CPF/.test(cab) || !/Conta/.test(cab) || !/VALORES EM R\$/.test(texto) || !/Movimenta[cç][oõ]es/.test(texto)) return nuNao(1);
+        var titular = nuSemAcento(nome), cpf = /(\d{3}\.\d{3})-/.exec(cab), cpfMeio = cpf ? cpf[1] : '';
+        if (titular.length < 5) return nuNao(2);
+        // total do mes e periodo (cabecalho da primeira pagina)
+        var totMes = null, per = null, pm = /Total de entradas \+(\d[\d.]*,\d{2})/.exec(texto.replace(/\s+/g, ' '));
+        if (pm) totMes = nuValor(pm[1]);
+        if (totMes === null) {   // no texto do app os valores do resumo vem em linhas separadas, na ordem: saldo inicial, rendimento (+), entradas (+), saidas (-)
+            for (var j = ini; j < Math.min(linhas.length - 2, ini + 40); j++) {
+                var ra = /^\+(\d[\d.]*,\d{2})$/.exec(linhas[j]), rb = /^\+(\d[\d.]*,\d{2})$/.exec(linhas[j + 1]);
+                if (ra && rb && /^-\d[\d.]*,\d{2}$/.test(linhas[j + 2])) { totMes = nuValor(rb[1]); break; }
+            }
+        }
+        var datas = [], rd = /(\d{1,2}) DE ([A-ZÇ]+) DE (\d{4})/g, md;
+        while ((md = rd.exec(nuSemAcento(texto))) && datas.length < 2) { var mn = NU_MES_NOME[md[2]]; if (mn) datas.push({ a: +md[3], m: mn, d: +md[1] }); }
+        if (datas.length === 2) per = { inicio: nuIsoData(datas[0].a, datas[0].m, datas[0].d), fim: nuIsoData(datas[1].a, datas[1].m, datas[1].d) };
+
+        var dias = [], dia = null, modo = '', pend = null, pulando = false;
+        var RE_INICIO = /^(Transfer[eê]ncia|Resgate|Reembolso|Estorno|Cr[eé]dito|Dep[oó]sito|Pix\b|Rendimento|Pagamento|Cashback|Devolu|Aplica|Compra|Ajuste|Boleto|Saque|Estorno)/;
+        // Uma entrada = a linha de inicio + as linhas de continuacao (nome do pagador, banco, agencia). O valor e a UNICA linha que termina em "1.234,56".
+        function fecharEntrada() {
+            if (!pend) return true;
+            var valores = [];
+            pend.forEach(function (l) { var mv = /(?:^|\s)(\d[\d.]*,\d{2})$/.exec(l); if (mv) valores.push(nuValor(mv[1])); });
+            if (valores.length !== 1 || !dia) return false;
+            var cl = nuClassificar(pend.join(' '), titular, cpfMeio);
+            dia.itens.push({ v: valores[0], g: cl.g, motivo: cl.motivo, nome: cl.g === 'variavel' ? nuPagador(pend.join(' ')) : '' });
+            pend = null;
+            return true;
+        }
+        for (var i = ini + 2; i < linhas.length; i++) {
+            var ln = linhas[i];
+            if (/^(===|---)/.test(ln)) continue;
+            if (/^(Tem alguma d[uú]vida|Asseguramos a autenticidade)/.test(ln)) { pulando = true; continue; }
+            if (pulando) { if (/^Extrato gerado/.test(ln)) pulando = false; continue; }
+            if (/^\d+ de \d+$/.test(ln)) continue;   // "5 de 16" (numero da pagina, quebrado em outra linha)
+            if (nuSemAcento(ln) === titular || /CPF.*Ag[eê]ncia.*Conta|VALORES EM R\$|^\d{5,}-\d$/.test(ln)) continue;   // cabecalho repetido em cada pagina
+            var dh = /^(?:(\d{1,2}) ([A-Z]{3}) (\d{4}) )?Total de entradas \+ (\d[\d.]*,\d{2})$/.exec(ln);
+            var ds = /^(?:(\d{1,2}) ([A-Z]{3}) (\d{4}) )?Total de sa[ií]das /.test(ln);
+            var dd = /^(\d{1,2}) ([A-Z]{3}) (\d{4}) /.exec(ln);
+            if (dh || ds || dd) {
+                if (!fecharEntrada()) return nuNao(3);
+                if (dh) {
+                    var ant = dia;
+                    if (dh[1]) { var mm = NU_MES_ABREV[dh[2]]; if (!mm) return nuNao(4); dia = { a: +dh[3], m: mm, d: +dh[1], tot: nuValor(dh[4]), itens: [] }; }
+                    else if (ant) dia = { a: ant.a, m: ant.m, d: ant.d, tot: nuValor(dh[4]), itens: [] };   // dia que quebrou de pagina: a data veio na pagina anterior
+                    else return nuNao(5);
+                    dias.push(dia); modo = 'in';
+                } else {
+                    modo = 'out';
+                    if (dd && !dh) { if (!NU_MES_ABREV[dd[2]]) return nuNao(6); dia = { a: +dd[3], m: NU_MES_ABREV[dd[2]], d: +dd[1], tot: 0, itens: [], soSaidas: true }; }
+                }
+                continue;
+            }
+            if (modo !== 'in') continue;
+            if (RE_INICIO.test(ln)) { if (!fecharEntrada()) return nuNao(7); pend = [ln]; }
+            else if (pend) pend.push(ln);
+            else return nuNao(9);
+        }
+        if (!fecharEntrada() || !dias.length) return nuNao(10);
+        // conferencia: cada dia fecha ao centavo e a soma dos dias fecha com o total do mes impresso
+        var somaDias = 0;
+        for (var k = 0; k < dias.length; k++) {
+            var s = dias[k].itens.reduce(function (a, it) { return a + it.v; }, 0);
+            if (Math.abs(s - dias[k].tot) > 0.011) return nuNao(11);
+            somaDias += dias[k].tot;
+        }
+        if (totMes !== null && Math.abs(somaDias - totMes) > 0.011) return nuNao(12);
+        var porMes = {}, ordem = [], det = [];
+        dias.forEach(function (d) {
+            var k = nuIsoMes(d.a, d.m);
+            if (!porMes[k]) { ordem.push(k); porMes[k] = { mes: k, fixa: 0, variavel: 0, app: 0, excluidas: 0, totalCreditos: 0, parcial: false }; }
+            d.itens.forEach(function (it) {
+                porMes[k][it.g] = arred2(porMes[k][it.g] + it.v);
+                if (it.g === 'excluidas') det.push({ mes: k, valor: it.v, motivo: it.motivo });
+                else if (it.g === 'variavel' && it.nome) porMes[k].pagadores = somarPagadores(porMes[k].pagadores, [{ nome: it.nome, valor: it.v }]);
+            });
+        });
+        if (ordem.length === 1 && totMes !== null) porMes[ordem[0]].totalCreditos = arred2(totMes);   // extrato de mais de um mes: o total impresso e do periodo, nao de um mes
+        det.sort(function (a, b) { return b.valor - a.valor; });
+        return {
+            titular: nome, periodoDocumentos: per, rendaMeses: ordem.map(function (k) { return porMes[k]; }),
+            excluidasDetalhe: det.slice(0, 8), leituraCodigo: 'nubank'
+        };
+    }
+
+    // Limita quantas funcoes assincronas rodam ao mesmo tempo (fila simples). Devolve run(fn) -> Promise.
+    function criarLimitador(max) {
+        var ativos = 0, fila = [];
+        function proximo() {
+            while (ativos < max && fila.length) {
+                var it = fila.shift(); ativos++;
+                it.fn().then(it.ok, it.err).then(function () { ativos--; proximo(); });
+            }
+        }
+        return function (fn) { return new Promise(function (ok, err) { fila.push({ fn: fn, ok: ok, err: err }); proximo(); }); };
+    }
+
+    // O quanto a soma lida ficou longe do total impresso (0 = fechou). Serve para escolher a melhor de duas leituras.
+    function desvioDivergencia(c) {
+        if (!c || !c.divergentes) return 0;
+        return c.divergentes.reduce(function (a, d) { return a + (d.total > 0 ? Math.abs(d.total - d.soma) / d.total : 0); }, 0);
+    }
+
+    // Le UM arquivo (texto) em trechos. chamar(prompt, rotulo) -> Promise<texto da IA>.
+    // opts: { limitar(fn), sobra() -> ms restantes, fatal(e) -> true se o erro deve abortar tudo (ex.: cancelado) }
+    // Devolve o objeto somado ({rendaMeses...}) ou null se algum trecho nao pode ser lido (leitura incompleta nao vale).
+    // Se a soma ainda nao fechar com o total impresso, relê UMA vez com trechos menores e fica com a melhor.
+    async function lerRendaPorTrechos(texto, chamar, opts) {
+        opts = opts || {};
+        var nb = lerExtratoNubank(texto);   // extrato Nubank que fecha com os totais impressos: sem IA
+        if (nb) return nb;
+        var limitar = opts.limitar || criarLimitador(PARALELO_IA);
+        async function lerTrecho(tx, n, de, tag) {
+            var base = '=== EXTRATO BANCARIO DIGITAL (texto extraido do PDF) ===\n' + tx;
+            for (var t = 0; t < 2; t++) {
+                try {
+                    var r = await chamar(buildPromptRenda(base, { n: n, de: de }), tag + '-' + n + '-' + t);
+                    var a = r.indexOf('{'), b = r.lastIndexOf('}');
+                    if (a !== -1 && b > a) { var o = JSON.parse(r.substring(a, b + 1)); if (o && Array.isArray(o.rendaMeses)) return o; }
+                } catch (e) { if (opts.fatal && opts.fatal(e)) throw e; }
+            }
+            return null;
+        }
+        async function passada(alvo, tag) {
+            var trechos = dividirTrechos(texto, alvo);
+            var leituras = await Promise.all(trechos.map(function (tx, i) {
+                return limitar(function () { return lerTrecho(tx, i + 1, trechos.length, tag); });
+            }));
+            if (leituras.some(function (l) { return l === null; })) return null;
+            var obj = somarTrechos(leituras);
+            var c = obj.rendaMeses.length ? calcularRenda(obj) : null;
+            return { obj: obj, c: c, n: trechos.length, alvo: alvo };
+        }
+        var p1 = await passada(ALVO_TRECHO, 'a');
+        var fechou = function (p) { return !!(p && p.c && p.c.fonte === 'codigo' && p.c.renda > 0 && !(p.c.divergentes && p.c.divergentes.length)); };
+        if (!p1 || fechou(p1)) return p1 ? p1.obj : null;
+        var menor = Math.max(MIN_TRECHO, Math.floor(p1.alvo / 2));
+        if (menor >= p1.alvo || dividirTrechos(texto, menor).length <= p1.n || (opts.sobra && opts.sobra() < 40000)) return p1.obj;   // sem trechos novos a releitura seria igual
+        var p2 = await passada(menor, 'b');
+        if (!p2) return p1.obj;
+        if (fechou(p2)) return p2.obj;
+        return desvioDivergencia(p2.c) < desvioDivergencia(p1.c) ? p2.obj : p1.obj;
     }
 
     // Texto curto e honesto de como a renda saiu (aparece na tela e vai pro historico)
@@ -382,8 +1017,20 @@
             var vA = c.usados.reduce(function (a, m) { return a + m.variavel; }, 0), pA = c.usados.reduce(function (a, m) { return a + m.app; }, 0);
             if (vA > 0 || pA > 0) L.push('Abatimento de custo já descontado: ' + [vA > 0 ? Math.round(DESC_VARIAVEL * 100) + '% autônomo/clientes' : '', pA > 0 ? Math.round(DESC_APP * 100) + '% app' : ''].filter(Boolean).join(' e ') + '.');
             if (c.curto) L.push(avisoCurto(c));
+            auditoriaRenda(c, L);
             return L.join('\n');
         }
+        if (c.metodo === 'periodo') {
+            L.push('Extratos de ' + c.periodoTxt + ' (' + c.diasPeriodo + ' dias).');
+            L.push('Entradas válidas por mês: ' + c.usados.map(function (m) { return labelMes(m.mes) + ' ' + reaisCurto(m.liquido) + (m.parcial ? ' (parcial)' : ''); }).join(' · '));
+            L.push('Menos de ' + MAX_MESES + ' meses completos: a renda usa o período inteiro — ' + reaisCurto(c.totalLiquido) + ' em ' + c.diasPeriodo + ' dias (≈ ' + String(c.equivMeses).replace('.', ',') + ' meses) = ' + reaisCurto(c.renda) + ' por mês.');
+            var vP = c.usados.reduce(function (a, m) { return a + m.variavel; }, 0), pP = c.usados.reduce(function (a, m) { return a + m.app; }, 0);
+            if (vP > 0 || pP > 0) L.push('Abatimento de custo: ' + [vP > 0 ? Math.round(DESC_VARIAVEL * 100) + '% sobre ganhos de autônomo/clientes' : '', pP > 0 ? Math.round(DESC_APP * 100) + '% sobre repasses de app' : ''].filter(Boolean).join(' e ') + ' (já descontado nos valores acima).');
+            if (c.curto) L.push(avisoCurto(c));
+            auditoriaRenda(c, L);
+            return L.join('\n');
+        }
+        if (c.periodoTxt) L.push('Extratos de ' + c.periodoTxt + '.');
         L.push('Entradas válidas por mês: ' + c.usados.map(function (m) { return labelMes(m.mes) + ' ' + reaisCurto(m.liquido); }).join(' · '));
         if (c.usados.length === 1) L.push('Só 1 mês de comprovante: renda baseada nele.');
         else if (c.destoa) L.push('Mês fora do padrão: usado o menor valor entre a média (' + reaisCurto(c.media) + ') e a mediana (' + reaisCurto(c.mediana) + ').');
@@ -395,9 +1042,25 @@
             if (pAbat > 0) partes.push(Math.round(DESC_APP * 100) + '% sobre repasses de app');
             L.push('Abatimento de custo: ' + partes.join(' e ') + ' (já descontado nos valores acima).');
         }
+        if (c.pagadoresFixos && c.pagadoresFixos.length) L.push('Paga todo mês (conta como renda fixa, sem o desconto de custo): ' + c.pagadoresFixos.slice(0, 4).map(function (p) { return p.nome + ' ≈ ' + reaisCurto(p.media); }).join(' · ') + '.');
         if (c.parciaisIgnorados) L.push(c.parciaisIgnorados + (c.parciaisIgnorados > 1 ? ' meses parciais ignorados.' : ' mês parcial ignorado.'));
         if (c.curto) L.push(avisoCurto(c));
+        auditoriaRenda(c, L);
         return L.join('\n');
+    }
+
+    // Linhas de conferencia (⚠ = destacada na tela): meses que nao fecham com o extrato, meses nao lidos e entradas excluidas
+    function auditoriaRenda(c, L) {
+        if (c.faltando > 0) L.push('⚠ A IA detalhou só ' + c.usados.length + ' de ' + (c.usados.length + c.faltando) + ' meses do período: a renda usa os meses lidos. Confira o extrato.');
+        (c.divergentes || []).forEach(function (d) {
+            L.push('⚠ ' + labelMes(d.mes) + ': a soma das entradas lidas (' + reaisCurto(d.soma) + ') não bate com o total do extrato (' + reaisCurto(d.total) + '). Confira.');
+        });
+        if (c.excluidasTotal > 0 && c.pctExcluido > 0) {
+            var pct = Math.round(c.pctExcluido * 100);
+            L.push((c.pctExcluido > DUVIDOSA_PCT ? '⚠ ' : '') + reaisCurto(c.excluidasTotal) + ' (' + pct + '%) das entradas não entraram na renda' +
+                (c.excluidasDetalhe && c.excluidasDetalhe.length ? ': ' + c.excluidasDetalhe.slice(0, 5).map(function (e) { return reaisCurto(e.valor) + (e.motivo ? ' ' + e.motivo : ''); }).join(' · ') : '') +
+                (c.pctExcluido > DUVIDOSA_PCT ? '. Confira se estão certas.' : '.'));
+        }
     }
 
     // Linha de alerta (comeca com ⚠: a tela destaca) quando o comprovante tem menos de ~3 meses
@@ -406,66 +1069,50 @@
     }
 
     // ── Prompt da etapa 1 (so texto digital): apenas a renda ─────────
-    function buildPromptRenda(textoExtrato) {
+    // trecho = { n, de } quando o texto e so UMA PARTE do extrato (a soma de cada parte e feita pelo codigo)
+    function buildPromptRenda(textoExtrato, trecho) {
         return 'Voce e um analista financeiro. Leia o extrato bancario abaixo e levante a RENDA MENSAL REAL do titular, mes a mes.\n\n' +
-            'EXTRATO:\n' + textoExtrato.substring(0, 30000) + '\n\n' +
+            'EXTRATO:\n' + textoExtrato + '\n\n' +
             '=== REGRAS DE RENDA ===\n' +
             'Identifique o nome e o CPF do TITULAR no cabecalho.\n' +
             REGRAS_RENDA + '\n' +
+            (trecho && trecho.de > 1
+                ? '=== ATENCAO: ESTE TEXTO E O TRECHO ' + trecho.n + ' DE ' + trecho.de + ' DE UM EXTRATO MAIOR ===\n' +
+                  'Some SOMENTE as entradas que aparecem NESTE trecho (o codigo soma os trechos). Liste apenas os meses que aparecem aqui; um trecho sem nenhuma entrada devolve rendaMeses vazio.\n' +
+                  'totalCreditos: copie o total impresso do mes SOMENTE se este trecho mostrar esse total; senao use 0 (a soma deste trecho nao precisa fechar com ele).\n' +
+                  'periodoDocumentos: primeira e ultima data que aparecem NESTE trecho.\n\n'
+                : '') +
             'Retorne APENAS JSON valido, sem texto extra:\n' +
-            '{"titular":"","periodoDocumentos":{"inicio":"AAAA-MM-DD","fim":"AAAA-MM-DD"},"rendaMeses":[{"mes":"AAAA-MM","fixa":0.00,"variavel":0.00,"app":0.00,"excluidas":0.00,"parcial":false}]}\n' +
+            '{"titular":"","periodoDocumentos":{"inicio":"AAAA-MM-DD","fim":"AAAA-MM-DD"},"rendaMeses":[{"mes":"AAAA-MM","fixa":0.00,"variavel":0.00,"app":0.00,"excluidas":0.00,"totalCreditos":0.00,"parcial":false,"pagadores":[{"nome":"","valor":0.00}]}],"excluidasDetalhe":[{"mes":"AAAA-MM","valor":0.00,"motivo":""}]}\n' +
             'Nao invente. Se nao houver nenhuma entrada valida, retorne rendaMeses com os valores zerados.';
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    //  REGUA DA NOTA: a IA escolhe o valor DENTRO da faixa de cada item;
-    //  o sistema limita a faixa, soma e classifica.
+    //  FAIXAS: o sistema decide por SINAIS de calote + PILARES (estabilidade,
+    //  capacidade, caixa). Nao ha soma de pontos: um item bom nao apaga um sinal
+    //  grave, e gasto que nao causa calote nao tira nota. A nota (0-100) e
+    //  consequencia da faixa e da folga dentro dela.
     // ═══════════════════════════════════════════════════════════════════
-    var REGUA_BASE = 50;
-    var NOTA_TETO  = 92;   // nenhum cliente e perfeito
-    var REGUA_ITENS = [
-        { k: 'origem', nome: 'Origem e estabilidade da renda', min: -10, max: 15,
-          regra: 'fixa e recorrente +15 | mista ou autonomo regular +8 | irregular 0 | muito irregular ou so 1 mes de renda -10' },
-        { k: 'sobra', nome: 'Sobra do mes (entradas - saidas)', min: -15, max: 10,
-          regra: 'sobra acima de 25% +10 | 10 a 25% +6 | 0 a 10% +2 | gasta mais do que entra -8 | gasta bem mais (acima de 110% das entradas) -15' },
-        { k: 'saldos', nome: 'Saldos de fim de mes', min: -10, max: 8,
-          regra: 'positivos e estaveis/crescentes +8 | positivos baixos +3 | zerados todo mes (tudo que entra sai) -2 | negativos ou cheque especial -10' },
-        { k: 'comprometimento', nome: 'Compromissos fixos', min: -30, max: 5,
-          regra: 'ate 20% +5 | 21 a 40% +2 | 41 a 60% -3 | 61 a 80% -10 | 81 a 95% -20 | acima de 95% -30 (percentual = soma dos valorMensal de "compromissos" / media das entradas validas; o sistema refaz esse item com a renda final)' },
-        { k: 'gastos', nome: 'Perfil de gastos', min: -10, max: 5,
-          regra: 'economico (so o essencial, guarda dinheiro) +5 | equilibrado 0 | gastador (delivery, lazer e compras por impulso pesam muito) -5 a -10' },
-        { k: 'dividas', nome: 'Dividas e juros', min: -20, max: 0,
-          regra: 'cada emprestimo/financiamento ativo -3 (maximo -10) | juros de cheque especial ou cartao rotativo, atrasos -5 a -10 | nenhum 0' },
-        { k: 'outros', nome: 'Outros sinais', min: -10, max: 5,
-          regra: 'so para algo relevante que as faixas acima nao cobrem (justifique); senao 0' }
-    ];
-
-    function reguaTextoPrompt() {
-        var t = 'Parta de ' + REGUA_BASE + ' pontos e aplique os itens abaixo. Em cada item escolha UM valor dentro da faixa, conforme a gravidade, e preencha em "pontos" (numero inteiro). Nao invente itens nem pesos: o sistema limita cada valor a faixa e faz a soma.\n';
-        REGUA_ITENS.forEach(function (it, i) { t += (i + 1) + '. ' + it.nome + ' [' + it.k + ': de ' + it.min + ' a +' + it.max + ']: ' + it.regra + '\n'; });
-        t += (REGUA_ITENS.length + 1) + '. Apostas: o sistema pontua sozinho (use apenas casasDeJogoEncontradas); NAO desconte apostas em nenhum item.\n';
-        return t;
-    }
-
-    function pontosComprometimento(pct) {
-        return pct <= 20 ? 5 : pct <= 40 ? 2 : pct <= 60 ? -3 : pct <= 80 ? -10 : pct <= 95 ? -20 : -30;
-    }
-
-    // Aceita os pontos da IA (objeto k->numero). Devolve itens limitados a faixa, ou null se nao serve.
-    function validarPontos(p) {
-        if (!p || typeof p !== 'object') return null;
-        var itens = {}, achou = 0;
-        REGUA_ITENS.forEach(function (it) {
-            var n = numIA(p[it.k]);
-            if (isFinite(n)) { achou++; n = Math.round(Math.max(it.min, Math.min(it.max, n))); } else n = 0;
-            itens[it.k] = n;
-        });
-        return achou >= 4 ? itens : null;
-    }
+    var NOTA_TETO = 92;   // nenhum cliente e perfeito
+    var FAIXAS = {
+        FORTE:     { min: 85, max: 92, entradaPct: 0.38 },
+        MEDIO:     { min: 60, max: 84, entradaPct: 0.40 },
+        FRACO:     { min: 51, max: 59, entradaPct: 0.60 },
+        REPROVADO: { min: 15, max: 45, entradaPct: 0.60 }
+    };
+    // Limites dos sinais. Percentuais = compromissos / renda final; cv = variacao da renda entre os meses.
+    var LIM = {
+        compForte: 30, compMedio: 50, compGrave: 60, compReprova: 80,   // comprometimento da renda (%)
+        fluxoLeve: 105, fluxoGrave: 110,                                 // saidas / entradas (%)
+        quedaEstavel: 0.30, quedaGrave: 0.45,                            // oscilacao PARA BAIXO da renda entre os meses (so meses abaixo da media contam)
+        credoresGrave: 3, credoresComCompGrave: 40,                      // dividas: qtde e % da renda em que a qtde vira sinal grave
+        reservaMinPct: 0.05, reservaZeroPct: 0.02                        // saldo medio de fim de mes / entradas mensais
+    };
 
     // Faixa do cliente APROVADO pela nota (entrada exigida); reprovado nao passa por aqui
     function riscoPorNota(nota) {
-        return nota >= 85 ? { risco: 'FORTE', entradaPct: 0.33 } : nota >= 60 ? { risco: 'MEDIO', entradaPct: 0.35 } : { risco: 'FRACO', entradaPct: 0.60 };
+        var r = nota >= FAIXAS.FORTE.min ? 'FORTE' : nota >= FAIXAS.MEDIO.min ? 'MEDIO' : 'FRACO';
+        return { risco: r, entradaPct: FAIXAS[r].entradaPct };
     }
 
     // Decisao pela nota: 50 ou menos reprova (FRACO = 51 a 59)
@@ -474,7 +1121,7 @@
         if (d.nota > NOTA_REPROVA) {
             var r = riscoPorNota(d.nota);
             d.aprov = true; d.reprovado = false; d.risco = r.risco; d.entradaPct = r.entradaPct;
-        } else { d.aprov = false; d.reprovado = true; d.risco = 'REPROVADO'; d.entradaPct = 0.60; }
+        } else { d.aprov = false; d.reprovado = true; d.risco = 'REPROVADO'; d.entradaPct = FAIXAS.REPROVADO.entradaPct; }
     }
 
     // ── Compromissos fixos ───────────────────────────────────────────
@@ -491,11 +1138,14 @@
         { k: 'seguro/plano', re: /seguro|plano de sa[uú]de|unimed|\bamil\b/g },
         { k: 'carnê/crediário', re: /carn[eê]|credi[aá]rio/g }
     ];
+    // Frases fixas dos extratos (propaganda, tabela de tarifas, rodape) que repetem as palavras acima sem ser compromisso
+    var SINAIS_PROPAGANDA = /parcelamento em at[eé] \d+x|valor da mensalidade|mensalidade dos pacotes|mais seguro online|[íi]ndices econ[oô]micos ?\/ ?financeiros/g;
     var SINAIS_MINIMO = 3;   // ocorrencias no texto para a IA ter que justificar "nenhum compromisso"
 
     function detectarSinaisCompromisso(texto) {
         var t = String(texto || '').toLowerCase();
         if (!t) return null;
+        t = t.replace(SINAIS_PROPAGANDA, ' ');
         var termos = [], total = 0;
         SINAIS_COMPROMISSO.forEach(function (s) {
             var m = t.match(s.re);
@@ -516,7 +1166,7 @@
                 var desc = String(c.descricao || c.tipo || 'Compromisso').trim().substring(0, 60) || 'Compromisso';
                 var k = desc.toLowerCase();
                 if (porNome[k]) { if (v > porNome[k].valor) porNome[k].valor = arred2(v); return; }   // mesmo credor repetido por mes: vale um so
-                porNome[k] = { desc: desc, valor: arred2(v), meses: numPos(c.meses) || 0 };
+                porNome[k] = { desc: desc, tipo: String(c.tipo || '').substring(0, 30), valor: arred2(v), meses: numPos(c.meses) || 0 };
                 ordem.push(porNome[k]);
             });
             return { fonte: 'lista', itens: ordem, total: arred2(ordem.reduce(function (a, i) { return a + i.valor; }, 0)) };
@@ -529,10 +1179,8 @@
     function calcularFluxo(raw) {
         var lista = Array.isArray((raw || {}).fluxoMeses) ? raw.fluxoMeses : [];
         var ent = 0, sai = 0, n = 0;
-        lista.slice(0, MAX_MESES).forEach(function (m) {
-            if (!m || typeof m !== 'object') return;
-            var e = numIA(m.entradas), s = numIA(m.saidas);
-            if (e > 0 && s >= 0) { ent += e; sai += s; n++; }
+        lista.filter(function (m) { return m && typeof m === 'object' && numIA(m.entradas) > 0 && numIA(m.saidas) >= 0; }).slice(-MAX_MESES).forEach(function (m) {
+            ent += numIA(m.entradas); sai += numIA(m.saidas); n++;
         });
         if (!(ent > 0)) return null;
         return { entradas: arred2(ent), saidas: arred2(sai), pct: Math.round(sai / ent * 100), meses: n };
@@ -567,7 +1215,174 @@
         return d;
     }
 
-    // Aplica renda calculada + regua. Idempotente. calcPre = renda da etapa 1 (so texto), se houver.
+    // ── Fatos que a IA informa (ela NAO pontua): saldos, sinais de aperto e dividas ──
+    function mesesInt(v) { var n = Math.round(numIA(v)); return isFinite(n) ? Math.max(0, Math.min(MAX_MESES, n)) : 0; }
+
+    // Saldos de fim de mes -> { n, negativos (meses no vermelho), media } ou null se a IA nao informou
+    function lerSaldos(raw) {
+        var l = Array.isArray((raw || {}).saldosMeses) ? raw.saldosMeses : [], vs = [], neg = 0;
+        l.filter(function (m) { return m && typeof m === 'object'; }).slice(-MAX_MESES).forEach(function (m) {
+            var fim = numIA(m.saldoFinal), min = numIA(m.menorSaldo);
+            if (!isFinite(fim) && !isFinite(min)) return;
+            var f = isFinite(fim) ? fim : min;
+            vs.push(f);
+            if (f < 0 || (isFinite(min) && min < 0)) neg++;
+        });
+        return vs.length ? { n: vs.length, negativos: neg, media: arred2(vs.reduce(function (a, v) { return a + v; }, 0) / vs.length) } : null;
+    }
+
+    // Confere no TEXTO do extrato (zero tokens) o que a IA disse: palavras de cheque especial, rotativo e atraso
+    var SINAIS_RISCO = {
+        chequeEspecial: /cheque especial|chq\.? ?especial|juros (do )?limite|adiantamento a depositante/g,
+        rotativo: /rotativo|pagamento m[ií]nimo|pgto\.? m[ií]nimo|parcelamento (da )?fatura|encargos (do )?cart[aã]o/g,
+        atraso: /juros de mora|\bmora\b|multa|encargos? (por )?atraso|pagamento em atraso/g
+    };
+    function detectarSinaisRisco(texto) {
+        var t = String(texto || '').toLowerCase();
+        if (!t) return null;
+        t = t.replace(SINAIS_PROPAGANDA, ' ');
+        var r = {};
+        Object.keys(SINAIS_RISCO).forEach(function (k) { var m = t.match(SINAIS_RISCO[k]); r[k] = m ? m.length : 0; });
+        return r;
+    }
+
+    var RANK_SINAL = { grave: 2, leve: 1 };
+    // Repetido em 2+ meses = grave; em 1 mes = leve. Sem confirmacao no extrato (IA viu, o texto nao) cai um degrau.
+    function sevMeses(m, confirmado) {
+        if (m >= 2) return confirmado ? 'grave' : 'leve';
+        return m === 1 && confirmado ? 'leve' : null;
+    }
+    function ehDivida(it) { return /empr[eé]st|consign|financ|crediar|carn[eê]|parcel|cons[oó]rcio/i.test((it.tipo || '') + ' ' + (it.desc || '')); }
+    // Quanto a renda oscila PARA BAIXO da media (desvio so dos meses abaixo dela, em % da media).
+    // Mes bom acima da media nao e risco de calote; mes fraco e.
+    function oscilacaoParaBaixo(vals) {
+        var n = vals.length, mu = vals.reduce(function (a, v) { return a + v; }, 0) / n;
+        if (!(mu > 0)) return null;
+        return Math.sqrt(vals.reduce(function (a, v) { var f = Math.max(0, mu - v); return a + f * f; }, 0) / n) / mu;
+    }
+    function limitar01(x) { return Math.max(0, Math.min(1, x)); }
+
+    // Avalia o cliente. Cada GRUPO de sinais correlacionados conta UMA vez (o mais grave do grupo):
+    // assim o mesmo comportamento nao e punido duas vezes. Reprova com 2+ grupos graves.
+    function avaliarFaixa(d) {
+        var raw = d.rawJson || {}, calc = d.rendaCalc, scan = d.sinaisRisco || null;
+        var sin = raw.sinais && typeof raw.sinais === 'object' ? raw.sinais : {};
+        var saldos = lerSaldos(raw), fl = d.fluxo, pct = d.comprometimentoPct;
+        var graves = [], leves = [], obs = [];
+        function grupo(sev, nome, texto) {
+            if (sev === 'grave') graves.push({ grupo: nome, texto: texto });
+            else if (sev === 'leve') leves.push({ grupo: nome, texto: texto });
+        }
+        function maior(a, b) { return (RANK_SINAL[a] || 0) >= (RANK_SINAL[b] || 0) ? a : b; }
+        function plural(n) { return n + (n > 1 ? ' meses' : ' mês'); }
+
+        // 1) atrasos e multas
+        var mAtr = mesesInt(sin.atrasosMeses);
+        grupo(sevMeses(mAtr, !scan || scan.atraso > 0), 'atraso', 'Pagamentos com multa/juros de atraso em ' + plural(mAtr));
+        if (!mAtr && scan && scan.atraso >= 2) obs.push('O extrato cita multa/mora (' + scan.atraso + 'x) e a IA não confirmou atraso: confira.');
+
+        // 2) fatura no minimo / rotativo
+        var mRot = mesesInt(sin.faturaMinimoMeses);
+        grupo(sevMeses(mRot, !scan || scan.rotativo > 0), 'rotativo', 'Fatura paga no mínimo ou rotativo em ' + plural(mRot));
+        if (!mRot && scan && scan.rotativo >= 2) obs.push('O extrato cita rotativo/pagamento mínimo (' + scan.rotativo + 'x) e a IA não confirmou: confira.');
+
+        // 3) caixa no vermelho: cheque especial, saldo negativo e gastar mais do que entra (mesmo problema, conta uma vez)
+        var mCh = mesesInt(sin.chequeEspecialMeses);
+        if (mCh && scan && !(scan.chequeEspecial > 0)) mCh = Math.min(mCh, 1);
+        var mVerm = Math.max(mCh, saldos ? saldos.negativos : 0), sCx = mVerm >= 2 ? 'grave' : mVerm === 1 ? 'leve' : null, tCx = [];
+        if (mVerm) tCx.push('Cheque especial/saldo negativo em ' + plural(mVerm));
+        if (fl && fl.pct > LIM.fluxoLeve) {
+            sCx = maior(sCx, fl.pct > LIM.fluxoGrave ? 'grave' : 'leve');
+            tCx.push('Saídas = ' + fl.pct + '% das entradas (gasta mais do que entra)');
+        }
+        grupo(sCx, 'caixa', tCx.join(' · ') + (mVerm >= 2 && fl && fl.pct > LIM.fluxoGrave ? ' (provado nos dois lados: reprova)' : ''));
+        if (!mCh && scan && scan.chequeEspecial >= 2) obs.push('O extrato cita cheque especial (' + scan.chequeEspecial + 'x) e a IA não confirmou uso: confira.');
+
+        // 4) endividamento: comprometimento da renda, quantidade de dividas, divida nova
+        var credores = (d.compromissosLista || []).filter(ehDivida).length, sEn = null, tEn = [];
+        if (pct !== null && pct > LIM.compGrave) { sEn = 'grave'; tEn.push('Compromissos fixos = ' + pct + '% da renda' + (pct > LIM.compReprova ? ' (acima de ' + LIM.compReprova + '%: reprova)' : '')); }
+        else if (pct !== null && pct > LIM.compMedio) { sEn = 'leve'; tEn.push('Compromissos fixos = ' + pct + '% da renda'); }
+        if (credores >= LIM.credoresGrave) {
+            sEn = maior(sEn, pct !== null && pct > LIM.credoresComCompGrave ? 'grave' : 'leve');
+            tEn.push(credores + ' dívidas/parcelamentos ativos');
+        } else if (credores === 2) { sEn = maior(sEn, 'leve'); tEn.push('2 dívidas/parcelamentos ativos'); }
+        if (sin.emprestimoNovoUltimoMes === true || String(sin.emprestimoNovoUltimoMes).toLowerCase() === 'true') { sEn = maior(sEn, 'leve'); tEn.push('Empréstimo/dívida nova no último mês'); }
+        if (d.compromissoDuvida) { sEn = maior(sEn, 'leve'); tEn.push('Compromissos não confirmados (o extrato tem sinais e a IA não achou nenhum)'); }
+        else if (pct === null) { sEn = maior(sEn, 'leve'); tEn.push('Compromissos fixos não informados pela IA'); }
+        grupo(sEn, 'endividamento', tEn.join(' · '));
+
+        // 5) estabilidade da renda: variacao entre os meses COMPLETOS
+        var meses = calc && calc.usados ? calc.usados.filter(function (m) { return !m.parcial && m.liquido > 0; }) : [];
+        var cv = meses.length >= 2 ? oscilacaoParaBaixo(meses.map(function (m) { return m.liquido; })) : null;
+        var estavel = cv !== null && cv <= LIM.quedaEstavel, motivoInstavel = '';
+        if (cv === null) motivoInstavel = 'menos de 2 meses completos comprovados: não dá para medir a estabilidade';
+        else if (cv > LIM.quedaGrave) grupo('grave', 'renda', 'Renda muito irregular (meses fracos ficam ' + Math.round(cv * 100) + '% abaixo da média)');
+        else if (cv > LIM.quedaEstavel) grupo('leve', 'renda', 'Renda irregular (meses fracos ficam ' + Math.round(cv * 100) + '% abaixo da média)');
+
+        // 6) reserva: so pesa se ha dividas a pagar
+        var entMedia = fl && fl.meses ? fl.entradas / fl.meses : 0;
+        var caixaPositivo = !!(saldos && entMedia > 0 && saldos.negativos === 0 && saldos.media >= LIM.reservaMinPct * entMedia);
+        if (saldos && entMedia > 0 && d.compromissos > 0 && saldos.media / entMedia < LIM.reservaZeroPct && saldos.negativos === 0) {
+            grupo('leve', 'reserva', 'Sem reserva: saldo médio de fim de mês de ' + reaisCurto(saldos.media) + ' com dívidas a pagar');
+        }
+
+        // faixa
+        // caixa no vermelho provado pelos dois lados (saldo/cheque especial em 2+ meses E saidas muito acima das entradas) = reprova
+        var caixaDupla = mVerm >= 2 && !!fl && fl.pct > LIM.fluxoGrave;
+        var reprova = (pct !== null && pct > LIM.compReprova) || graves.length >= 2 || caixaDupla;
+        var compOk = function (lim) { return pct === null || pct <= lim; };   // desconhecido ja entrou como sinal leve
+        var medio = !reprova && !graves.length && leves.length <= 1 && estavel && compOk(LIM.compMedio);
+        var forte = medio && !leves.length && pct !== null && pct <= LIM.compForte && caixaPositivo && meses.length >= 3 && !(calc && calc.curto);
+        var faixa = reprova ? 'REPROVADO' : forte ? 'FORTE' : medio ? 'MEDIO' : 'FRACO';
+
+        // nota dentro da faixa: folga na renda comprometida, estabilidade e caixa; cada sinal leve tira um pouco
+        var partes = [];
+        if (pct !== null) partes.push(limitar01((LIM.compGrave - pct) / LIM.compGrave));
+        if (cv !== null) partes.push(limitar01(1 - cv / LIM.quedaGrave));
+        if (saldos && entMedia > 0) partes.push(limitar01(saldos.media / (0.2 * entMedia)));
+        var forca = partes.length ? partes.reduce(function (a, v) { return a + v; }, 0) / partes.length : 0.5;
+        forca = limitar01(forca - 0.15 * leves.length - (reprova ? 0 : 0.1 * graves.length));
+        var fx = FAIXAS[faixa], nota = Math.min(NOTA_TETO, fx.min + Math.round((fx.max - fx.min) * forca));
+
+        // o que impede a faixa de cima (ajuda o vendedor a explicar)
+        var falta = [];
+        if (faixa === 'FRACO') {
+            graves.forEach(function (g) { falta.push(g.texto); });
+            if (leves.length > 1) leves.forEach(function (g) { falta.push(g.texto); });
+            if (!estavel && motivoInstavel) falta.push(motivoInstavel);
+            if (pct !== null && pct > LIM.compMedio && !graves.some(function (g) { return g.grupo === 'endividamento'; }) && !leves.some(function (g) { return g.grupo === 'endividamento'; })) falta.push('Compromissos fixos = ' + pct + '% da renda');
+        } else if (faixa === 'MEDIO') {
+            leves.forEach(function (g) { falta.push(g.texto); });
+            if (pct !== null && pct > LIM.compForte) falta.push('Compromissos fixos = ' + pct + '% da renda (para FORTE: até ' + LIM.compForte + '%)');
+            if (!caixaPositivo) falta.push(saldos ? 'Caixa baixo: saldo médio de fim de mês de ' + reaisCurto(saldos.media) : 'Saldos de fim de mês não informados');
+            if (meses.length < 3 || (calc && calc.curto)) falta.push('Menos de 3 meses completos de comprovante');
+        }
+        return { faixa: faixa, nota: nota, forca: forca, graves: graves, leves: leves, obs: obs, falta: falta, estavel: estavel, cv: cv,
+                 motivoInstavel: motivoInstavel, comprometimentoPct: pct, caixaPositivo: caixaPositivo, saldos: saldos, credores: credores };
+    }
+
+    function textoFaixa(av) {
+        var L = ['Faixa: ' + av.faixa + ' · nota ' + av.nota + ' (decidida pelos sinais abaixo, sem soma de pontos)'];
+        L.push(av.graves.length ? 'Sinais graves:' : 'Sinais graves: nenhum');
+        av.graves.forEach(function (g) { L.push('⚠ ' + g.texto); });
+        L.push(av.leves.length ? 'Sinais leves:' : 'Sinais leves: nenhum');
+        av.leves.forEach(function (g) { L.push('• ' + g.texto); });
+        L.push('Pilares:');
+        L.push((av.estavel ? '✓ Estabilidade da renda: ok (meses fracos ficam ' + Math.round(av.cv * 100) + '% abaixo da média)' : '✗ Estabilidade da renda: ' + (av.motivoInstavel || (av.cv !== null ? 'meses fracos ficam ' + Math.round(av.cv * 100) + '% abaixo da média' : 'não medida'))));
+        L.push(av.comprometimentoPct === null ? '? Capacidade: compromissos não confirmados' : (av.comprometimentoPct <= LIM.compMedio ? '✓' : '✗') + ' Capacidade: compromissos fixos = ' + av.comprometimentoPct + '% da renda');
+        L.push(av.saldos ? (av.caixaPositivo ? '✓' : '✗') + ' Caixa: saldo médio de fim de mês de ' + reaisCurto(av.saldos.media) + (av.saldos.negativos ? ' (' + av.saldos.negativos + ' mês no vermelho)' : '') : '? Caixa: saldos não informados');
+        if (av.falta.length) { L.push(av.faixa === 'FRACO' ? 'Para subir de faixa:' : 'Para chegar a FORTE:'); av.falta.forEach(function (t) { L.push('– ' + t); }); }
+        av.obs.forEach(function (t) { L.push('ℹ ' + t); });
+        return L.join('\n');
+    }
+
+    // A faixa vale sempre que ha renda: a IA nao pontua mais, entao dado que faltou (meses, compromissos, saldos) vira
+    // incerteza e a faixa fica conservadora (FRACO), com a explicacao na tela. Sem renda, as regras de renda reprovam.
+    function faixaAplicavel(d) {
+        return d.rendaEstimada > 0;
+    }
+
+    // Aplica renda calculada + faixa. Idempotente. calcPre = renda da etapa 1 (so texto), se houver.
     function finalizarPontuacao(d, calcPre) {
         var raw = d.rawJson || {};
         var calc = calcPre || calcularRenda(raw);
@@ -578,32 +1393,17 @@
 
         calcularComprometimento(d);
 
-        d.reguaAplicada = false;
-        var pontos = validarPontos(raw.pontos);
-        if (!pontos || d.nomesBatem === false) return d;
-        if (d.comprometimentoPct !== null) pontos.comprometimento = pontosComprometimento(d.comprometimentoPct);
-        else if (d.compromissoDuvida) pontos.comprometimento = 0;   // sem prova de que nao ha compromissos: nem bonus nem desconto
-
-        var soma = REGUA_ITENS.reduce(function (a, it) { return a + pontos[it.k]; }, 0);
-        var notaIA = d.nota;
-        d.nota = Math.max(0, Math.min(NOTA_TETO, REGUA_BASE + soma));
-        d.pontos = pontos; d.reguaAplicada = true;
+        d.faixaAplicada = false;
+        if (d.nomesBatem === false || !faixaAplicavel(d)) return d;
+        var av = avaliarFaixa(d);
+        if (d.calculoIA === undefined) d.calculoIA = d.calculo || '';
+        d.nota = av.nota; d.avaliacao = av; d.faixaAplicada = true;
         var eraReprovado = d.reprovado;
         classificarPorNota(d);
         if (d.reprovado && !d.motivos) {
-            var neg = REGUA_ITENS.filter(function (it) { return pontos[it.k] < 0; }).sort(function (a, b) { return pontos[a.k] - pontos[b.k]; })
-                .slice(0, 3).map(function (it) { return it.nome + ' (' + pontos[it.k] + ')'; });
-            d.motivos = 'Pontuação ' + d.nota + ' — nota 50 ou menos reprova.' + (neg.length ? '\nMaiores descontos: ' + neg.join(', ') + '.' : '');
+            d.motivos = 'Faixa REPROVADO (nota ' + d.nota + ').' + (av.graves.length ? '\n' + av.graves.map(function (g) { return '• ' + g.texto; }).join('\n') : '');
         } else if (eraReprovado && !d.reprovado) d.motivos = '';
-
-        var sinal = function (n) { return (n > 0 ? '+' : '') + n; };
-        var linhas = ['Base ' + REGUA_BASE];
-        REGUA_ITENS.forEach(function (it) {
-            var extra = it.k !== 'comprometimento' ? '' : d.comprometimentoPct !== null ? ' (' + d.comprometimentoPct + '% da renda)' : d.compromissoDuvida ? ' (não avaliado: a IA não achou compromissos, mas o extrato tem sinais)' : '';
-            linhas.push(it.nome + extra + ': ' + sinal(pontos[it.k]));
-        });
-        linhas.push('Total: ' + d.nota + (notaIA !== d.nota && notaIA > 0 ? '  (a IA tinha estimado ' + notaIA + '; vale a soma da régua)' : ''));
-        d.calculo = linhas.join('\n') + (d.calculo ? '\n\nJustificativa da IA:\n' + d.calculo : '');
+        d.calculo = textoFaixa(av) + (d.calculoIA ? '\n\nResumo da IA:\n' + d.calculoIA : '');
         return d;
     }
 
@@ -623,7 +1423,7 @@
             var susp = (d.suspeitasJogo || []).filter(Boolean);
             var porAposta = casas.length > 0 || susp.length > 0 || /aposta|jog|bet/i.test(String((d.rawJson.motivosReprovacao || '') + ' ' + (d.resumoExec || '')));
             return 'A IA recomendou reprovar, mas pelas regras do sistema o cliente passa (nota ' + d.nota + ').' +
-                (porAposta ? ' Apostas: ' + (casas.length ? casas.length + (casas.length > 1 ? ' casas sinalizadas' : ' casa sinalizada') + ' — o sistema desconta 10 pontos por 1 casa e 20 por 2, e só reprova direto com 3 casas ou mais, ou apostas frequentes.'
+                (porAposta ? ' Apostas: ' + (casas.length ? casas.length + (casas.length > 1 ? ' casas sinalizadas' : ' casa sinalizada') + ' neste registro, analisado antes da regra "qualquer casa confirmada reprova".'
                         : susp.length ? susp.length + (susp.length > 1 ? ' nomes suspeitos' : ' nome suspeito') + ' (' + susp.slice(0, 2).join(', ') + '), que não são casas de aposta confirmadas e por isso não descontam nota.'
                         : 'sinais no extrato, sem casa confirmada.') + ' Confira a transação em "Casas de jogo" antes de fechar.'
                     : ' Confira a análise completa antes de fechar.');
@@ -632,9 +1432,84 @@
         return '';
     }
 
+    // ════════════════════════════════════════════�
+    //  WHATSAPP DO CLIENTE (opcional): numero limpo + link que abre direto na conversa
+    // ════════════════════════════════════════════�
+    // Devolve so os digitos (DDD + numero, 10 ou 11) ou '' se nao for um celular/fixo brasileiro valido.
+    // Aceita +55, 55, zero na frente, espacos, parenteses e traco.
+    function normalizarTelefone(txt) {
+        var dig = String(txt == null ? '' : txt).replace(/\D/g, '');
+        if (dig.length >= 12 && dig.length <= 13 && dig.indexOf('55') === 0) dig = dig.slice(2);
+        if (dig.length === 11 && dig.charAt(0) === '0') dig = dig.slice(1);   // 0 + DDD + 8 digitos
+        else if (dig.length === 12 && dig.charAt(0) === '0') dig = dig.slice(1);
+        if (dig.length !== 10 && dig.length !== 11) return '';
+        if (/^0/.test(dig) || dig.slice(0, 2) === '00') return '';
+        if (dig.length === 11 && dig.charAt(2) !== '9') return '';              // celular com 9 digitos comeca em 9
+        return dig;
+    }
+    // (62) 99999-9999
+    function formatarTelefone(dig) {
+        dig = String(dig || '').replace(/\D/g, '');
+        if (dig.length <= 2) return dig;
+        var ddd = '(' + dig.slice(0, 2) + ') ';
+        if (dig.length <= 6) return ddd + dig.slice(2);
+        if (dig.length <= 10) return ddd + dig.slice(2, dig.length - 4) + (dig.length > 6 ? '-' + dig.slice(-4) : '');
+        return ddd + dig.slice(2, 7) + '-' + dig.slice(7, 11);
+    }
+    // Sem numero valido: abre o WhatsApp para a pessoa escolher a conversa (como era antes)
+    function linkWhatsapp(tel, msg) {
+        var n = normalizarTelefone(tel);
+        return 'https://wa.me/' + (n ? '55' + n : '') + '?text=' + encodeURIComponent(msg || '');
+    }
+
+    // ════════════════════════════════════════════
+    //  TEXTO DO EXTRATO DIGITAL: cabe no limite SEM perder meses inteiros
+    // ════════════════════════════════════════════
+    var LIMITE_TEXTO_DIGITAL = 100000;   // caracteres (≈ 35 mil tokens) enviados a IA no total
+    var SEP_PAGINA = '\n--- PROXIMA PAGINA ---\n';
+
+    // Tira espacos repetidos e linhas vazias; descarta paginas sem nenhum valor em R$ (propaganda/avisos),
+    // desde que o arquivo tenha outras paginas com valores.
+    function compactarTextoPdf(paginas) {
+        var temValor = /\d[\d.]*,\d{2}/;
+        var lim = (paginas || []).map(function (t) {
+            return String(t || '').split(/\r?\n/).map(function (l) { return l.replace(/\s+/g, ' ').trim(); }).filter(Boolean).join('\n');
+        }).filter(Boolean);
+        var comValor = lim.filter(function (t) { return temValor.test(t); });
+        return (comValor.length ? comValor : lim).join(SEP_PAGINA);
+    }
+
+    // arquivos = [[pagina, pagina...], [pagina...]] (um item por PDF, na ordem enviada).
+    // Se tudo cabe, vai tudo. Se nao, cada arquivo recebe uma cota igual (o que sobra de um arquivo
+    // pequeno e repassado aos maiores) e so o FINAL de cada arquivo grande e cortado.
+    // Devolve { texto, cortado } — cortado=true se algo ficou de fora.
+    function montarTextoDigital(arquivos, limite) {
+        limite = limite || LIMITE_TEXTO_DIGITAL;
+        var docs = (arquivos || []).map(compactarTextoPdf).filter(Boolean);
+        if (!docs.length) return { texto: '', cortado: false };
+        var ordem = docs.map(function (d, i) { return i; }).sort(function (a, b) { return docs[a].length - docs[b].length; });
+        var cotas = [], restante = limite, faltam = docs.length;
+        ordem.forEach(function (i) {
+            var cota = Math.floor(restante / faltam);
+            cotas[i] = Math.min(docs[i].length, cota);
+            restante -= cotas[i]; faltam--;
+        });
+        var cortado = false;
+        var partes = docs.map(function (d, i) {
+            var t = d;
+            if (d.length > cotas[i]) {
+                cortado = true;
+                var corte = d.lastIndexOf('\n', cotas[i]);
+                t = d.substring(0, corte > 0 ? corte : cotas[i]) + '\n[... RESTANTE DESTE ARQUIVO CORTADO POR TAMANHO ...]';
+            }
+            return docs.length > 1 ? '=== ARQUIVO ' + (i + 1) + ' de ' + docs.length + ' ===\n' + t : t;
+        });
+        return { texto: partes.join('\n\n'), cortado: cortado };
+    }
+
     function buildPrompt(rendaPre) {
         return (
-'Voce e um analista de credito senior da Workcell, loja de celulares em Joinville-SC.\n'+
+'Voce e um analista de credito senior da Workcell, loja de celulares em Goiania-GO.\n'+
 'Analise os documentos do cliente e retorne APENAS um JSON valido, sem texto adicional.\n\n'+
 
 '=== CONTEXTO ===\n'+
@@ -655,10 +1530,17 @@
   ? '⚠️ RENDA JA CALCULADA PELO SISTEMA: R$ '+Number(rendaPre.renda).toFixed(2)+' por mes. Use exatamente este valor em rendaEstimada; nao recalcule nem classifique a renda de novo.\n\n'
   : REGRAS_RENDA+'\n')+
 
-'=== NOTA (0 a 100): REGUA FIXA ===\n'+
-'Analise o comportamento financeiro como um consultor experiente (perfil de gastos, sobra, comprometimento, disciplina, dividas), mas pontue SOMENTE pela regua abaixo.\n'+
-reguaTextoPrompt()+'\n'+
-
+'=== NOTA E FAIXA: DECIDIDAS PELO SISTEMA ===\n'+
+'Voce NAO pontua nem soma nota. O sistema decide a faixa (FORTE, MEDIO, FRACO ou REPROVADO) e a nota a partir de FATOS que voce informa. A nota mede a chance de o cliente PAGAR em dia; o TAMANHO da renda NAO entra (so define o valor do aparelho).\n'+
+'O que indica calote: atrasos e multas, cheque especial constante, fatura paga no minimo/rotativo, muitas dividas e parcelas, compromissos que consomem boa parte da renda, gastar mais do que entra, renda irregular. Delivery, lazer e compras NAO sao sinal de calote: cite so como observacao em PADROES DE RISCO. Repassar o dinheiro de clientes/vendas (conta de passagem) nao e gasto da pessoa.\n'+
+'Informe SO o que o extrato prova (na duvida: 0 ou false e explique no texto):\n'+
+'  sinais.atrasosMeses: em quantos dos meses (0 a 3) ha pagamento com multa, juros de mora ou encargo por atraso\n'+
+'  sinais.chequeEspecialMeses: em quantos meses houve uso do cheque especial/limite (juros de limite, IOF de adiantamento, saldo negativo)\n'+
+'  sinais.faturaMinimoMeses: em quantos meses a fatura do cartao foi paga no minimo, em rotativo ou parcelada\n'+
+'  sinais.emprestimoNovoUltimoMes: true SO se entrou credito de emprestimo/financiamento/consignado no ultimo mes, ou ha compromisso novo que nao existia nos meses anteriores\n'+
+'  sinais.evidencias: ate 5 linhas curtas "mes: lancamento" que provam os sinais acima\n'+
+'  saldosMeses: por mes, saldoFinal e menorSaldo (o menor saldo do mes, se o extrato mostrar saldo diario; senao repita o saldo final)\n'+
+'\n'+
 '=== APENAS 2 REPROVACOES OBRIGATORIAS ===\n'+
 '1. Renda real < R$ 1.000/mes = REPROVADO (nao tem como pagar)\n'+
 '2. Apostador compulsivo = REPROVADO\n'+
@@ -667,12 +1549,12 @@ reguaTextoPrompt()+'\n'+
 '   AJC GATEWAY, NEXUMPAY, UNIVEBET, VAIDEBET, BETNACIONAL, R TORRES, NORBE FINTECH,\n'+
 '   GOLD NOW, LUXTAK, ou nome contendo BET/GAMING/APOSTAS/CASSINO.\n'+
 '   "SAQUE DIN LOTERICO" NAO e aposta — e operacao bancaria.\n'+
-'   10+ transacoes OU R$800+/mes OU 3+ meses = REPROVADO.\n'+
-'   1-4 esporadicas = o sistema penaliza a nota (voce nao desconta) mas nao reprova.\n\n'+
+'   QUALQUER casa confirmada (ate 1 unica transacao) = REPROVADO. O sistema aplica; voce so lista a casa.\n'+
+'   So liste em casasDeJogoEncontradas o que tem CERTEZA que e casa de aposta. Na duvida use suspeitasJogo.\n\n'+
 
-'Nota 50 ou menos tambem reprova (o sistema decide pela nota). Todo o resto APROVA com condicoes (o sistema aplica depois):\n'+
-'  FORTE (85-100): entrada 33% | teto parcela 30% da renda\n'+
-'  MEDIO (60-84):  entrada 35% | teto parcela 20% da renda\n'+
+'Nota 50 ou menos tambem reprova (o sistema decide). Todo o resto APROVA com condicoes (o sistema aplica depois):\n'+
+'  FORTE (85-100): entrada 38% | teto parcela 30% da renda\n'+
+'  MEDIO (60-84):  entrada 40% | teto parcela 20% da renda\n'+
 '  FRACO (51-59):  entrada 60% | teto parcela 10% da renda\n\n'+
 
 '=== INSTRUCOES DOS CAMPOS NARRATIVOS ===\n'+
@@ -686,7 +1568,7 @@ reguaTextoPrompt()+'\n'+
 '  SALDOS: saldo final de cada mes\n'+
 '  DIVIDAS ATIVAS: emprestimos identificados com nome da instituicao\n'+
 '  PADROES DE RISCO: comportamentos que chamaram atencao\n\n'+
-'calculoPontuacao: UMA frase curta de justificativa por item da regua (sem repetir os numeros e sem somar; o sistema monta a tabela e o total).\n'+
+'calculoPontuacao: 2 a 3 frases curtas com o que mais pesa A FAVOR e CONTRA o cliente (sem numero de nota: o sistema decide a faixa).\n'+
 (rendaPre ? '' : 'rendaEstimada: sua estimativa da renda mensal (reserva; o sistema recalcula a partir de rendaMeses).\n')+
 'compromissos: lista dos compromissos FIXOS do cliente. ANTES de responder, percorra os DEBITOS de cada mes procurando cada tipo abaixo, um por um:\n'+
 '  fatura de cartao de credito (pagamento da fatura), emprestimo/consignado, financiamento, consorcio, crediario/carne/boleto de loja, parcelamento,\n'+
@@ -694,7 +1576,7 @@ reguaTextoPrompt()+'\n'+
 '  NAO entram: mercado, farmacia, restaurante, luz, agua, internet, combustivel, transporte e Pix avulso (aparecem em SALDOS e na sobra).\n'+
 '  Uma linha por compromisso (NAO repita o mesmo credor por mes), com o nome do credor em descricao. valorMensal = quanto ele pesa POR MES (valor medio por mes no periodo; se pagou em so 1 dos meses, divida pelos meses do periodo). meses = em quantos meses apareceu.\n'+
 '  Lista vazia [] SO se voce realmente procurou todos os tipos acima e nao achou nenhum. Na duvida, liste e explique em COMPROMISSOS FIXOS.\n'+
-'fluxoMeses: por mes, entradas = soma de TODOS os creditos (sem estornos nem transferencias entre contas do proprio titular) e saidas = soma de TODOS os debitos. Valores aproximados servem; so informativo.\n'+
+'fluxoMeses: por mes, entradas = soma dos creditos REAIS (sem estornos, sem transferencias entre contas do proprio titular, sem resgate de investimento) e saidas = soma dos debitos REAIS, pela mesma regra (sem transferencias para contas do proprio titular, sem aplicacao em investimento/poupanca, sem estorno). Entradas e saidas precisam usar o MESMO criterio. O sistema mede se o cliente gasta mais do que entra a partir desses dois numeros, entao confira a soma.\n'+
 'conselho: dica especifica. Se reprovado: o que mudaria. Se aprovado: o que checar ao fechar a venda.\n\n'+
 'casasDeJogoEncontradas: CAMPO CRITICO. So liste aqui quando o DESTINATARIO for CLARAMENTE uma casa de aposta, cassino ou jogo online\n'+
 '(o proprio nome diz, ou e uma das casas/gateways conhecidos). Nomes EXATOS. Se nenhuma: []. Exemplos:\n'+
@@ -712,8 +1594,9 @@ reguaTextoPrompt()+'\n'+
 '  "resumoExecutivo": "1 frase: nome e veredicto (nao cite valor de renda: o sistema calcula).",\n'+
 '  "perfilCliente": "Perfil detalhado 4-6 linhas: fonte de renda, estabilidade, comportamento.",\n'+
 '  "analiseFinanceira": "Analise completa com cabecalhos RENDA:, COMPROMETIMENTO:, SALDOS:, etc.",\n'+
-'  "calculoPontuacao": "Uma frase de justificativa por item da regua.",\n'+
-'  "pontos": {"origem":0,"sobra":0,"saldos":0,"comprometimento":0,"gastos":0,"dividas":0,"outros":0},\n'+
+'  "calculoPontuacao": "O que mais pesa a favor e contra o cliente.",\n'+
+'  "sinais": {"atrasosMeses":0,"chequeEspecialMeses":0,"faturaMinimoMeses":0,"emprestimoNovoUltimoMes":false,"evidencias":[]},\n'+
+'  "saldosMeses": [{"mes":"AAAA-MM","saldoFinal":0.00,"menorSaldo":0.00}],\n'+
 '  "compromissos": [{"descricao":"Credor ou fatura","tipo":"fatura_cartao","valorMensal":0.00,"meses":0}],\n'+
 '  "fluxoMeses": [{"mes":"AAAA-MM","entradas":0.00,"saidas":0.00}],\n'+
 '  "conselho": "Dica pratica especifica pro vendedor.",\n'+
@@ -781,8 +1664,8 @@ reguaTextoPrompt()+'\n'+
             var confianca      = (obj.confiancaLeitura || 'ALTA').toUpperCase();
 
             var risco = 'REPROVADO', entradaPct = 0.60;
-            if (nota >= 85) { risco = 'FORTE';      entradaPct = 0.33; }
-            else if (nota >= 60) { risco = 'MEDIO'; entradaPct = 0.35; }
+            if (nota >= 85) { risco = 'FORTE';      entradaPct = 0.38; }
+            else if (nota >= 60) { risco = 'MEDIO'; entradaPct = 0.40; }
             else if (nota > NOTA_REPROVA) { risco = 'FRACO'; entradaPct = 0.60; }
             else { risco = 'REPROVADO'; aprov = false; }
 
@@ -856,16 +1739,18 @@ reguaTextoPrompt()+'\n'+
         return 'Ol\u00e1 '+d.nomeCliente+', tudo bem? \ud83d\ude0a\ud83d\udcf2\nSeu cadastro foi APROVADO aqui na Workcell! \u2705\n\n\ud83d\udcf1 '+produto+'\n\ud83d\udcb0 Entrada: '+R$(en)+'\n\ud83d\udcb3 + '+np+'x de '+R$(vp)+' MENSAL no boleto\n\n\u2714 Aparelho revisado e com garantia\nMe confirma aqui pra gente seguir com a libera\u00e7\u00e3o \ud83d\udc47';
     }
 
-    async function salvarFB(nome, produto, texto, d, cpf_cliente) {
+    // operador = perfil que mandou a analise (vem do servidor); sem ele, o perfil deste aparelho
+    async function salvarFB(nome, produto, texto, d, cpf_cliente, chaveFixa, operador) {
         try {
             var fb = await import('https://www.gstatic.com/firebasejs/11.9.1/firebase-database.js');
             var db = window._firebaseDB; if (!db) return null;
             var now = Date.now();
             var resumoIA = d.aprov ? (d.resumoExec || d.rascunho || 'Aprovado conforme criterios.') : (d.motivos || 'Reprovado por risco financeiro.');
 
-            var ref = await fb.push(fb.ref(db, SAVE_PATH), {
+            var dados = {
                 nomeCliente: nome || 'Cliente',
                 cpf: cpf_cliente || '',
+                telefone: d.telefone || null,
                 produto: produto || '',
                 decisao: d.reprovado ? 'REPROVADO' : d.downgrade ? 'DOWNGRADE' : d.entradaAlta ? 'ENTRADA_ALTA' : 'APROVADO',
                 nota: d.nota,
@@ -885,8 +1770,15 @@ reguaTextoPrompt()+'\n'+
                 textoCompleto: texto || '',
                 ts: now,
                 expira: now + HIST_DAYS * 86400000,
-                operador: window.currentUserProfile || safeGet('ctwUserProfile') || '--'
-            });
+                operador: operador || window.currentUserProfile || safeGet('ctwUserProfile') || '--'
+            };
+            // chave fixa (id da analise): salvar de novo depois de uma retomada sobrescreve o mesmo registro, nao cria outro
+            if (chaveFixa) {
+                var k = 'cs' + String(chaveFixa).replace(/-/g, '');
+                await fb.set(fb.ref(db, SAVE_PATH + '/' + k), dados);
+                return k;
+            }
+            var ref = await fb.push(fb.ref(db, SAVE_PATH), dados);
             return (ref && ref.key) || null;
         } catch (e) { return null; }
     }
@@ -1213,7 +2105,7 @@ reguaTextoPrompt()+'\n'+
         var st = el('cs_up_status'); if (st) st.classList.toggle('cs-h', !(_enviando > 0));
         var hint = el('cs_hint_analisar');
         if (hint) hint.textContent = _enviando > 0 ? 'Aguarde terminar de ler os arquivos...' :
-            (_docsRend.length ? 'Roda em segundo plano. Pode sair desta tela, avisamos quando ficar pronta.' : 'Adicione ao menos um comprovante de renda.');
+            (_docsRend.length ? (filaProvavel() ? 'Os documentos vão para o servidor. Depois de "Enviado" pode fechar o app.' : 'Roda em segundo plano. Pode sair desta tela, avisamos quando ficar pronta.') : 'Adicione ao menos um comprovante de renda.');
     }
 
     function statusUpload(msg) { var s = el('cs_up_status_txt'); if (s) s.textContent = msg; }
@@ -1316,21 +2208,21 @@ reguaTextoPrompt()+'\n'+
     function cor(nota) { return nota >= 60 ? 'ok' : nota > NOTA_REPROVA ? 'warn' : 'bad'; }
 
     function cardAndamento(j) {
-        var nome = esc(nomeDoJob(j));
+        var nome = esc(nomeDoJob(j)), tag = tagUsuario(j.usuario || usuarioAtual());
         var qtd = (j.docsId || []).length + (j.docsRend || []).length;
         var sub = 'Iniciada ' + horaCurta(j.ts) + (qtd ? ' · ' + qtd + (qtd > 1 ? ' arquivos' : ' arquivo') : '');
         var cancelar = '<button type="button" class="cs-link bad" data-act="cancelar" data-id="' + j.id + '">Cancelar</button>';
         if (j.estado === 'fila') {
             return '<div class="cs-card cs-job"><div class="cs-job-top"><div class="cs-job-info"><div class="cs-job-nome">Aguardando na fila</div>' +
-                '<div class="cs-job-sub">' + nome + ' · começa quando uma anterior terminar</div></div>' + cancelar + '</div></div>';
+                '<div class="cs-job-sub">' + nome + tag + ' · começa quando uma anterior terminar</div></div>' + cancelar + '</div></div>';
         }
         if (j.estado === 'aguarda') {
-            return '<div class="cs-card cs-job warn"><div class="cs-job-top"><div class="cs-job-info"><div class="cs-job-nome">' + nome + '</div>' +
+            return '<div class="cs-card cs-job warn"><div class="cs-job-top"><div class="cs-job-info"><div class="cs-job-nome">' + nome + tag + '</div>' +
                 '<div class="cs-job-sub">Precisa da sua decisão para continuar</div></div></div>' +
                 '<div class="cs-job-foot"><button type="button" class="cs-btn cs-btn-pri cs-btn-sm" data-act="responder" data-id="' + j.id + '">Responder</button>' + cancelar + '</div></div>';
         }
         if (j.estado === 'erro') {
-            return '<div class="cs-card cs-job bad"><div class="cs-job-top"><div class="cs-job-info"><div class="cs-job-nome">' + nome + '</div>' +
+            return '<div class="cs-card cs-job bad"><div class="cs-job-top"><div class="cs-job-info"><div class="cs-job-nome">' + nome + tag + '</div>' +
                 '<div class="cs-job-sub">' + sub + '</div></div></div>' +
                 '<div class="cs-job-erro"><i class="bi bi-exclamation-circle-fill"></i><span>' + esc(j.erro) + '</span></div>' +
                 '<div class="cs-job-foot"><button type="button" class="cs-btn cs-btn-pri cs-btn-sm" data-act="retry" data-id="' + j.id + '">Tentar de novo</button>' +
@@ -1342,11 +2234,11 @@ reguaTextoPrompt()+'\n'+
             if (i === j.passo) return '<div class="cs-step on"><i class="bi bi-arrow-repeat"></i>' + esc(j.etapa || nomePasso) + '</div>';
             return '<div class="cs-step"><i class="bi bi-circle"></i>' + nomePasso + '</div>';
         }).join('');
-        return '<div class="cs-card cs-job run"><div class="cs-job-top"><div class="cs-job-info"><div class="cs-job-nome">' + nome + '</div>' +
+        return '<div class="cs-card cs-job run"><div class="cs-job-top"><div class="cs-job-info"><div class="cs-job-nome">' + nome + tag + '</div>' +
             '<div class="cs-job-sub">' + sub + '</div></div><span class="cs-job-pct">' + Math.round(j.prog) + '%</span></div>' +
             '<div class="cs-bar"><div style="width:' + Math.max(2, Math.min(100, j.prog)) + '%"></div></div>' +
             '<div class="cs-steps">' + passos + '</div>' +
-            '<div class="cs-job-foot"><span class="cs-job-sub">Pode sair desta tela · mantenha o app aberto</span>' + cancelar + '</div></div>';
+            '<div class="cs-job-foot"><span class="cs-job-sub">' + (filaProvavel() ? 'Preparando e enviando · só saia do app depois de aparecer "Enviado"' : 'Pode sair desta tela · mantenha o app aberto') + '</span>' + cancelar + '</div></div>';
     }
 
     function cardPronta(j) {
@@ -1355,26 +2247,38 @@ reguaTextoPrompt()+'\n'+
             'Aprovado' + (d.rendaEstimada > 0 ? ' · renda ' + R$(d.rendaEstimada).replace(',00', '') + '/mês' : '');
         return '<button type="button" class="cs-card cs-pronta" data-act="abrir" data-id="' + j.id + '">' +
             '<span class="cs-ring-sm ' + c + '">' + d.nota + '</span>' +
-            '<span class="cs-job-info"><span class="cs-job-nome">' + esc(nomeDoJob(j)) + '</span><span class="cs-job-sub ' + c + '">' + sub + '</span></span>' +
+            '<span class="cs-job-info"><span class="cs-job-nome">' + esc(nomeDoJob(j)) + tagUsuario(j.usuario || usuarioAtual()) + '</span><span class="cs-job-sub ' + c + '">' + sub + '</span></span>' +
             (j.visto ? '<i class="bi bi-chevron-right cs-chev"></i>' : '<span class="cs-tag-nova">Nova</span>') + '</button>';
+    }
+
+    // "Meus | Todos": ve so o que este perfil mandou, ou a fila e as prontas de todos os usuarios
+    function filtroHtml() {
+        var f = filtroUsuario(), me = usuarioAtual();
+        return '<div class="cs-seg" role="group" aria-label="Quem mandou">' +
+            '<button type="button" data-act="filtro" data-v="meus" class="' + (f === 'meus' ? 'on' : '') + '">Meus' + (me ? ' · ' + esc(me) : '') + '</button>' +
+            '<button type="button" data-act="filtro" data-v="todos" class="' + (f === 'todos' ? 'on' : '') + '">Todos</button></div>';
     }
 
     function renderLista() {
         var box = el('cs_lista'); if (!box) return;
-        var andam = _jobs.filter(function (j) { return j.estado !== 'pronta'; });
-        var prontas = _jobs.filter(function (j) { return j.estado === 'pronta'; }).slice(0, 8);
-        var html = '';
-        if (andam.length) {
-            html += '<div class="cs-sec-h"><span>Em andamento</span><em>' + andam.length + '</em></div>' + andam.map(cardAndamento).join('');
+        var andam = _jobs.filter(function (j) { return j.estado !== 'pronta' && passaFiltro(j.usuario); });
+        var noServidor = filaItensTela().filter(function (a) { return passaFiltro(a.usuario); });
+        var prontas = prontasDeHoje();
+        var html = filaAvisoHtml() + filtroHtml();
+        if (andam.length || noServidor.length) {
+            html += '<div class="cs-sec-h"><span>Em andamento</span><em>' + (andam.length + noServidor.length) + '</em></div>' +
+                andam.map(cardAndamento).join('') + noServidor.map(cardServidor).join('');
         }
         if (prontas.length) {
-            html += '<div class="cs-sec-h"><span>Prontas</span><em>nesta sessão</em></div>' + prontas.map(cardPronta).join('');
+            html += '<div class="cs-sec-h"><span>Prontas</span><em>hoje</em></div>' + prontas.map(function (p) { return p.html; }).join('');
         }
         box.innerHTML = html;
     }
 
     function atualizarBadge() {
-        var n = _jobs.filter(function (j) { return (j.estado === 'pronta' && !j.visto) || j.estado === 'aguarda' || j.estado === 'erro'; }).length;
+        filaAtualizarCartaoHome();
+        var n = _jobs.filter(function (j) { return (j.estado === 'pronta' && !j.visto) || j.estado === 'aguarda' || j.estado === 'erro'; }).length +
+            _fila.itens.filter(function (a) { return a.estado === 'erro'; }).length + hojeNaoVistas();
         ['goCS2'].forEach(function (id) {
             var b = el(id); if (!b) return;
             var tag = b.querySelector('.cs-card-badge');
@@ -1387,8 +2291,9 @@ reguaTextoPrompt()+'\n'+
     function openOverlay() {
         var ov = el('cs_ov'); if (!ov) return;
         ov.classList.add('active');
-        if (_formAberto === null) _formAberto = _jobs.length === 0;
+        if (_formAberto === null) _formAberto = _jobs.length === 0 && !filaItensTela().length;
         renderRascunho(); aplicarForm(); renderLista();
+        filaBuscar(); hojeBuscar();   // atualiza por tras; a lista que ja esta na tela aparece na hora
     }
     function closeOverlay() { el('cs_ov') && el('cs_ov').classList.remove('active'); }
 
@@ -1400,6 +2305,10 @@ reguaTextoPrompt()+'\n'+
 
     function acaoLista(e) {
         var b = e.target.closest('[data-act]'); if (!b) return;
+        if (b.getAttribute('data-act') === 'filtro') { lsGravar(FILTRO_LS, b.getAttribute('data-v') === 'todos' ? 'todos' : 'meus'); renderLista(); return; }
+        var sid = b.getAttribute('data-sid');
+        if (sid) { filaAcaoLista(b.getAttribute('data-act'), sid); return; }   // analise que esta no servidor
+        if (b.getAttribute('data-act') === 'abrir-h') { hojeAbrir(b.getAttribute('data-hid')); return; }   // pronta de hoje que veio do historico
         var j = jobPorId(b.getAttribute('data-id')); if (!j) return;
         var a = b.getAttribute('data-act');
         if (a === 'abrir') abrirResultado(j);
@@ -1436,7 +2345,21 @@ reguaTextoPrompt()+'\n'+
         if (b) b.parentNode.removeChild(b);
     }
 
+    // Aviso do sistema (barra de notificacoes) com o app em segundo plano. No Android o Chrome so aceita pelo service worker.
+    function notificarSistema(titulo, corpo, tag) {
+        try {
+            if (!document.hidden || !window.Notification || Notification.permission !== 'granted') return;
+            if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+                navigator.serviceWorker.ready.then(function (reg) {
+                    return reg.showNotification(titulo, { body: corpo, tag: tag, renotify: true, icon: './icon-192.png', badge: './badge.png', vibrate: [200, 100, 200] });
+                }).catch(function () {});
+            } else new Notification(titulo, { body: corpo, tag: tag });
+        } catch (e) {}
+    }
+
     function avisarJob(job, tipo) {
+        // o aviso e do dono da analise: outro perfil que baixou o resultado nao recebe "Analise pronta" de outra pessoa
+        if (job.usuario && usuarioAtual() && job.usuario !== usuarioAtual()) return;
         var box = caixaAvisos();
         removerBanner(job.id);
         var t, sub, btn, c = 'ok', ico = 'bi-check-lg';
@@ -1461,11 +2384,7 @@ reguaTextoPrompt()+'\n'+
             '<button type="button" class="cs-banner-x" data-bact="x" data-id="' + job.id + '" aria-label="Dispensar"><i class="bi bi-x-lg"></i></button></div>' +
             '<button type="button" class="cs-btn cs-btn-pri" data-bact="ver" data-id="' + job.id + '">' + btn + '</button>';
         box.appendChild(div);
-        try {
-            if (document.hidden && window.Notification && Notification.permission === 'granted') {
-                new Notification(t, { body: sub, tag: 'creditoscan-' + job.id });
-            }
-        } catch (e) {}
+        notificarSistema(t, sub, 'creditoscan-' + job.id);
     }
 
     // ── Detector local de apostas — roda ANTES da IA, sem gastar token ──
@@ -1714,7 +2633,7 @@ reguaTextoPrompt()+'\n'+
     }
 
     function validarComprometimento(d) {
-        if (d.reprovado || d.reguaAplicada) return;   // com a regua o item ja entrou na soma
+        if (d.reprovado || d.faixaAplicada) return;   // com a faixa o comprometimento ja foi avaliado
         var pct = pctComprometimento(d);
         if (pct === null) return;
         var alvo = pct > 95 ? 30 : pct > 80 ? 10 : 0;
@@ -1765,7 +2684,8 @@ reguaTextoPrompt()+'\n'+
 
         // Prioridade 2: fallback por busca de texto se IA nao preencheu o campo
         if (casas.length === 0) {
-            var textoIA = [d.analise||'', d.perfil||'', d.motivos||''].join(' ').toLowerCase();
+            var textoIA = [d.analise||'', d.perfil||'', d.motivos||''].join('. ').toLowerCase()
+            .split(/[.!?;\n]+/).filter(function(fr){ return !/\b(n[aã]o|nenhum\w*|sem|aus[eê]ncia|nada|nunca|inexistente|descart\w*|suspeit\w*)\b/.test(fr); }).join(' . ');
             [
              'phoenix gaming','vaidebet','betnacional','pixbet','blaze','betano',
              'esportes da sorte','superbet','betboom','bet7k','estrelabet',
@@ -1781,7 +2701,7 @@ reguaTextoPrompt()+'\n'+
              'pagbet','betpix','sportbetio','sport bet','betcris',
              'rivalo','betmotion','pinnacle','betsul','sportsbet.io',
              'velozbet','veloz bet','paggue','double.bet','fortune tiger',
-             'cassino','casino online','slots','apostou'
+             'casino online'
             ].forEach(function(c){ if(textoIA.indexOf(c)!==-1) casas.push(c); });
         }
 
@@ -1796,16 +2716,18 @@ reguaTextoPrompt()+'\n'+
                 '(IA original: '+notaOriginal+' pts — corrigido para 0)';
             d.calculo = 'CORRIGIDO PELO SISTEMA\nIA: '+notaOriginal+' pts\n'+
                 'Casas: '+casas.join(', ')+'\nRegra: 3+ casas = REPROVADO\nNota final: 0';
-        } else if (casas.length >= 1 && casas.length <= 2 && d.nota > NOTA_REPROVA) {
-            // 1-2 casas esporadicas → penaliza a nota; se cair a 50 ou menos, reprova
-            var penalidade = casas.length === 1 ? 10 : 20;
-            d.nota = Math.max(0, d.nota - penalidade);
+        } else if (casas.length >= 1) {
+            // 1-2 casas confirmadas → REPROVADO direto (a nota nunca fica acima de 50)
+            var notaAntes = d.nota;
+            d.nota = Math.min(d.nota, NOTA_REPROVA);
             d.casasJogo = casas;
-            d.calculo = (d.calculo||'')+
-                '\nCORRECAO: '+casas.length+' casa(s) esporadica(s) detectada(s) → -'+penalidade+
-                ' pts (nota ajustada: '+d.nota+')';
-            classificarPorNota(d);
-            if (d.reprovado) d.motivos = (d.motivos ? d.motivos + '\n' : '') + 'Apostas (' + casas.join(', ') + '): -' + penalidade + ' pts levaram a nota a ' + d.nota + ' (50 ou menos reprova).';
+            d.aprov = false; d.reprovado = true;
+            d.risco = 'REPROVADO'; d.entradaPct = 0.60;
+            d.motivos = 'REPROVADO — casa de aposta confirmada\n' + casas.join(', ') +
+                (d.motivos ? '\n' + d.motivos : '');
+            d.calculo = (d.calculo || '') +
+                '\nREGRA: casa de aposta confirmada (' + casas.length + ') = REPROVADO' +
+                (notaAntes !== d.nota ? ' (nota limitada de ' + notaAntes + ' para ' + d.nota + ')' : '');
         }
     }
 
@@ -1853,7 +2775,7 @@ reguaTextoPrompt()+'\n'+
 
         // === V2: Cobertura de periodo (quantos meses o extrato cobre) ===
         if (!problemas.some(function(p){ return p.nivel === 'erro'; })) {
-            var todasDatas = [];
+            var todasDatas = datasPorExtenso(textoTotal);   // "22 de outubro 2026"; as dd/mm/aaaa entram logo abaixo
             var reData = /\b(\d{2})\/(\d{2})\/(\d{2,4})\b/g;
             var mData;
             while ((mData = reData.exec(textoTotal)) !== null) {
@@ -1995,8 +2917,21 @@ reguaTextoPrompt()+'\n'+
     // ANALISES EM SEGUNDO PLANO
     // Cada clique em "Analisar" vira uma analise (job). Ate
     // MAX_JOBS_SIMULTANEOS rodam juntas; as demais esperam na fila.
-    // Roda enquanto o app estiver aberto (nao ha servidor).
+    // Com o servidor ligado a IA roda la e a analise sobrevive ao app fechado (l_retomar.js);
+    // sem ele, roda enquanto o app estiver aberto.
     // ================================================================
+    // Datas escritas por extenso ("3 de maio de 2026", "22 de outubro 2026") -> timestamps. O periodo do extrato nao pode
+    // depender so de dd/mm/aaaa: em varios bancos essa data aparece apenas no rodape de "gerado em", igual em todas as paginas.
+    function datasPorExtenso(texto) {
+        var meses = { janeiro: 0, fevereiro: 1, marco: 2, 'março': 2, abril: 3, maio: 4, junho: 5, julho: 6, agosto: 7, setembro: 8, outubro: 9, novembro: 10, dezembro: 11 };
+        var re = /\b(\d{1,2})\s+de\s+(janeiro|fevereiro|mar[cç]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\s+(?:de\s+)?(20\d{2})\b/gi, m, r = [];
+        while ((m = re.exec(texto)) !== null) {
+            var dia = parseInt(m[1], 10), ts = new Date(parseInt(m[3], 10), meses[m[2].toLowerCase()], dia).getTime();
+            if (dia >= 1 && dia <= 31 && ts > 0 && ts <= Date.now() + 86400000) r.push(ts);
+        }
+        return r;
+    }
+
     var CANCELADO = { cancelado: true };
     var PASSOS = ['Documentos', 'Apostas e risco', 'Extratos e renda', 'Nota final'];
 
@@ -2043,18 +2978,30 @@ reguaTextoPrompt()+'\n'+
         });
     }
 
-    function iniciarAnalise() {
-        if (!_docsRend.length || _enviando > 0) return;
-        var job = {
-            id: ++_jobSeq, estado: 'fila', ts: Date.now(), nome: '',
-            docsId: _docsId, docsRend: _docsRend,
+    // Monta o objeto de uma analise. uid = identidade que atravessa o fechamento do app
+    // (ids das chamadas de IA, registro no Firebase e copia guardada no aparelho).
+    function criarJob(docsId, docsRend, tel, extra) {
+        return Object.assign({
+            id: ++_jobSeq, uid: novoIdJob(), srvIds: [], estado: 'fila', ts: Date.now(), nome: '',
+            docsId: docsId, docsRend: docsRend,
             prog: 0, etapa: 'Na fila', passo: 0,
             dados: null, texto: '', cpf: '', fbKey: null, criadoAqui: false, podeSalvarCalc: true,
-            visto: false, erro: '', cancelado: false, pergunta: null, calc: null
-        };
+            visto: false, erro: '', cancelado: false, pergunta: null, calc: null,
+            tel: tel || ''   // WhatsApp do cliente (opcional)
+        }, extra || {});
+    }
+
+    function iniciarAnalise() {
+        if (!_docsRend.length || _enviando > 0) return;
+        var campoTel = el('cs_tel');
+        var job = criarJob(_docsId, _docsRend, normalizarTelefone(campoTel ? campoTel.value : ''), { usuario: usuarioAtual() });
+        try { if (window.Notification && Notification.permission === 'default') Notification.requestPermission(); } catch (e) {}   // para o aviso "Analise pronta" com o app em segundo plano
+        if (campoTel) { campoTel.value = ''; mascararTelefone(campoTel, 'cs_tel_hint'); }
         _docsId = []; _docsRend = [];
         _jobs.unshift(job);
         _formAberto = false;
+        if (filaProvavel()) upIniciar(job);   // tela de envio: trava o app ate o servidor confirmar o recebimento
+        persistirJob(job);   // copia no aparelho: se o Android fechar o app, a analise e retomada ao reabrir
         renderRascunho(); aplicarForm(); renderLista();
         processarFila();
     }
@@ -2080,6 +3027,7 @@ reguaTextoPrompt()+'\n'+
                 job.estado = 'erro';
                 job.erro = String((e && e.message) || e || 'Erro desconhecido');
                 job.etapa = 'Falhou';
+                encerrarPersistencia(job);   // erro e definitivo: nao retoma sozinha ao reabrir (o botao "tentar de novo" cria outra)
                 console.warn('CreditoScan - analise falhou:', e);
                 avisarJob(job, 'erro');
             }
@@ -2091,6 +3039,8 @@ reguaTextoPrompt()+'\n'+
     function cancelarJob(job) {
         if (!job) return;
         job.cancelado = true;
+        if (job.doServidor && job.estado === 'erro') filaPost('cancelar', job.uid).then(function () { filaBuscar(); });   // descarta tambem no servidor
+        encerrarPersistencia(job);
         if (job.pergunta) { var p = job.pergunta; job.pergunta = null; p.resolve('cancelar'); }
         liberarDocsDoJob(job);
         removerBanner(job.id);
@@ -2103,7 +3053,11 @@ reguaTextoPrompt()+'\n'+
 
     function tentarDeNovo(job) {
         if (!job || job.estado !== 'erro') return;
+        if (job.doServidor) { filaRepetirDoJob(job); return; }   // o resultado ja veio do servidor mas nao serviu: o servidor refaz
         job.estado = 'fila'; job.erro = ''; job.prog = 0; job.passo = 0; job.etapa = 'Na fila';
+        job.uid = novoIdJob(); job.srvIds = [];   // outra rodada: nao reaproveita respostas guardadas da anterior
+        persistirJob(job);
+        if (filaProvavel()) upIniciar(job);
         removerBanner(job.id);
         processarFila();
     }
@@ -2116,6 +3070,9 @@ reguaTextoPrompt()+'\n'+
             job.pergunta = { tipo: tipo, dados: dados, resolve: resolve };
             pedirRender();
             avisarJob(job, 'pergunta');
+            upDesenhar();   // a tela de envio sai da frente enquanto a pergunta espera
+            // quem esta esperando o envio esta com o app na mao: abre a pergunta na hora, por cima da tela de envio
+            if (_up.pend[job.uid]) setTimeout(function () { abrirPergunta(job); }, 60);
         });
     }
 
@@ -2124,6 +3081,7 @@ reguaTextoPrompt()+'\n'+
         job.pergunta = null; job.modalAberto = false;
         if (job.estado === 'aguarda') job.estado = 'rodando';
         removerBanner(job.id);
+        upDesenhar();
         p.resolve(valor);
         pedirRender();
     }
@@ -2207,11 +3165,13 @@ reguaTextoPrompt()+'\n'+
 
         // ── PASSO 0: documento pessoal (CPF) e historico — evita gastar token a toa ──
         andamento(job, 'Lendo documentos...', 6, 0);
+        var tIni = Date.now();
+        job.tempos = job.tempos || {};
         var cpf = '';
         if (job.docsId.length > 0) {
             try {
                 var promptId = 'Extraia o CPF e o Nome do titular deste documento. Retorne APENAS um JSON valido: {"cpf": "123.456.789-00", "nome": "Nome do Titular"}. Se nao achar CPF, retorne {"cpf": ""}';
-                var respId = await aiCallVision(job.docsId, '', promptId);
+                var respId = await aiCallVision(job.docsId, '', promptId, chaveIA(job, 'cpf'));
                 var ir1 = respId.indexOf('{'), ir2 = respId.lastIndexOf('}');
                 if (ir1 !== -1 && ir2 > ir1) {
                     var objId = JSON.parse(respId.substring(ir1, ir2 + 1));
@@ -2223,6 +3183,7 @@ reguaTextoPrompt()+'\n'+
             var mc = textosLocais.join(' ').match(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/);
             if (mc) cpf = mc[0].replace(/\D/g, '');
         }
+        job.tempos.cpf_s = Math.round((Date.now() - tIni) / 1000);
         andamento(job, 'Consultando histórico...', 14);
 
         if (cpf.length === 11) {
@@ -2248,6 +3209,10 @@ reguaTextoPrompt()+'\n'+
                         if (escolha === 'reusar') {
                             var dReuso = dadosDoRegistro(itens[0]);
                             job.fbKey = itens[0].id; job.criadoAqui = false; job.podeSalvarCalc = !itens[0].produto;
+                            // numero: o digitado agora vale; senao usa o que ja estava salvo; se mudou, atualiza o registro
+                            var telSalvo = normalizarTelefone(itens[0].telefone);
+                            job.tel = job.tel || telSalvo;
+                            if (job.tel && job.tel !== telSalvo) atualizarFB(job.fbKey, { telefone: job.tel });
                             concluirJob(job, dReuso, itens[0].textoCompleto || '');
                             return;
                         }
@@ -2275,21 +3240,33 @@ reguaTextoPrompt()+'\n'+
             var dAposta = resultadoApostasReprovado('', job.nome || nomeNoTexto(textoParaApostas), apostas);
             dAposta.nomeCliente = String(dAposta.nomeCompleto || 'Cliente').split(' ')[0];
             dAposta.casasJogo = apostas.casas || [];
+            dAposta.telefone = job.tel || '';
             prepararDados(dAposta);
             checar(job);
-            job.fbKey = await salvarFB(dAposta.nomeCompleto, '', apostas.detalhe, dAposta, cpf);
+            job.fbKey = await salvarFB(dAposta.nomeCompleto, '', apostas.detalhe, dAposta, cpf, job.uid, job.usuario);
             job.criadoAqui = true;
             concluirJob(job, dAposta, apostas.detalhe);
             return;
         }
 
+        // ── Servidor com fila: envia os documentos e pronto (a renda e a analise rodam la; o resultado volta pela lista) ──
+        if (await filaDisponivel()) {
+            await enviarParaFila(job, cpf);
+            return;
+        }
+        upFinalizar(job);   // sem fila no servidor: segue no modo direto, sem tela de envio
+        if (filaToken()) andamento(job, 'Servidor indisponível · analisando neste celular', 30, 2);   // senha salva mas sem fila: mantenha o app aberto
+
         // ── PASSO 2: payload hibrido (imagens + texto digital) ──
         andamento(job, 'Preparando dados...', 32, 2);
         var imagensParaIA = [];
-        var textosDigitais = [];
+        var arquivosDigitais = [], posArq = {};   // paginas de texto agrupadas por PDF
         job.docsId.forEach(function (d) { if (d.base64) imagensParaIA.push(d); });
         job.docsRend.forEach(function (d) {
-            if (d.ehDigital && d.textos && d.textos.length) textosDigitais = textosDigitais.concat(d.textos);
+            if (d.ehDigital && d.textos && d.textos.length) {
+                if (posArq[d.aid] === undefined) { posArq[d.aid] = arquivosDigitais.length; arquivosDigitais.push([]); }
+                arquivosDigitais[posArq[d.aid]] = arquivosDigitais[posArq[d.aid]].concat(d.textos);
+            }
             else if (d.base64) imagensParaIA.push(d);
         });
         if (imagensParaIA.length > MAX_IMGS_AI) {
@@ -2298,9 +3275,10 @@ reguaTextoPrompt()+'\n'+
             imagensParaIA = sampled;
         }
         var textoDigitalStr = '';
-        if (textosDigitais.length) {
-            textoDigitalStr = '=== EXTRATO BANCARIO DIGITAL (texto extraido do PDF) ===\n' +
-                textosDigitais.join('\n--- PROXIMA PAGINA ---\n').substring(0, 30000);
+        if (arquivosDigitais.length) {
+            var montado = montarTextoDigital(arquivosDigitais);
+            if (montado.texto) textoDigitalStr = '=== EXTRATO BANCARIO DIGITAL (texto extraido do PDF) ===\n' + montado.texto;
+            if (montado.cortado) console.warn('[CreditoScan] extrato maior que o limite: parte do texto ficou de fora');
         }
         if (imagensParaIA.length === 0 && !textoDigitalStr) {
             throw new Error('Nenhum documento legível. Envie fotos mais nítidas ou o PDF original do banco.');
@@ -2308,17 +3286,15 @@ reguaTextoPrompt()+'\n'+
 
         // ── PASSO 3: pipeline de IA ──
         var temSoTexto = (imagensParaIA.length === 0 && textoDigitalStr);
-        var rendaPre = null;   // renda da etapa 1 (so texto digital), calculada aqui no codigo
-        if (temSoTexto) {
+        // Etapa 1 (renda por PDF, so texto digital) vale tambem com RG em foto; so nao vale se houver foto de comprovante de renda
+        var fotoRenda = job.docsRend.some(function (d) { return !d.ehDigital && d.base64; });
+        var usaEtapaRenda = !!textoDigitalStr && !fotoRenda;
+        var rendaPre = null;   // renda da etapa 1, calculada aqui no codigo
+        if (usaEtapaRenda) {
             andamento(job, 'Calculando renda (1/2)...', 45, 2);
-            try {
-                var respRenda = await aiCallTexto(buildPromptRenda(textoDigitalStr));
-                var j1 = respRenda.indexOf('{'), j2 = respRenda.lastIndexOf('}');
-                if (j1 !== -1 && j2 > j1) {
-                    var cRenda = calcularRenda(JSON.parse(respRenda.substring(j1, j2 + 1)));
-                    if (cRenda && cRenda.renda > 0) rendaPre = cRenda;
-                }
-            } catch (eR) { if (eR === CANCELADO) throw eR; console.warn('Etapa 1 falhou, prosseguindo sem renda pre-calculada:', eR); }
+            var tRenda = Date.now();
+            try { rendaPre = await calcularRendaDosArquivos(arquivosDigitais, job); job.tempos.renda_s = Math.round((Date.now() - tRenda) / 1000); }
+            catch (eR) { if (eR === CANCELADO) throw eR; console.warn('Etapa 1 falhou, prosseguindo sem renda pre-calculada:', eR); }
             checar(job);
             andamento(job, 'Analisando comportamento (2/2)...', 65, 2);
         } else {
@@ -2326,27 +3302,35 @@ reguaTextoPrompt()+'\n'+
             andamento(job, 'IA lendo ' + modoDesc + '...', 50, 2);
         }
 
-        var resp;
+        var resp, tAnalise = Date.now();
         try {
             if (temSoTexto) {
-                var textoParaAnalise = '=== EXTRATO ===\n' + textoDigitalStr.substring(0, 25000) + '\n\n';
-                resp = await aiCallTexto(textoParaAnalise + buildPrompt(rendaPre));
+                var textoParaAnalise = '=== EXTRATO ===\n' + textoDigitalStr + '\n\n';
+                resp = await aiCallTexto(textoParaAnalise + buildPrompt(rendaPre), chaveIA(job, 'analise'));
             } else {
-                resp = await aiCallVision(imagensParaIA, textoDigitalStr, buildPrompt(null));
+                resp = await aiCallVision(imagensParaIA, textoDigitalStr, buildPrompt(rendaPre), chaveIA(job, 'analise'));
             }
         } catch (eAI) {
             throw new Error('Falha ao consultar a IA: ' + ((eAI && eAI.message) || eAI));
         }
         checar(job);
+        job.tempos.analise_s = Math.round((Date.now() - tAnalise) / 1000);
+        job.tempos.total_s = Math.round((Date.now() - job.ts) / 1000);
 
-        // ── PASSO 4: nota final ──
+        await concluirComResposta(job, resp, rendaPre, textoParaApostas, cpf);
+    }
+
+    // ── PASSO 4: nota final. Mesmo codigo para a analise feita no celular e para a que volta do servidor ──
+    async function concluirComResposta(job, resp, rendaPre, textoParaApostas, cpf) {
         andamento(job, 'Finalizando...', 90, 3);
         var d = extrair(resp);
         if (/^ERRO/.test(d.risco || '')) throw new Error('A IA devolveu uma resposta inválida. Tente de novo.');
         d._produto = '';
+        d.telefone = job.tel || '';
         d.sinaisCompromisso = detectarSinaisCompromisso(textoParaApostas);   // confere a lista de compromissos da IA com o texto do extrato
+        d.sinaisRisco = detectarSinaisRisco(textoParaApostas);               // confere atraso/cheque especial/rotativo que a IA disse ter visto
 
-        finalizarPontuacao(d, rendaPre);   // renda (media/mediana/abatimentos) + soma da regua, no codigo
+        finalizarPontuacao(d, rendaPre);   // renda (media/mediana/abatimentos) + faixa por sinais e pilares, no codigo
         validarApostasNaResposta(d);
         validarComprometimento(d);
         completarNome(d, job, textoParaApostas);
@@ -2354,7 +3338,8 @@ reguaTextoPrompt()+'\n'+
         if (d.rendaEstimada > 0 && d.rendaEstimada < 1000 && !d.reprovado) {
             d.aprov = false; d.reprovado = true; d.nota = Math.min(d.nota, 30);
             d.risco = 'REPROVADO'; d.entradaPct = 0.60;
-            d.motivos = (d.motivos ? d.motivos + '\n' : '') + 'Renda de R$ ' + d.rendaEstimada + ' abaixo do minimo de R$ 1.000. Impossivel parcelar.';
+            d.motivos = (d.motivos ? d.motivos + '\n' : '') + 'Renda de R$ ' + d.rendaEstimada + ' abaixo do minimo de R$ 1.000. Impossivel parcelar.' +
+                (d.rendaCalc && d.rendaCalc.duvidosa ? '\nRenda duvidosa: confira no extrato as entradas excluídas e a soma dos meses (veja os alertas ⚠ no cálculo da renda).' : '');
         }
         if (!(d.rendaEstimada > 0) && !d.reprovado) {
             d.aprov = false; d.reprovado = true; d.nota = 0;
@@ -2363,16 +3348,37 @@ reguaTextoPrompt()+'\n'+
         }
         prepararDados(d);
 
-        job.fbKey = await salvarFB(d.nomeCompleto, '', resp, d, cpf);
+        job.fbKey = await salvarFB(d.nomeCompleto, '', resp, d, cpf, job.uid, job.usuario);
         job.criadoAqui = true;
         concluirJob(job, d, resp);
     }
 
+    // Etapa 1 da renda: cada PDF e lido em TRECHOS pequenos (em paralelo) e o codigo soma os trechos
+    // (a IA errava a soma de 50-60 Pix de um mes numa resposta so). Se a soma nao fechar com o "Total de creditos"
+    // impresso, relê com trechos menores (ver lerRendaPorTrechos).
+    async function calcularRendaDosArquivos(arquivos, job) {
+        var limitar = criarLimitador(PARALELO_IA);
+        var inicio = Date.now();
+        var leituras = await Promise.all(arquivos.map(function (arq, idx) {
+            var m = montarTextoDigital([arq], LIMITE_RENDA_ARQUIVO);
+            if (!m.texto) return Promise.resolve(undefined);   // PDF sem texto (nada a ler)
+            return lerRendaPorTrechos(m.texto, function (prompt, rotulo) { return aiCallTexto(prompt, chaveIA(job, 'renda-' + idx + '-' + rotulo)); }, {
+                limitar: limitar, fatal: function (e) { return e === CANCELADO; }, sobra: function () { return 150000 - (Date.now() - inicio); }
+            });
+        }));
+        // um PDF que a IA nao conseguiu ler faria a renda sair de menos meses sem ninguem saber: nesse caso a etapa 2 calcula tudo
+        if (leituras.some(function (l) { return l === null; })) return null;
+        var uniao = unirRendaArquivos(leituras.filter(Boolean));
+        var c = uniao.rendaMeses.length ? calcularRenda(uniao) : null;
+        return c && c.renda > 0 ? c : null;
+    }
+
     function concluirJob(job, d, texto) {
         checar(job);
+        encerrarPersistencia(job);
         job.dados = d; job.texto = texto;
         if (d.nomeCompleto && d.nomeCompleto !== 'Cliente' && d.nomeCompleto !== 'Amigo(a)') job.nome = d.nomeCompleto;
-        job.estado = 'pronta'; job.prog = 100; job.etapa = 'Pronta'; job.pergunta = null;
+        job.estado = 'pronta'; job.prog = 100; job.etapa = 'Pronta'; job.pergunta = null; job.tsFim = Date.now();
         job.calc = { aberto: false, produto: '', valor: 0 };
         liberarDocsDoJob(job);
         pedirRender();
@@ -2400,8 +3406,8 @@ reguaTextoPrompt()+'\n'+
             var casas = it.casasJogo ? String(it.casasJogo).split(',').filter(Boolean) : [];
             d = {
                 aprov: !reprovado, downgrade: false, entradaAlta: false, reprovado: reprovado,
-                nota: nota, risco: reprovado ? 'REPROVADO' : (nota >= 85 ? 'FORTE' : nota >= 60 ? 'MEDIO' : 'FRACO'),
-                entradaPct: nota >= 85 ? 0.33 : nota >= 60 ? 0.35 : 0.60,
+                nota: nota, risco: reprovado ? 'REPROVADO' : riscoPorNota(nota).risco,
+                entradaPct: reprovado ? FAIXAS.REPROVADO.entradaPct : riscoPorNota(nota).entradaPct,
                 rendaEstimada: parseFloat(it.rendaEstimada) || 0,
                 taxa: TAXA_PADRAO, parcelas: PARCELAS_PADRAO, entrada: null,
                 nomeCliente: nome.split(' ')[0], nomeCompleto: nome,
@@ -2428,6 +3434,772 @@ reguaTextoPrompt()+'\n'+
         }
         if (it.calculoFinal) d.calculo = String(it.calculoFinal);
         return prepararDados(d);
+    }
+
+    // ================================================================
+    // RETOMAR ANALISES
+    // Cada analise em andamento tem uma copia no aparelho (IndexedDB): documentos, telefone e identidade (uid).
+    // As chamadas de IA usam ids fixos derivados do uid, entao ao reabrir o app a analise recomeca do inicio mas
+    // o servidor devolve na hora o que ja respondeu (nada e cobrado duas vezes) e o registro do Firebase tem chave
+    // fixa (nao duplica). A copia e apagada ao concluir, falhar ou cancelar, e descartada depois de 2 horas.
+    // ================================================================
+    var SNAP_DB         = 'ctwCreditoScan';
+    var SNAP_STORE      = 'analises';
+    var SNAP_VALIDADE   = 7200000;    // 2 h
+    var SNAP_BATIDA_MS  = 5000;       // a analise viva renova o "estou rodando" a cada 5 s
+    var SNAP_LEASE_MS   = 20000;      // sem batida ha 20 s = ninguem esta rodando essa analise
+    var LEASE_PREFIXO   = 'ctwCsLease_';
+
+    function chaveIA(job, passo) { return job && job.uid ? { uid: job.uid, passo: passo, ids: job.srvIds } : null; }
+
+    function snapAbrir() {
+        return new Promise(function (resolve, reject) {
+            try {
+                var rq = indexedDB.open(SNAP_DB, 1);
+                rq.onupgradeneeded = function () { rq.result.createObjectStore(SNAP_STORE, { keyPath: 'uid' }); };
+                rq.onsuccess = function () { resolve(rq.result); };
+                rq.onerror = function () { reject(rq.error); };
+            } catch (e) { reject(e); }
+        });
+    }
+
+    // Executa fn(store) numa transacao e devolve o resultado do pedido quando ela termina
+    function snapTx(modo, fn) {
+        return snapAbrir().then(function (db) {
+            return new Promise(function (resolve, reject) {
+                var tx = db.transaction(SNAP_STORE, modo), rq;
+                try { rq = fn(tx.objectStore(SNAP_STORE)); } catch (e) { db.close(); reject(e); return; }
+                tx.oncomplete = function () { db.close(); resolve(rq ? rq.result : undefined); };
+                tx.onerror = tx.onabort = function () { db.close(); reject(tx.error || new Error('transacao abortada')); };
+            });
+        });
+    }
+
+    function leaseLer(uid) { try { return parseInt(localStorage.getItem(LEASE_PREFIXO + uid), 10) || 0; } catch (e) { return 0; } }
+    function leaseGravar(uid) { try { localStorage.setItem(LEASE_PREFIXO + uid, String(Date.now())); } catch (e) {} }
+    function leaseLimpar(uid) { try { localStorage.removeItem(LEASE_PREFIXO + uid); } catch (e) {} }
+
+    function snapDoJob(job) {
+        // PDF digital: a IA le so o texto, entao a imagem das paginas nao precisa ser guardada
+        function doc(d) {
+            var soTexto = d.ehDigital && d.textos && d.textos.length;
+            return { base64: soTexto ? '' : (d.base64 || ''), textos: d.textos || [], tipo: d.tipo || 'imagem', ehDigital: !!d.ehDigital, arq: d.arq || '', aid: d.aid };
+        }
+        return { uid: job.uid, ts: job.ts, nome: job.nome || '', tel: job.tel || '', salvoEm: Date.now(),
+            docsId: (job.docsId || []).map(doc), docsRend: (job.docsRend || []).map(doc) };
+    }
+
+    // Guarda a analise no aparelho e comeca a renovar o "estou rodando". Falhar aqui nunca atrapalha a analise.
+    function persistirJob(job) {
+        if (!job || !job.uid) return;
+        leaseGravar(job.uid);
+        if (job._batida) clearInterval(job._batida);
+        job._batida = setInterval(function () { leaseGravar(job.uid); }, SNAP_BATIDA_MS);
+        try {
+            if (!window.indexedDB) return;
+            var reg = snapDoJob(job);
+            snapTx('readwrite', function (st) { return st.put(reg); }).catch(function (e) { console.warn('[CreditoScan] nao consegui guardar a analise no aparelho:', e); });
+        } catch (e) { console.warn('[CreditoScan] copia da analise falhou:', e); }
+    }
+
+    // Fim da analise (concluida, falhou ou cancelada): apaga a copia, para a batida e limpa as respostas do servidor
+    function encerrarPersistencia(job) {
+        if (!job) return;
+        upFinalizar(job);
+        if (job._batida) { clearInterval(job._batida); job._batida = null; }
+        if (job.uid) {
+            leaseLimpar(job.uid);
+            try { if (window.indexedDB) snapTx('readwrite', function (st) { return st.delete(job.uid); }).catch(function () {}); } catch (e) {}
+        }
+        limparRespostasServidor(job.srvIds);
+    }
+
+    function esperarFirebase(maxMs) {
+        return new Promise(function (resolve) {
+            var fim = Date.now() + maxMs;
+            (function tick() { if (window._firebaseDB || Date.now() >= fim) return resolve(); setTimeout(tick, 400); })();
+        });
+    }
+
+    // Ao abrir o app: continua as analises que ficaram pela metade
+    var _retomarRodou = false;
+    async function retomarAnalises() {
+        try {
+            if (!window.indexedDB) return;
+            var lista = await snapTx('readonly', function (st) { return st.getAll(); });
+            if (!lista || !lista.length) return;
+            var agora = Date.now(), reabrir = [], esperaLease = false;
+            lista.forEach(function (sn) {
+                if (!sn || !sn.uid) return;
+                if (agora - (sn.ts || 0) > SNAP_VALIDADE) { leaseLimpar(sn.uid); snapTx('readwrite', function (st) { return st.delete(sn.uid); }).catch(function () {}); return; }
+                if (_jobs.some(function (j) { return j.uid === sn.uid; })) return;   // ja esta rodando nesta sessao
+                if (agora - leaseLer(sn.uid) < SNAP_LEASE_MS) { esperaLease = true; return; }   // outra aba/sessao ainda esta cuidando dela
+                reabrir.push(sn);
+            });
+            if (esperaLease && !_retomarRodou) { _retomarRodou = true; setTimeout(retomarAnalises, SNAP_LEASE_MS + 1500); }
+            if (!reabrir.length) return;
+            await esperarFirebase(20000);
+            reabrir.sort(function (a, b) { return a.ts - b.ts; });
+            reabrir.forEach(function (sn) {
+                if (_jobs.some(function (j) { return j.uid === sn.uid; })) return;
+                function refazer(d) { return Object.assign({}, d, { dataUrl: '' }); }
+                var job = criarJob((sn.docsId || []).map(refazer), (sn.docsRend || []).map(refazer), sn.tel, {
+                    uid: sn.uid, ts: sn.ts, nome: sn.nome || '', etapa: 'Retomando...', retomado: true
+                });
+                _jobs.unshift(job);
+                if (filaProvavel()) upIniciar(job);
+                leaseGravar(job.uid);
+                job._batida = setInterval(function () { leaseGravar(job.uid); }, SNAP_BATIDA_MS);
+            });
+            _formAberto = false; aplicarForm();   // recolhe o formulario: a lista "Em andamento" fica no topo, como logo depois de tocar em analisar
+            renderLista();
+            avisar(reabrir.length === 1 ? 'Retomando a análise que ficou pela metade...' : 'Retomando ' + reabrir.length + ' análises que ficaram pela metade...');
+            processarFila();
+        } catch (e) { console.warn('[CreditoScan] nao consegui retomar analises:', e); }
+    }
+
+    // ================================================================
+    // FILA NO SERVIDOR
+    // O celular so le o CPF, faz as perguntas e ENVIA os documentos. A renda e a analise rodam no servidor,
+    // uma fila de 2 por vez (ate 30 esperando). O resultado volta pela lista: o app consulta o servidor,
+    // baixa o que ficou pronto, aplica as mesmas regras de sempre (concluirComResposta) e salva no historico.
+    // Sem senha do servidor, ou com a funcao antiga (sem fila), tudo continua como antes (IA direto do celular).
+    // ================================================================
+    var FILA_POLL_ATIVO_MS   = 4000;     // tela do CreditoScan aberta e com analise andando
+    var FILA_POLL_FUNDO_MS   = 12000;    // CreditoScan fechado, mas ha analise andando (para avisar quando ficar pronta)
+    var FILA_POLL_OCIOSO_MS  = 15000;    // aberto e sem nada andando (pega o que foi enviado de outro aparelho)
+    var FILA_TIMEOUT_MS      = 12000;
+    var FILA_MAX_CORPO       = 13500000; // o servidor recusa pedidos acima de 14 MB
+    var FILA_REVALIDA_MS     = 60000;    // "funcao antiga" e lembrado por 1 min (da tempo de colar a nova)
+
+    var _fila = { suporte: null, suporteTs: 0, itens: [], ok: false, buscou: false, ts: 0, dif: 0, falhas: 0, max: 30, slots: 2, senhaErrada: false, motivo: '' };
+    var _filaTimer = null, _filaBuscando = null, _coletando = {};
+
+    function filaToken() { return safeGet(SRV_TOKEN_LS) || ''; }
+    function filaProvavel() { return !!filaToken() && _fila.suporte !== false; }
+
+    // ── A funcao no servidor tem fila? (true / false / null = sem conexao / 'senha' = senha errada) ──
+    async function filaSuporte() {
+        var tk = filaToken(); if (!tk) return false;
+        if (_fila.suporte === true) return true;
+        if (_fila.suporte === false && Date.now() - _fila.suporteTs < FILA_REVALIDA_MS) return false;
+        try {
+            var r = await fetchComTempo(srvUrl() + '/status', { method: 'GET', headers: srvHeaders(tk) }, FILA_TIMEOUT_MS);
+            var j = await r.json().catch(function () { return {}; });
+            if (r.status === 401 || r.status === 403) { _fila.senhaErrada = true; return 'senha'; }
+            _fila.senhaErrada = false;
+            if (r.status === 200 && j && j.fila) { _fila.suporte = true; _fila.max = j.max_fila || 30; _fila.slots = j.slots || 2; return true; }
+            _fila.suporte = false; _fila.suporteTs = Date.now();   // funcao antiga: segue no modo direto
+            return false;
+        } catch (e) { return null; }
+    }
+
+    async function filaDisponivel() {
+        if (!filaToken()) return false;
+        var s = await filaSuporte();
+        if (s === null) throw new Error('Sem conexão com o servidor. Confira a internet e toque em "Tentar de novo".');
+        if (s === 'senha') throw new Error('A senha do servidor não confere. Corrija em Configurações > Servidor.');
+        return s === true;
+    }
+
+    // ================================================================
+    // TELA DE ENVIO (trava o app ate o servidor confirmar o recebimento)
+    // ================================================================
+    var _up = { pend: {}, total: 0, feitos: 0, okTimer: null, wake: null };
+
+    function upQtdPend() { return Object.keys(_up.pend).length; }
+    function upAtivo() { return upQtdPend() > 0 || !!_up.okTimer; }
+    function upBloqueando() { var o = el('cs_up_ov'); return !!(o && o.classList.contains('on')); }
+
+    function upCriar() {
+        var o = el('cs_up_ov'); if (o) return o;
+        o = document.createElement('div');
+        o.id = 'cs_up_ov'; o.className = 'cs-scope';
+        o.setAttribute('role', 'alertdialog'); o.setAttribute('aria-live', 'polite');
+        o.innerHTML = '<div class="cs-up-box">' +
+            '<div class="cs-up-ico" id="cs_up_ico"><i class="bi bi-cloud-arrow-up-fill"></i></div>' +
+            '<div class="cs-up-t" id="cs_up_t"></div>' +
+            '<div class="cs-up-s" id="cs_up_s"></div>' +
+            '<div class="cs-bar" id="cs_up_bar"><div id="cs_up_b" style="width:3%"></div></div>' +
+            '<div class="cs-up-w" id="cs_up_w"></div>' +
+            '<button type="button" class="cs-btn cs-btn-pri cs-h" id="cs_up_fechar">Ok</button>' +
+            '</div>';
+        document.body.appendChild(o);
+        el('cs_up_fechar').addEventListener('click', function () { upEsconder(); });
+        return o;
+    }
+
+    function upEsconder() {
+        if (_up.okTimer) { clearTimeout(_up.okTimer); _up.okTimer = null; }
+        var o = el('cs_up_ov'); if (o) o.classList.remove('on');
+        _up.total = 0; _up.feitos = 0;
+        upSoltarTela();
+    }
+
+    function upManterTela() {
+        try {
+            if (navigator.wakeLock && !_up.wake) navigator.wakeLock.request('screen').then(function (w) { _up.wake = w; w.addEventListener('release', function () { _up.wake = null; }); }).catch(function () {});
+        } catch (e) {}
+    }
+    function upSoltarTela() { try { if (_up.wake) { _up.wake.release(); _up.wake = null; } } catch (e) {} }
+
+    function upDesenhar() {
+        var pend = Object.keys(_up.pend).map(function (k) { return _up.pend[k]; });
+        // quem esta esperando uma resposta do vendedor nao segura a tela (a pergunta abre por cima)
+        var andando = pend.filter(function (p) { return p.job.estado !== 'aguarda'; });
+        if (!pend.length) return;   // o aviso "Enviado" e desenhado por upConcluir
+        var o = upCriar();
+        if (!andando.length) { o.classList.remove('on'); return; }
+        var p = andando[0];
+        o.classList.add('on');
+        el('cs_up_ico').className = 'cs-up-ico';
+        el('cs_up_ico').innerHTML = '<i class="bi bi-cloud-arrow-up-fill"></i>';
+        el('cs_up_fechar').classList.add('cs-h');
+        el('cs_up_bar').classList.remove('cs-h');
+        var n = Math.min(_up.total, _up.feitos + 1);
+        el('cs_up_t').textContent = _up.total > 1 ? 'Enviando ' + n + ' de ' + _up.total + '...' : 'Enviando para o servidor...';
+        var pct = p.total ? Math.round(p.enviado / p.total * 100) : 0;
+        var s = esc(nomeDoJob(p.job));
+        if (p.fase === 'enviando') s += ' · ' + fmtMB(p.enviado) + ' de ' + fmtMB(p.total) + ' (' + pct + '%)';
+        else s += ' · preparando os documentos';
+        el('cs_up_s').innerHTML = s;
+        el('cs_up_b').style.width = (p.fase === 'enviando' ? Math.max(3, pct) : 3) + '%';
+        el('cs_up_w').textContent = 'Não feche nem saia do app até aparecer "Enviado".';
+    }
+
+    function upIniciar(job) {
+        if (!job || !job.uid || _up.pend[job.uid]) return;
+        if (_up.okTimer) { clearTimeout(_up.okTimer); _up.okTimer = null; _up.total = 0; _up.feitos = 0; }
+        _up.pend[job.uid] = { job: job, fase: 'preparando', enviado: 0, total: 0 };
+        _up.total++;
+        upManterTela();
+        upDesenhar();
+    }
+
+    function upProgresso(job, enviado, total) {
+        var p = _up.pend[job.uid]; if (!p) return;
+        p.fase = 'enviando'; p.enviado = enviado; p.total = total;
+        upDesenhar();
+    }
+
+    // Saiu sem enviar (erro, cancelou, reaproveitou resultado antigo): nao conta como enviada
+    function upFinalizar(job) {
+        if (!job || !_up.pend[job.uid]) return;
+        delete _up.pend[job.uid];
+        _up.total = Math.max(0, _up.total - 1);
+        if (!upQtdPend()) upEsconder(); else upDesenhar();
+    }
+
+    // Servidor confirmou o recebimento
+    function upConcluir(job) {
+        if (!_up.pend[job.uid]) return;
+        delete _up.pend[job.uid];
+        _up.feitos++;
+        if (upQtdPend()) { upDesenhar(); return; }
+        var o = upCriar();
+        o.classList.add('on');
+        var tot = _up.feitos;
+        el('cs_up_ico').className = 'cs-up-ico ok';
+        el('cs_up_ico').innerHTML = '<i class="bi bi-check-lg"></i>';
+        el('cs_up_t').textContent = tot > 1 ? tot + ' análises enviadas' : 'Enviado';
+        el('cs_up_s').textContent = 'Pode sair do app. A análise continua no servidor e o resultado aparece aqui.';
+        el('cs_up_bar').classList.add('cs-h');
+        el('cs_up_w').textContent = '';
+        el('cs_up_fechar').classList.remove('cs-h');
+        upSoltarTela();
+        _up.okTimer = setTimeout(function () { _up.okTimer = null; upEsconder(); }, 3500);
+    }
+
+    // ================================================================
+    // ENVIO
+    // ================================================================
+    function docParaServidor(d) {
+        // PDF digital: a IA le so o texto, entao a imagem das paginas nao precisa subir
+        var soTexto = d.ehDigital && d.textos && d.textos.length;
+        return { base64: soTexto ? '' : (d.base64 || ''), textos: d.textos || [], tipo: d.tipo || 'imagem', ehDigital: !!d.ehDigital, arq: d.arq || '', aid: d.aid };
+    }
+
+    // POST com progresso de envio (XHR). Aborta se o envio parar de andar por 45 s.
+    function xhrPost(url, token, corpo, aoProgredir, limiteMs) {
+        return new Promise(function (resolve, reject) {
+            var x = new XMLHttpRequest(), ultimo = Date.now(), vigia = null, fim = false;
+            function terminar(fn, v) { if (fim) return; fim = true; clearInterval(vigia); fn(v); }
+            x.open('POST', url, true);
+            x.setRequestHeader('Content-Type', 'application/json');
+            x.setRequestHeader('x-app-token', token);
+            x.timeout = limiteMs;
+            x.upload.onprogress = function (e) { ultimo = Date.now(); if (e.lengthComputable) aoProgredir(e.loaded, e.total); };
+            x.onload = function () { var j = null; try { j = JSON.parse(x.responseText); } catch (e) {} terminar(resolve, { status: x.status, json: j }); };
+            x.onerror = function () { terminar(reject, new Error('falha de rede')); };
+            x.ontimeout = function () { terminar(reject, new Error('tempo esgotado')); };
+            x.onabort = function () { terminar(reject, new Error('envio interrompido')); };
+            vigia = setInterval(function () { if (!document.hidden && Date.now() - ultimo > 45000) { try { x.abort(); } catch (e) {} } }, 5000);
+            x.send(corpo);
+        });
+    }
+
+    async function jaEstaNoServidor(id, tk) {
+        try { var r = await fetchComTempo(srvUrl() + '/resultado?id=' + id, { method: 'GET', headers: srvHeaders(tk) }, 15000); return r.status === 200; }
+        catch (e) { return false; }
+    }
+
+    async function enviarParaFila(job, cpf) {
+        var tk = filaToken();
+        andamento(job, 'Enviando ao servidor...', 30, 2);
+        var corpo = JSON.stringify({
+            id: job.uid, nome: job.nome || '', usuario: job.usuario || usuarioAtual(), tel: job.tel || '', cpf: cpf || '',
+            cpf_s: (job.tempos && job.tempos.cpf_s) || 0,
+            prep_s: Math.max(0, Math.round((Date.now() - (job.ts || Date.now())) / 1000)),   // do toque em Analisar até aqui: leitura dos arquivos no celular
+            docsId: job.docsId.map(docParaServidor), docsRend: job.docsRend.map(docParaServidor)
+        });
+        var envioMB = Math.round(corpo.length / 100000) / 10;   // tamanho do envio, em MB (o tempo de envio depende dele)
+        corpo = corpo.slice(0, -1) + ',"mb":' + envioMB + '}';
+        if (corpo.length > FILA_MAX_CORPO) {
+            throw new Error('Os documentos somam ' + fmtMB(corpo.length) + ', mais do que o servidor aceita (13 MB). Envie menos páginas ou o PDF original do banco.');
+        }
+        var limite = Math.min(240000, Math.max(90000, Math.round(corpo.length / 15)));
+        var res = null, ultimoErro = '';
+        for (var t = 1; t <= 3 && !res; t++) {
+            checar(job);
+            try {
+                res = await xhrPost(srvUrl() + '/enviar', tk, corpo, function (a, b) { upProgresso(job, a, b); }, limite);
+            } catch (e) {
+                ultimoErro = (e && e.message) || 'falha de rede';
+                if (await jaEstaNoServidor(job.uid, tk)) { res = { status: 200, json: { repetido: true, estado: 'fila' } }; break; }   // a resposta se perdeu, o envio nao
+                if (t < 3) { await aguardarAppPronto(60000); await pausa(2000 * t); }
+            }
+        }
+        checar(job);
+        if (!res) throw new Error('Não consegui enviar os documentos (' + ultimoErro + ', ' + fmtMB(corpo.length) + '). Confira a internet e toque em "Tentar de novo".');
+        var j = res.json || {};
+        if (res.status === 429) throw new Error('A fila do servidor está cheia (' + (j.max || _fila.max) + ' análises). Espere algumas terminarem e toque em "Tentar de novo".');
+        if (res.status === 401 || res.status === 403) throw new Error('A senha do servidor não confere. Corrija em Configurações > Servidor.');
+        if (res.status === 413) throw new Error('Os documentos são grandes demais para o servidor. Envie menos páginas ou o PDF original do banco.');
+        if (res.status !== 200 && res.status !== 201) throw new Error('O servidor recusou o envio (' + (j.erro || 'HTTP ' + res.status) + ').');
+
+        // confirmado: o servidor guardou os documentos. A partir daqui o app nao e mais necessario.
+        var criada = Date.now();
+        upConcluir(job);
+        encerrarPersistencia(job);
+        liberarDocsDoJob(job);
+        removerBanner(job.id);
+        var i = _jobs.indexOf(job); if (i !== -1) _jobs.splice(i, 1);
+        if (!_fila.itens.some(function (x) { return x.id === job.uid; })) {
+            _fila.itens.push({ id: job.uid, nome: job.nome || '', usuario: job.usuario || usuarioAtual(), estado: j.estado === 'rodando' ? 'rodando' : 'fila', etapa: 'Na fila', progresso: 0, criado_em: new Date(criada).toISOString(), posicao: null });
+        }
+        _formAberto = false; aplicarForm();
+        renderLista(); atualizarBadge();
+        filaBuscar();
+    }
+
+    // ================================================================
+    // LISTA DO SERVIDOR
+    // ================================================================
+    function filaLer(j) {
+        _fila.itens = (j.analises || []).map(function (a) { a.t = Date.parse(a.criado_em) || Date.now(); return a; });
+        _fila.dif = (Date.parse(j.agora) || Date.now()) - Date.now();
+        if (j.max_fila) _fila.max = j.max_fila;
+        if (j.slots) _fila.slots = j.slots;
+        _fila.suporte = true; _fila.ok = true; _fila.buscou = true; _fila.demorou = false; _fila.falhas = 0; _fila.motivo = ''; _fila.ts = Date.now(); _fila.senhaErrada = false;
+    }
+
+    function filaBuscar() {
+        var tk = filaToken();
+        if (!tk) { _fila.itens = []; _fila.ok = false; _fila.buscou = true; renderLista(); atualizarBadge(); return Promise.resolve(); }
+        if (_fila.suporte === false && Date.now() - _fila.suporteTs < FILA_REVALIDA_MS) return Promise.resolve();
+        if (_filaBuscando) return _filaBuscando;
+        _filaBuscando = (async function () {
+            try {
+                var r = await fetchComTempo(srvUrl() + '/lista', { method: 'GET', headers: srvHeaders(tk) }, FILA_TIMEOUT_MS);
+                if (r.status === 200) filaLer(await r.json());
+                else if (r.status === 401 || r.status === 403) { _fila.senhaErrada = true; _fila.ok = false; _fila.falhas++; }
+                else if (r.status === 400 || r.status === 404) { _fila.suporte = false; _fila.suporteTs = Date.now(); _fila.itens = []; _fila.ok = true; _fila.buscou = true; }   // funcao antiga, sem fila
+                else {
+                    var jr = await r.json().catch(function () { return {}; });
+                    _fila.ok = false; _fila.falhas++;
+                    _fila.motivo = 'HTTP ' + r.status + (jr && (jr.erro || jr.message) ? ' · ' + String(jr.erro || jr.message).slice(0, 140) : '');
+                }
+            } catch (e) { _fila.ok = false; _fila.falhas++; _fila.motivo = (e && e.name === 'AbortError') ? 'o servidor não respondeu em ' + (FILA_TIMEOUT_MS / 1000) + ' s' : 'sem conexão com o servidor (' + String((e && e.message) || e).slice(0, 80) + ')'; }
+            finally { _filaBuscando = null; }
+            _fila.buscou = true;
+            filaColetarProntas();
+            filaAvisarErros();
+            renderLista(); atualizarBadge();
+            filaAgendar();
+        })();
+        return _filaBuscando;
+    }
+
+    function filaAtivo() { return _fila.itens.some(function (a) { return a.estado === 'fila' || a.estado === 'rodando' || a.estado === 'pronta'; }); }
+    function csAberto() { var o = el('cs_ov'); return !!(o && o.classList.contains('active')); }
+
+    // analise deste perfil ainda na fila/rodando: com o app em segundo plano continua consultando, para avisar quando ficar pronta
+    function temAnaliseMinhaAndando() {
+        var me = usuarioAtual();
+        return _fila.itens.some(function (a) { return (a.estado === 'fila' || a.estado === 'rodando') && (!a.usuario || !me || a.usuario === me); });
+    }
+
+    function filaAgendar() {
+        if (_filaTimer) { clearTimeout(_filaTimer); _filaTimer = null; }
+        if (!filaToken() || _fila.suporte === false) return;
+        if (document.hidden && !temAnaliseMinhaAndando()) return;
+        var ms = csAberto() ? (filaAtivo() ? FILA_POLL_ATIVO_MS : FILA_POLL_OCIOSO_MS) : (filaAtivo() ? FILA_POLL_FUNDO_MS : 0);
+        if (!ms) return;
+        ms *= Math.min(4, 1 + _fila.falhas);   // servidor fora do ar: espaca as tentativas
+        _filaTimer = setTimeout(function () { _filaTimer = null; filaBuscar(); }, ms);
+    }
+
+    // O CreditoScan so abre depois de ter lido a lista do servidor (ou desistido apos o tempo limite)
+    window._csAguardarLista = async function () {
+        if (!filaToken()) {
+            try { await Promise.race([getServerToken(), pausa(4000)]); } catch (e) {}   // aparelho novo: a senha vem do Firebase
+            if (!filaToken()) return 'sem-servidor';
+        }
+        if (_fila.buscou && _fila.ok) { filaBuscar(); return 'ok'; }   // ja tem lista: mostra e atualiza por tras
+        await Promise.race([filaBuscar(), pausa(5500)]);
+        if (!_fila.ok) _fila.demorou = true;   // o servidor nao respondeu a tempo: abre com aviso e segue tentando por tras
+        return _fila.ok ? 'ok' : 'sem-lista';
+    };
+
+    function filaIniciar() {
+        urlServidorSincronizar();   // endereco da funcao vindo de outro aparelho (a lista abaixo ja usa o do aparelho)
+        var ini = window._csListaInicial;   // leitura rapida feita pelo index.html antes do modulo carregar
+        if (ini && ini.j && Date.now() - ini.ts < 30000) { filaLer(ini.j); window._csListaInicial = null; renderLista(); atualizarBadge(); filaColetarProntas(); filaAgendar(); }
+        else filaBuscar();
+        document.addEventListener('visibilitychange', function () { if (!document.hidden && filaToken()) filaBuscar(); else if (_filaTimer) { clearTimeout(_filaTimer); _filaTimer = null; } });
+        window.addEventListener('online', function () { if (filaToken()) filaBuscar(); });
+        window.addEventListener('beforeunload', function (e) { if (upAtivo()) { e.preventDefault(); e.returnValue = ''; return ''; } });
+    }
+
+    // ================================================================
+    // RESULTADO PRONTO NO SERVIDOR -> mesma finalizacao de sempre
+    // ================================================================
+    function jobPorUid(uid) {
+        for (var i = 0; i < _jobs.length; i++) if (_jobs[i].uid === uid) return _jobs[i];
+        return null;
+    }
+
+    // Quem baixa o resultado: o dono da analise. Se ele nao abrir o app em COLETA_ESPERA_MS, qualquer aparelho baixa,
+    // para o resultado nao ficar parado no servidor (o aviso "Analise pronta" continua sendo so do dono).
+    var COLETA_ESPERA_MS = 300000;
+    function ehDonoOuAtrasada(it) {
+        var me = usuarioAtual();
+        if (!it.usuario || !me || it.usuario === me) return true;
+        var fim = Date.parse(it.concluido_em || '') || 0;
+        return !fim || (Date.now() + (_fila.dif || 0) - fim) > COLETA_ESPERA_MS;
+    }
+
+    // Analise deste perfil que estava andando e agora deu erro no servidor: avisa (o "pronta" e avisado ao baixar o resultado)
+    var _estadoAnt = {};
+    function filaAvisarErros() {
+        var me = usuarioAtual();
+        _fila.itens.forEach(function (a) {
+            var ant = _estadoAnt[a.id]; _estadoAnt[a.id] = a.estado;
+            if (a.estado !== 'erro' || (ant !== 'fila' && ant !== 'rodando')) return;
+            if (a.usuario && me && a.usuario !== me) return;
+            var msg = (a.nome || 'Cliente') + ' · ' + String(a.erro || 'não foi concluída').slice(0, 90);
+            notificarSistema('Análise não concluída', msg, 'creditoscan-' + a.id);
+            avisar('Análise não concluída: ' + msg);
+        });
+    }
+
+    function filaColetarProntas() {
+        _fila.itens.forEach(function (it) {
+            if (it.estado !== 'pronta') return;
+            if (!ehDonoOuAtrasada(it)) return;
+            var lj = jobPorUid(it.id);
+            if (lj) {   // ja processada aqui; se o aviso ao servidor falhou, repete
+                if (lj.estado === 'pronta' && !lj.coletadaNoServidor && !_coletando[it.id + ':aviso']) filaMarcarColetada(lj);
+                return;
+            }
+            if (_coletando[it.id]) return;
+            _coletando[it.id] = true;
+            filaColetarUma(it);
+        });
+    }
+
+    async function filaMarcarColetada(job) {
+        var tk = filaToken(); if (!tk) return;
+        _coletando[job.uid + ':aviso'] = true;
+        try {
+            // so libera o resultado no servidor depois de ele estar no historico
+            if (!job.fbKey && job.dados) {
+                job.fbKey = await salvarFB(job.dados.nomeCompleto, '', job.texto, job.dados, job.cpf, job.uid, job.usuario);
+                if (!job.fbKey) return;
+            }
+            var r = await fetchComTempo(srvUrl() + '/coletar', { method: 'POST', headers: srvHeaders(tk), body: JSON.stringify({ id: job.uid }) }, 15000);
+            if (r.ok) { job.coletadaNoServidor = true; _fila.itens = _fila.itens.filter(function (x) { return x.id !== job.uid; }); renderLista(); atualizarBadge(); }
+        } catch (e) { /* tenta de novo na proxima consulta */ }
+        finally { delete _coletando[job.uid + ':aviso']; }
+    }
+
+    async function filaColetarUma(it) {
+        var tk = filaToken(), job = null;
+        try {
+            await esperarFirebase(20000);   // o historico e salvo no Firebase: precisa estar conectado
+            if (!window._firebaseDB) { delete _coletando[it.id]; return; }   // sem Firebase o resultado nao entraria no historico: tenta na proxima consulta
+            var r = await fetchComTempo(srvUrl() + '/resultado?id=' + it.id, { method: 'GET', headers: srvHeaders(tk) }, 30000);
+            if (r.status !== 200) throw new Error('HTTP ' + r.status);
+            var j = await r.json();
+            if (j.estado !== 'pronta' || !j.resultado || !j.resultado.resp) { delete _coletando[it.id]; return; }   // outro aparelho repetiu ou cancelou
+            if (jobPorUid(it.id)) return;
+            job = criarJob([], [], j.tel || '', {
+                uid: j.id, nome: j.nome || '', usuario: j.usuario || it.usuario || '', cpf: j.cpf || '', ts: Date.parse(it.criado_em) || Date.now(),
+                estado: 'rodando', etapa: 'Recebendo resultado...', prog: 92, passo: 3, tempos: j.tempos || {}, doServidor: true
+            });
+            _jobs.unshift(job);
+            renderLista();
+            await concluirComResposta(job, j.resultado.resp, j.resultado.rendaPre || null, j.resultado.textoParaApostas || '', j.cpf || '');
+            await filaMarcarColetada(job);
+        } catch (e) {
+            if (job) {
+                // resposta da IA inutilizavel: o botao "Tentar de novo" manda o servidor refazer
+                job.estado = 'erro'; job.etapa = 'Falhou'; job.erro = String((e && e.message) || e || 'Erro ao receber o resultado');
+                encerrarPersistencia(job);
+                pedirRender(); avisarJob(job, 'erro');
+            } else {
+                delete _coletando[it.id];   // falha de rede: tenta de novo na proxima consulta
+            }
+        }
+    }
+
+    // ================================================================
+    // ACOES NA LISTA (analises que estao no servidor)
+    // ================================================================
+    async function filaPost(rota, id) {
+        var tk = filaToken(); if (!tk) return false;
+        try {
+            var r = await fetchComTempo(srvUrl() + '/' + rota, { method: 'POST', headers: srvHeaders(tk), body: JSON.stringify({ id: id }) }, 20000);
+            return r.ok;
+        } catch (e) { return false; }
+    }
+
+    async function filaAcaoServidor(acao, id) {
+        var rota = acao === 'retry' ? 'repetir' : 'cancelar';
+        var item = _fila.itens.filter(function (x) { return x.id === id; })[0];
+        if (item) {   // some da tela na hora; o servidor confirma na proxima consulta
+            if (rota === 'cancelar') _fila.itens = _fila.itens.filter(function (x) { return x.id !== id; });
+            else { item.estado = 'fila'; item.erro = null; item.etapa = 'Na fila'; item.progresso = 0; }
+            renderLista();
+        }
+        var ok = await filaPost(rota, id);
+        if (!ok) avisar('Não consegui falar com o servidor agora. Tente de novo em instantes.');
+        filaBuscar();
+    }
+
+    // Analise que chegou do servidor mas cujo resultado nao serviu: "Tentar de novo" e "Descartar" agem no servidor
+    async function filaRepetirDoJob(job) {
+        var i = _jobs.indexOf(job); if (i !== -1) _jobs.splice(i, 1);
+        delete _coletando[job.uid];
+        removerBanner(job.id);
+        renderLista();
+        if (!(await filaPost('repetir', job.uid))) avisar('Não consegui falar com o servidor agora. Tente de novo em instantes.');
+        filaBuscar();
+    }
+
+    // ================================================================
+    // CARTOES DA LISTA E RESUMO
+    // ================================================================
+    function filaDur(s) {
+        s = Math.max(0, Math.round(s));
+        return s < 60 ? s + 's' : Math.floor(s / 60) + 'min ' + ('0' + (s % 60)).slice(-2) + 's';
+    }
+
+    function temposTexto(t) {
+        if (!t) return '';
+        var p = [];
+        if (t.prep_s > 4) p.push('celular ' + filaDur(t.prep_s) + (t.mb ? ' (' + String(t.mb).replace('.', ',') + ' MB)' : ''));
+        if (t.cpf_s !== undefined) p.push('CPF ' + filaDur(t.cpf_s));
+        if (t.fila_s > 4) p.push('fila ' + filaDur(t.fila_s));
+        if (t.renda_s !== undefined) p.push('renda ' + filaDur(t.renda_s));
+        if (t.analise_s !== undefined) p.push('análise ' + filaDur(t.analise_s));
+        if (t.total_s !== undefined) p.push('total ' + filaDur(t.total_s));
+        return p.join(' · ');
+    }
+
+    function cardServidor(a) {
+        var quando = horaCurta(a.t || Date.parse(a.criado_em));
+        var nome = esc(a.nome || ('Cliente · ' + quando)), tag = tagUsuario(a.usuario);
+        var cancelar = '<button type="button" class="cs-link bad" data-act="s-cancelar" data-sid="' + a.id + '">Cancelar</button>';
+        if (a.estado === 'fila') {
+            return '<div class="cs-card cs-job"><div class="cs-job-top"><div class="cs-job-info"><div class="cs-job-nome">Na fila' + (a.posicao ? ' · ' + a.posicao + 'ª' : '') + '</div>' +
+                '<div class="cs-job-sub">' + nome + tag + ' · enviada ' + quando + ' · começa quando uma anterior terminar</div></div>' + cancelar + '</div></div>';
+        }
+        if (a.estado === 'erro') {
+            return '<div class="cs-card cs-job bad"><div class="cs-job-top"><div class="cs-job-info"><div class="cs-job-nome">' + nome + tag + '</div>' +
+                '<div class="cs-job-sub">Enviada ' + quando + '</div></div></div>' +
+                '<div class="cs-job-erro"><i class="bi bi-exclamation-circle-fill"></i><span>' + esc(a.erro || 'A análise não foi concluída.') + '</span></div>' +
+                '<div class="cs-job-foot"><button type="button" class="cs-btn cs-btn-pri cs-btn-sm" data-act="s-retry" data-sid="' + a.id + '">Tentar de novo</button>' +
+                '<button type="button" class="cs-link bad" data-act="s-descartar" data-sid="' + a.id + '">Descartar</button></div></div>';
+        }
+        if (a.estado === 'pronta') {
+            return '<div class="cs-card cs-job run"><div class="cs-job-top"><div class="cs-job-info"><div class="cs-job-nome">' + nome + tag + '</div>' +
+                '<div class="cs-job-sub">Pronta · recebendo o resultado...</div></div><span class="cs-job-pct">100%</span></div>' +
+                '<div class="cs-bar"><div style="width:100%"></div></div></div>';
+        }
+        // rodando
+        var ini = a.iniciado_em ? Date.parse(a.iniciado_em) : 0;
+        var ha = ini ? filaDur((Date.now() + _fila.dif - ini) / 1000) : '';
+        var pct = Math.max(2, Math.min(99, a.progresso || 5));
+        return '<div class="cs-card cs-job run"><div class="cs-job-top"><div class="cs-job-info"><div class="cs-job-nome">' + nome + tag + '</div>' +
+            '<div class="cs-job-sub">' + esc(a.etapa || 'Rodando') + (ha ? ' · há ' + ha : '') + '</div></div><span class="cs-job-pct">' + pct + '%</span></div>' +
+            '<div class="cs-bar"><div style="width:' + pct + '%"></div></div>' +
+            '<div class="cs-job-foot"><span class="cs-job-sub">Pode sair do app · a análise continua no servidor</span>' + cancelar + '</div></div>';
+    }
+
+    function filaItensTela() {
+        var ordem = { rodando: 0, pronta: 1, fila: 2, erro: 3 };
+        return _fila.itens.filter(function (a) { return ordem[a.estado] !== undefined; })
+            .sort(function (a, b) { return (ordem[a.estado] - ordem[b.estado]) || ((a.t || 0) - (b.t || 0)); });
+    }
+
+    function filaAvisoHtml() {
+        if (!filaToken() || _fila.suporte === false) return '';
+        if (_fila.senhaErrada) return '<div class="cs-alert warn"><i class="bi bi-exclamation-triangle-fill"></i><span>A senha do servidor não confere. Corrija em Configurações > Servidor.</span></div>';
+        if (!_fila.ok && (_fila.falhas > 0 || _fila.demorou)) {
+            var dica = /banco|cs_analises|cs_reivindicar/i.test(_fila.motivo || '') ? ' Provável causa: o SQL (cs-ia.sql) ainda não foi rodado no Supabase.' : '';
+            return '<div class="cs-alert warn"><i class="bi bi-wifi-off"></i><span>Não consegui consultar o servidor agora. Mostrando só o que está neste aparelho. Tentando de novo...' +
+                (_fila.motivo ? '<br><small>Motivo: ' + esc(_fila.motivo) + '.' + dica + '</small>' : '') + '</span></div>';
+        }
+        return '';
+    }
+
+    // Contagem para o cartao da tela inicial: "2 em análise · 1 pronta"
+    function filaResumoTexto(locais, servidor) {
+        var and = 0, pro = hojeNaoVistas(), err = 0;
+        locais.forEach(function (j) { if (j.estado === 'pronta') { if (!j.visto) pro++; } else if (j.estado === 'erro') err++; else and++; });
+        servidor.forEach(function (a) { if (a.estado === 'fila' || a.estado === 'rodando') and++; else if (a.estado === 'pronta') pro++; else if (a.estado === 'erro') err++; });
+        var p = [];
+        if (and) p.push(and + ' em análise');
+        if (pro) p.push(pro + (pro > 1 ? ' prontas' : ' pronta'));
+        if (err) p.push(err + (err > 1 ? ' com erro' : ' com erro'));
+        return p.join(' · ');
+    }
+
+    function filaAtualizarCartaoHome() {
+        var b = el('goCS2'); if (!b) return;
+        var sm = b.querySelector('small'); if (!sm) return;
+        if (!sm.hasAttribute('data-orig')) sm.setAttribute('data-orig', sm.textContent);
+        var t = filaResumoTexto(_jobs, _fila.itens);
+        sm.textContent = t || sm.getAttribute('data-orig');
+        sm.style.color = t ? 'var(--primary-color)' : '';
+    }
+
+    function filaAcaoLista(act, sid) {
+        if (act === 's-cancelar' || act === 's-descartar') filaAcaoServidor('cancelar', sid);
+        else if (act === 's-retry') filaAcaoServidor('retry', sid);
+    }
+
+    // ================================================================
+    // PRONTAS DE HOJE: as analises do dia continuam na lista mesmo depois de fechar e abrir o app.
+    // Vem do historico (Firebase) + o que acabou de ficar pronto nesta sessao (sem repetir).
+    // "Nova" e lembrada no aparelho ate a analise ser aberta.
+    // ================================================================
+    var HOJE_LS = 'cs_hoje_v1', VISTOS_LS = 'cs_vistos_v1', HOJE_MAX = 30;
+    var _hoje = { itens: [], carregando: false };
+
+    function inicioDoDia() { var d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); }
+    function operadorAtual() { return window.currentUserProfile || safeGet('ctwUserProfile') || '--'; }
+    // Perfil do app que esta usando este aparelho ('' se nao houver). E o nome que vai na etiqueta e no aviso "Analise pronta".
+    function usuarioAtual() { var u = window.currentUserProfile || safeGet('ctwUserProfile') || ''; return String(u).trim(); }
+    // Filtro "Meus | Todos" da tela inicial (lembrado no aparelho). Meus = o que este perfil mandou; analise sem dono (antiga) entra em Meus.
+    var FILTRO_LS = 'cs_filtro_usr_v1';
+    function filtroUsuario() { return lsLer(FILTRO_LS, 'meus') === 'todos' ? 'todos' : 'meus'; }
+    function passaFiltro(dono) { var me = usuarioAtual(); return filtroUsuario() === 'todos' || !dono || !me || dono === me; }
+    function tagUsuario(dono) { return dono ? '<span class="cs-tag-usr">' + esc(dono) + '</span>' : ''; }
+    // so as do operador deste aparelho (registros sem operador, ou aparelho sem perfil, entram)
+    function ehMinha(it) { var me = operadorAtual(); return !it.operador || it.operador === '--' || me === '--' || it.operador === me; }
+
+    function lsLer(k, padrao) { try { var v = JSON.parse(safeGet(k) || 'null'); return v === null ? padrao : v; } catch (e) { return padrao; } }
+    function lsGravar(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* sem espaco/privado: segue sem guardar */ } }
+
+    function hojeVisto(id) { return !!(id && lsLer(VISTOS_LS, {})[id]); }
+    function hojeMarcarVisto(id) {
+        if (!id) return;
+        var v = lsLer(VISTOS_LS, {}), limite = Date.now() - 4 * 86400000, k;
+        v[id] = Date.now();
+        for (k in v) if (v[k] < limite) delete v[k];   // nao cresce para sempre
+        lsGravar(VISTOS_LS, v);
+    }
+
+    // Resumo leve (o texto completo da analise fica so no Firebase; e buscado ao abrir)
+    function leveDoRegistro(it) {
+        return { id: it.id, nomeCliente: it.nomeCliente || '', nota: it.nota, decisao: it.decisao || '', casasJogo: it.casasJogo || '',
+            rendaEstimada: it.rendaEstimada || null, ts: it.ts, operador: it.operador || '', telefone: it.telefone || null, produto: it.produto || '' };
+    }
+
+    function hojeCarregarCache() {
+        var c = lsLer(HOJE_LS, []), ini = inicioDoDia();
+        _hoje.itens = (Array.isArray(c) ? c : []).filter(function (it) { return it && it.id && it.ts >= ini; });
+    }
+
+    // Itens de hoje que NAO estao ja na lista da sessao (as da sessao tem prioridade: carregam estado como a calculadora aberta)
+    function hojeSemSessao(filtrar) {
+        var ini = inicioDoDia(), chaves = {};
+        _jobs.forEach(function (j) { if (j.fbKey) chaves[j.fbKey] = 1; });
+        return _hoje.itens.filter(function (it) { return it.ts >= ini && !chaves[it.id] && (filtrar ? passaFiltro(it.operador) : ehMinha(it)); });
+    }
+    // o numero no cartao do CreditoScan conta so o que e deste perfil, qualquer que seja o filtro da tela
+    function hojeNaoVistas() { return hojeSemSessao(false).filter(function (it) { return !hojeVisto(it.id); }).length; }
+
+    // Lista unica de "Prontas de hoje": sessao + historico, mais nova primeiro
+    function prontasDeHoje() {
+        var ini = inicioDoDia(), lista = [];
+        _jobs.forEach(function (j) { if (j.estado === 'pronta' && (j.tsFim || j.ts) >= ini && passaFiltro(j.usuario)) lista.push({ t: j.tsFim || j.ts, html: cardPronta(j) }); });
+        hojeSemSessao(true).forEach(function (it) { lista.push({ t: it.ts, html: cardHoje(it) }); });
+        lista.sort(function (a, b) { return b.t - a.t; });
+        return lista.slice(0, HOJE_MAX);
+    }
+
+    function cardHoje(it) {
+        var nota = typeof it.nota === 'number' ? it.nota : (parseInt(it.nota) || 0), rep = it.decisao === 'REPROVADO', c = rep ? 'bad' : cor(nota);
+        var sub = rep ? 'Reprovado' + (it.casasJogo ? ' · apostas detectadas' : '') :
+            'Aprovado' + (it.rendaEstimada > 0 ? ' · renda ' + R$(it.rendaEstimada).replace(',00', '') + '/mês' : '');
+        return '<button type="button" class="cs-card cs-pronta" data-act="abrir-h" data-hid="' + esc(it.id) + '">' +
+            '<span class="cs-ring-sm ' + c + '">' + nota + '</span>' +
+            '<span class="cs-job-info"><span class="cs-job-nome">' + esc(it.nomeCliente || 'Cliente') + tagUsuario(it.operador && it.operador !== '--' ? it.operador : '') + '</span><span class="cs-job-sub ' + c + '">' + sub + '</span></span>' +
+            (ehMinha(it) && !hojeVisto(it.id) ? '<span class="cs-tag-nova">Nova</span>' : '<i class="bi bi-chevron-right cs-chev"></i>') + '</button>';
+    }
+
+    // Busca no Firebase o que foi feito hoje (por tras: a lista guardada no aparelho ja esta na tela)
+    async function hojeBuscar() {
+        if (_hoje.carregando) return;
+        _hoje.carregando = true;
+        try {
+            await esperarFirebase(8000);
+            var db = window._firebaseDB; if (!db) return;
+            var fb = await import('https://www.gstatic.com/firebasejs/11.9.1/firebase-database.js'), ini = inicioDoDia(), snap;
+            try { snap = await fb.get(fb.query(fb.ref(db, SAVE_PATH), fb.orderByChild('ts'), fb.startAt(ini))); }
+            catch (e1) { snap = await fb.get(fb.ref(db, SAVE_PATH)); }   // sem indice/consulta: le tudo e filtra aqui
+            var itens = [];
+            snap.forEach(function (c) { var v = c.val(); if (v && v.ts >= ini) itens.push(Object.assign({ id: c.key }, v)); });
+            itens.sort(function (a, b) { return b.ts - a.ts; });
+            _hoje.itens = itens.map(leveDoRegistro);
+            lsGravar(HOJE_LS, _hoje.itens);
+            _hoje.completos = {}; itens.forEach(function (it) { _hoje.completos[it.id] = it; });
+            renderLista(); atualizarBadge();
+        } catch (e) { console.warn('[CreditoScan] nao consegui carregar as de hoje:', e); }
+        finally { _hoje.carregando = false; }
+    }
+
+    async function hojeAbrir(id) {
+        var it = _hoje.completos && _hoje.completos[id];
+        if (!it) {   // veio so do cache do aparelho: busca o texto completo
+            try {
+                await esperarFirebase(8000);
+                var fb = await import('https://www.gstatic.com/firebasejs/11.9.1/firebase-database.js');
+                var s = await fb.get(fb.ref(window._firebaseDB, SAVE_PATH + '/' + id));
+                if (s.exists()) it = Object.assign({ id: id }, s.val());
+            } catch (e) { /* mostra o aviso abaixo */ }
+        }
+        if (!it) { avisar('Não consegui abrir agora. Confira a internet e tente de novo.'); return; }
+        abrirRegistroObj(it);
+    }
+
+    function hojeIniciar() {
+        hojeCarregarCache();
+        hojeBuscar();
+        document.addEventListener('visibilitychange', function () { if (!document.hidden) hojeBuscar(); });
     }
 
     // ================================================================
@@ -2464,6 +4236,7 @@ reguaTextoPrompt()+'\n'+
     function abrirResultado(job) {
         if (!job || !job.dados) return;
         _view = job; job.visto = true;
+        hojeMarcarVisto(job.fbKey);   // lembra que ja abriu (a etiqueta "Nova" nao volta ao reabrir o app)
         removerBanner(job.id);
         if (!job.calc) job.calc = { aberto: false, produto: '', valor: 0 };
         openOverlay();
@@ -2495,6 +4268,8 @@ reguaTextoPrompt()+'\n'+
                 '<div class="cs-ring-in"><b>' + d.nota + '</b><small>' + esc(riscoLabel) + '</small></div></div>' +
             '<div class="cs-hero-info"><div class="cs-hero-nome">' + esc(d.nomeCompleto || nomeDoJob(job)) + '</div>' +
             '<span class="cs-pill ' + c + '"><i class="bi ' + (reprov ? 'bi-x-lg' : 'bi-check-lg') + '"></i>' + (reprov ? 'Reprovado — não vender' : 'Aprovado — pode vender') + '</span></div></div>';
+
+        if (job.tempos && temposTexto(job.tempos)) h += '<div class="cs-tempos"><i class="bi bi-stopwatch"></i><span>' + esc(temposTexto(job.tempos)) + '</span></div>';
 
         String(d.rendaDetalhe || '').split('\n').filter(function (l) { return l.charAt(0) === '⚠'; }).forEach(function (l) {
             h += '<div class="cs-alert warn"><i class="bi bi-exclamation-triangle-fill"></i><span>' + esc(l.replace(/^⚠\s*/, '')) + '</span></div>';
@@ -2546,6 +4321,8 @@ reguaTextoPrompt()+'\n'+
                 '<strong>até ' + R$(d.rendaEstimada * tetoPct(d.nota)).replace(',00', '') + ' / mês</strong></div>' +
                 '<span class="cs-lab r">' + Math.round(tetoPct(d.nota) * 100) + '% da<br>renda</span></div>';
         }
+
+        h += cartaoTelefone(job);
 
         // Calcular aparelho (recolhido)
         if (!reprov) {
@@ -2615,7 +4392,37 @@ reguaTextoPrompt()+'\n'+
     function cartaoMensagem(msg) {
         return '<div class="cs-wpp"><span class="cs-wpp-lbl"><i class="bi bi-whatsapp"></i> Mensagem para o cliente</span>' +
             '<div class="cs-wpp-txt" id="cs_wpp_txt" data-act="copiar">' + blocoTexto(msg) + '</div>' +
-            '<button type="button" class="cs-btn cs-btn-ghost" id="cs_wpp_btn" data-act="copiar"><i class="bi bi-clipboard"></i> Toque para copiar</button></div>';
+            '<div class="cs-ap-btns"><button type="button" class="cs-btn cs-btn-ghost" id="cs_wpp_btn" data-act="copiar"><i class="bi bi-clipboard"></i> Copiar</button>' +
+            '<button type="button" class="cs-btn cs-btn-pri" id="cs_wpp_send" data-act="wpp-msg"><i class="bi bi-whatsapp"></i> Enviar no WhatsApp</button></div></div>';
+    }
+
+    // ── WhatsApp do cliente (opcional) ──
+    // Mascara enquanto digita e avisa (sem bloquear) quando o numero nao esta completo
+    function mascararTelefone(inp, idDica) {
+        var dig = String(inp.value || '').replace(/\D/g, '');
+        if (dig.length >= 12 && dig.indexOf('55') === 0) dig = dig.slice(2);   // colou +55...
+        inp.value = formatarTelefone(dig.slice(0, 11));
+        var dica = el(idDica); if (!dica) return;
+        var n = normalizarTelefone(inp.value);
+        dica.textContent = !dig.length ? 'Com o número, os botões de WhatsApp abrem direto na conversa do cliente.' :
+            n ? 'Os botões de WhatsApp vão abrir a conversa com ' + formatarTelefone(n) + '.' :
+            'Número incompleto: o WhatsApp vai abrir sem destinatário e você escolhe o contato.';
+        dica.style.color = dig.length && !n ? 'var(--cs-warn)' : '';
+    }
+
+    // Digitou/alterou o numero na tela de resultado: vale para os botoes e fica salvo no registro
+    function salvarTelefoneResultado(valor) {
+        var job = _view; if (!job) return;
+        var n = normalizarTelefone(valor);
+        var antes = job.tel || '';
+        job.tel = n;
+        if (n !== antes && job.fbKey) atualizarFB(job.fbKey, { telefone: n || null });
+    }
+
+    function cartaoTelefone(job) {
+        return '<div class="cs-card cs-tel-res"><div class="cs-tel-row"><i class="bi bi-whatsapp"></i>' +
+            '<input id="cs_tel_res" class="cs-in" type="tel" inputmode="tel" autocomplete="off" maxlength="24" placeholder="WhatsApp do cliente (opcional)" aria-label="WhatsApp do cliente" value="' + esc(formatarTelefone(job.tel)) + '"></div>' +
+            '<div class="cs-hint" id="cs_tel_res_hint">' + (job.tel ? 'Os botões de WhatsApp vão abrir a conversa com ' + esc(formatarTelefone(job.tel)) + '.' : 'Com o número, os botões de WhatsApp abrem direto na conversa do cliente.') + '</div></div>';
     }
 
     function textoParaCopiar() {
@@ -2749,12 +4556,13 @@ reguaTextoPrompt()+'\n'+
     }
 
     // ── Abrir uma analise do historico (sem gastar token) ──
-    function abrirRegistro(idx) {
-        var it = (window._histItems || [])[idx]; if (!it) return;
+    function abrirRegistro(idx) { abrirRegistroObj((window._histItems || [])[idx]); }
+    function abrirRegistroObj(it) {
+        if (!it) return;
         var d = dadosDoRegistro(it);
         abrirResultado({
             id: 'h' + it.id, estado: 'pronta', ts: it.ts, nome: String(it.nomeCliente || ''),
-            dados: d, texto: it.textoCompleto || '', fbKey: it.id, criadoAqui: false,
+            dados: d, texto: it.textoCompleto || '', fbKey: it.id, criadoAqui: false, tel: normalizarTelefone(it.telefone),
             podeSalvarCalc: !it.produto, visto: true, calc: { aberto: false, produto: '', valor: 0 }
         });
     }
@@ -2763,6 +4571,7 @@ reguaTextoPrompt()+'\n'+
         var b = e.target.closest('[data-act]'); if (!b) return;
         var a = b.getAttribute('data-act'), job = _view; if (!job) return;
         if (a === 'copiar') copiarTexto(textoParaCopiar(), el('cs_wpp_btn'));
+        else if (a === 'wpp-msg') { var mt = textoParaCopiar(); if (mt) window.open(linkWhatsapp(job.tel, mt), '_blank'); }
         else if (a === 'ap-toggle') apToggleAba(job);
         else if (a === 'ap-sel') apToggleSel(job, b.getAttribute('data-id'));
         else if (a === 'ap-copy') copiarTexto(apMensagemAtual(job), b);
@@ -2935,6 +4744,10 @@ reguaTextoPrompt()+'\n'+
         '.cs-pronta:active{transform:scale(.99)}',
         '.cs-ring-sm{width:48px;height:48px;border-radius:50%;border:3px solid;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;flex-shrink:0}',
         '.cs-ring-sm.ok{border-color:var(--cs-ok);color:var(--cs-ok)}.cs-ring-sm.warn{border-color:var(--cs-warn);color:var(--cs-warn)}.cs-ring-sm.bad{border-color:var(--cs-bad);color:var(--cs-bad)}',
+        '.cs-tag-usr{display:inline-block;vertical-align:middle;margin-left:7px;font-size:10px;font-weight:600;line-height:1;background:rgba(255,255,255,.08);color:var(--text-secondary);border:1px solid var(--input-border);border-radius:20px;padding:3px 8px;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+        '.cs-seg{display:flex;gap:4px;padding:3px;margin:0 0 12px;background:var(--input-bg);border:1px solid var(--input-border);border-radius:12px}',
+        '.cs-seg button{flex:1;min-height:38px;border:0;border-radius:9px;background:transparent;color:var(--text-secondary);font:inherit;font-size:13px;font-weight:600;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+        '.cs-seg button.on{background:var(--primary-color);color:#0d1f15}',
         '.cs-tag-nova{font-size:11px;font-weight:600;background:var(--primary-color);color:#0d1f15;border-radius:20px;padding:3px 10px}',
         '.cs-chev{color:var(--text-secondary)}',
         /* ── resultado ── */
@@ -3009,6 +4822,16 @@ reguaTextoPrompt()+'\n'+
         '.cs-banner-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}',
         '.cs-banner-txt strong{font-size:15px}.cs-banner-txt span{font-size:13px;color:var(--text-secondary);line-height:1.4;overflow-wrap:anywhere}',
         '.cs-banner-x{width:44px;height:44px;margin:-8px -8px 0 0;border:none;background:transparent;color:var(--text-secondary);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}',
+        /* ── envio ao servidor (trava o app ate confirmar) ── */
+        '#cs_up_ov{display:none;position:fixed;inset:0;z-index:9500;background:rgba(8,10,12,.88);align-items:center;justify-content:center;padding:24px;font-family:"Poppins",sans-serif;-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);touch-action:none}',
+        '#cs_up_ov.on{display:flex}',
+        '.cs-up-box{width:100%;max-width:340px;background:var(--card-bg);border:1px solid var(--glass-border);border-radius:24px;padding:26px 22px;display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;color:var(--text-color)}',
+        '.cs-up-ico{width:64px;height:64px;border-radius:50%;background:rgba(var(--primary-color-rgb),.16);color:var(--primary-color);display:flex;align-items:center;justify-content:center;font-size:1.9rem;animation:cs-pulso 1.4s ease-in-out infinite}',
+        '.cs-up-ico.ok{background:var(--primary-color);color:#0d1f15;animation:none}',
+        '@keyframes cs-pulso{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}',
+        '.cs-up-t{font-size:18px;font-weight:700}.cs-up-s{font-size:13px;color:var(--text-secondary);line-height:1.5;overflow-wrap:anywhere}',
+        '#cs_up_bar{width:100%}.cs-up-w{font-size:12px;font-weight:600;color:var(--cs-warn)}',
+        '.cs-tempos{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-secondary);padding:0 4px}.cs-tempos i{color:var(--primary-color)}',
         '.cs-card-badge{position:absolute;top:8px;right:8px;min-width:20px;height:20px;border-radius:10px;background:#ef4444;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 5px;border:2px solid var(--card-bg)}',
         '#goCS2{position:relative}',
         /* ── modais ── */
@@ -3057,6 +4880,13 @@ reguaTextoPrompt()+'\n'+
         '.cs-ap-par{flex:none;text-align:right;font-weight:700;font-size:14px;color:var(--primary-color)}',
         '.cs-ap-note{display:flex;gap:10px;align-items:center;font-size:12px;line-height:1.45;color:var(--text-secondary);background:var(--input-bg);border-radius:12px;padding:10px 12px}',
         '.cs-ap-note i{font-size:15px;flex:none}',
+        '.cs-tel-form{display:flex;flex-direction:column;gap:10px}',
+        '.cs-up-h i.bi-whatsapp:first-child{color:#25d366}',
+        '.cs-tel-res{display:flex;flex-direction:column;gap:8px}',
+        '.cs-tel-res .cs-tel-row{display:flex;align-items:center;gap:10px}',
+        '.cs-tel-res .cs-tel-row>i{font-size:1.3rem;color:#25d366}',
+        '.cs-tel-res .cs-tel-row .cs-in{flex:1;min-width:0}',
+        '.cs-tel-res .cs-hint{text-align:left}',
         '.cs-ap-btns{display:flex;gap:8px}.cs-ap-btns .cs-btn{flex:1;white-space:nowrap}',
         '.cs-ap-btns .cs-btn:disabled{opacity:.45}',
         '.cs-ap-foot{text-align:center;font-size:11.5px;color:var(--text-secondary)}',
@@ -3099,6 +4929,11 @@ reguaTextoPrompt()+'\n'+
                     '<div class="cs-files" id="cs_docs_rend"></div>'+
                     '<div class="cs-ubtns"><button type="button" class="cs-ubtn" id="cs_rend_cam"><i class="bi bi-camera"></i> Câmera</button><button type="button" class="cs-ubtn" id="cs_rend_gal"><i class="bi bi-image"></i> Galeria</button><button type="button" class="cs-ubtn" id="cs_rend_pdf"><i class="bi bi-file-earmark-pdf"></i> PDF</button></div>'+
                     '<div class="cs-hint" style="margin-top:-2px">Extratos e holerites. PDF digital é detectado automaticamente.</div>'+
+                '</div>'+
+                '<div class="cs-card cs-tel-form">'+
+                    '<div class="cs-up-h"><i class="bi bi-whatsapp"></i><b>WhatsApp do cliente</b><small>Opcional</small></div>'+
+                    '<input id="cs_tel" class="cs-in" type="tel" inputmode="tel" autocomplete="off" maxlength="24" placeholder="(62) 99999-9999" aria-label="WhatsApp do cliente">'+
+                    '<div class="cs-hint" id="cs_tel_hint" style="margin-top:-2px">Com o número, os botões de WhatsApp abrem direto na conversa do cliente.</div>'+
                 '</div>'+
                 '<div class="cs-up-status cs-h" id="cs_up_status"><i class="bi bi-arrow-repeat"></i><span id="cs_up_status_txt">Lendo arquivos...</span></div>'+
                 '<div style="display:flex;flex-direction:column;gap:8px">'+
@@ -3169,6 +5004,15 @@ reguaTextoPrompt()+'\n'+
                 '<button type="button" class="cs-btn cs-btn-pri" id="cs_cfg_save">Salvar</button>'+
                 '<div id="cs_cfg_status" style="font-size:12px;text-align:center;min-height:18px"></div>'+
                 '<div class="cs-cfg-info"><div class="cs-lab" style="margin-bottom:6px">Status da chave</div><div id="cs_cfg_info" style="font-size:13px">Verificando...</div></div>'+
+                '<div class="cs-cfg-info" style="display:flex;flex-direction:column;gap:8px">'+
+                    '<div class="cs-up-h"><i class="bi bi-cloud-check-fill"></i><b>Servidor (análise em segundo plano)</b></div>'+
+                    '<p class="cs-hint" style="text-align:left">Com a senha do servidor, você só envia os documentos: a análise roda lá numa fila (2 por vez) e continua mesmo com o app fechado. Documentos e resultados ficam guardados no servidor por 30 dias e depois são apagados. Deixe vazio para rodar direto no celular.</p>'+
+                    '<input type="url" class="cs-in" id="cs_cfg_url" placeholder="Endereço da função (vazio = padrão)" style="font-size:13px" autocomplete="off" autocapitalize="off" spellcheck="false">'+
+                    '<p class="cs-hint" style="text-align:left;margin:0">Cole o endereço completo da função (painel do Supabase > Edge Functions > copiar). Só muda se a função tiver outro endereço.</p>'+
+                    '<input type="password" class="cs-in" id="cs_cfg_srv" placeholder="Senha do servidor (APP_TOKEN)" style="font-size:13px" autocomplete="off">'+
+                    '<button type="button" class="cs-btn cs-btn-sec" id="cs_cfg_srv_save">Testar e salvar</button>'+
+                    '<div id="cs_cfg_srv_status" style="font-size:12px;text-align:center;min-height:18px"></div>'+
+                '</div>'+
             '</div>'+
         '</div>');
     }
@@ -3191,6 +5035,7 @@ reguaTextoPrompt()+'\n'+
         on('cs_rend_gal','click',function(){uploadRend('image/*,application/pdf');});
         on('cs_rend_pdf','click',function(){uploadRend('image/*,application/pdf');});
         on('cs_btn_analisar','click',iniciarAnalise);
+        on('cs_tel','input',function(e){mascararTelefone(e.target,'cs_tel_hint');});
         on('cs_btn_novaform','click',function(){_formAberto=true;aplicarForm();});
         on('cs_form','click',function(e){var x=e.target.closest('.cs-file-x');if(x)removerArquivo(x.getAttribute('data-t'),x.getAttribute('data-aid'));});
         on('cs_lista','click',acaoLista);
@@ -3198,8 +5043,8 @@ reguaTextoPrompt()+'\n'+
         var rb=el('cs_res_body');
         if(rb){
             rb.addEventListener('click',acaoResultado);
-            rb.addEventListener('input',function(e){if(e.target.id==='cs_en')atualizarSim(false);});
-            rb.addEventListener('change',function(e){if(e.target.id==='cs_en'||e.target.id==='cs_np'||e.target.id==='cs_tx')atualizarSim(true);});
+            rb.addEventListener('input',function(e){if(e.target.id==='cs_en')atualizarSim(false);else if(e.target.id==='cs_tel_res')mascararTelefone(e.target,'cs_tel_res_hint');});
+            rb.addEventListener('change',function(e){if(e.target.id==='cs_tel_res')salvarTelefoneResultado(e.target.value);else if(e.target.id==='cs_en'||e.target.id==='cs_np'||e.target.id==='cs_tx')atualizarSim(true);});
             rb.addEventListener('focusout',function(e){if(e.target.id==='cs_en'||e.target.id==='cs_tx')atualizarSim(true);});
             rb.addEventListener('keydown',function(e){if(e.key==='Enter'&&(e.target.id==='cs_c_val'||e.target.id==='cs_c_prod')){e.preventDefault();e.target.blur();calcular();}});
         }
@@ -3207,6 +5052,8 @@ reguaTextoPrompt()+'\n'+
         on('cs_cfg_open','click',abrirConfig);
         on('cs_cfg_close','click',function(){el('cs_cfg_ov')&&el('cs_cfg_ov').classList.remove('active');});
         on('cs_cfg_save','click',salvarConfig);
+        on('cs_cfg_srv_save','click',salvarSenhaServidor);
+        on('cs_cfg_open','click',function(){var i=el('cs_cfg_srv'),u=el('cs_cfg_url'),st=el('cs_cfg_srv_status');if(i)i.value=safeGet(SRV_TOKEN_LS)||'';if(u)u.value=normalizarUrlServidor(safeGet(SRV_URL_LS));if(st)st.textContent='';});
         // Menu inferior do app: Inicio, Taxas, Docs e Mais fecham o CreditoScan (as analises seguem rodando)
         var nav=el('ctwBottomNav');
         if(nav)nav.addEventListener('click',function(e){var b=e.target.closest('.ui-nav-it');if(b)fecharTudo();},true);
@@ -3443,7 +5290,7 @@ reguaTextoPrompt()+'\n'+
     }
     function apAbrirWpp(job) {
         var msg = apMensagemAtual(job); if (!msg) return;
-        window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
+        window.open(linkWhatsapp(job.tel, msg), '_blank');
     }
 
     // ── Lista colada do WhatsApp ──
@@ -3670,11 +5517,12 @@ reguaTextoPrompt()+'\n'+
         return _jobs.some(function (j) { return j.estado === 'rodando' || j.estado === 'fila'; });
     };
 
-    function init(){injectCSS();injectHTML();injectMenuBtns();wireEvents();apWire();atualizarBadge();}
+    function init(){injectCSS();injectHTML();injectMenuBtns();wireEvents();apWire();filaIniciar();hojeIniciar();atualizarBadge();retomarAnalises();}
     if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}else{init();}
     window._creditoScanOpen=openOverlay;
     // Botao voltar do celular: fecha a camada mais de cima do CreditoScan (true = tratou)
     window._creditoScanBack=function(){
+        if(upBloqueando())return true;   // enviando documentos ao servidor: o botao voltar nao faz nada
         if(document.querySelector('.cs-modal,#cs_modal_docq'))return true;
         var ids=['cs_cfg_ov','cs_res_ov','cs_hist_ov','cs_ov'];
         for(var i=0;i<ids.length;i++){

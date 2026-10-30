@@ -1,7 +1,7 @@
 // sw.js — Central Workcell
 // Arquivo deve ficar na raiz do repositório (mesma pasta do index.html)
 
-const CACHE = 'ctw-231'; // Alertas só no sino com botão Limpar; CreditoScan: compromissos listados e conferidos no código
+const CACHE = 'ctw-253'; // CreditoScan: periodo do extrato tambem por datas por extenso (extrato de 6 meses nao e mais "curto")
 
 // Arquivos do próprio app: baixados na instalação para o app abrir offline.
 const ARQUIVOS_DO_APP = [
@@ -9,7 +9,7 @@ const ARQUIVOS_DO_APP = [
     './StockCount.js', './repairs.js', './notifications.js', './Bookip.js',
     './reposicao.js', './creditoscan.js', './fecharVenda.js', './ambilight.js',
     './icon-192.png', './icon-512.png', './icon-1024.png', './badge.png',
-    './ctw-ui.js?v=3', './fuse.min.js?v=6.6.2', './bootstrap-lite.css?v=1', './bootstrap-icons-lite.css?v=1',
+    './ctw-ui.js?v=4', './fuse.min.js?v=6.6.2', './bootstrap-lite.css?v=1', './bootstrap-icons-lite.css?v=1',
     './fonts/bootstrap-icons.woff2', './fonts/poppins-300.woff2', './fonts/poppins-400.woff2',
     './fonts/poppins-500.woff2', './fonts/poppins-600.woff2', './fonts/poppins-700.woff2'
 ];
@@ -24,7 +24,8 @@ const LIMITE_REDE_MS = 5000;
 self.addEventListener('install', e => {
     self.skipWaiting();
     e.waitUntil(
-        caches.open(CACHE).then(c => Promise.allSettled(ARQUIVOS_DO_APP.map(u => c.add(u))))
+        // cache: 'reload' = baixa de verdade do servidor (sem usar a copia que o navegador guarda por ~10 min no GitHub Pages)
+        caches.open(CACHE).then(c => Promise.allSettled(ARQUIVOS_DO_APP.map(u => c.add(new Request(u, { cache: 'reload' })))))
     );
 });
 
@@ -68,7 +69,9 @@ self.addEventListener('fetch', e => {
             const timer = setTimeout(() => {
                 usarCache().then(r => { if (r && !resolvido) { resolvido = true; resolve(r); } });
             }, LIMITE_REDE_MS);
-            fetch(req).then(r => {
+            // cache: 'no-cache' = pergunta ao servidor se mudou (304 se igual). Sem isso o fetch usa a copia do navegador
+            // (GitHub Pages manda max-age=600) e o app podia abrir ate 10 min com arquivos antigos misturados com os novos.
+            fetch(req, { cache: 'no-cache' }).then(r => {
                 clearTimeout(timer);
                 if (!resolvido) { resolvido = true; resolve(guardar(req, r)); } else { guardar(req, r); }
             }).catch(() => {
