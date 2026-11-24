@@ -473,6 +473,7 @@
     var JANELA_MESES  = 4;      // extrato de "3 meses" costuma tocar 4 meses de calendario (pontas parciais)
     var TOL_SOMA_PCT  = 0.03;   // soma lida pela IA x 'Total de creditos' impresso no extrato: tolerancia de 3% ou R$ 50 (o que for maior)
     var TOL_SOMA_MIN  = 50;
+    var TOL_LEITURA   = 0.20;   // regra do dono: a leitura pode errar ate 20% do total impresso. Dentro disso vale o TOTAL do extrato (a sobra entra como "margem de erro"); acima disso a leitura e recusada
     var DUVIDOSA_PCT  = 0.60;   // mais que isso das entradas excluidas = renda duvidosa (confira o extrato)
     var MESES_ABREV   = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
@@ -544,8 +545,10 @@
 
     // Conferencia da leitura da IA: soma por mes x "Total de creditos" do extrato, e peso das entradas excluidas
     function auditarMeses(meses, obj) {
-        var divergentes = [], excl = 0, tot = 0;
+        var divergentes = [], margens = [], excl = 0, tot = 0, somaMargem = 0, somaTotal = 0;
         meses.forEach(function (m) {
+            if (m.margem > 0) { margens.push({ mes: m.mes, valor: m.margem, tipo: m.margemTipo, total: m.totalCreditos }); somaMargem += m.margem; }
+            somaTotal += m.totalCreditos;
             var soma = m.fixa + m.variavel + m.app + m.excluidas;
             excl += m.excluidas; tot += soma;
             if (m.totalCreditos > 0) {
@@ -557,7 +560,7 @@
         var det = (Array.isArray(obj && obj.excluidasDetalhe) ? obj.excluidasDetalhe : []).filter(function (e) { return e && typeof e === 'object' && numPos(e.valor) > 0; })
             .map(function (e) { return { mes: String(e.mes || ''), valor: numPos(e.valor), motivo: String(e.motivo || '').slice(0, 60) }; })
             .sort(function (a, b) { return b.valor - a.valor; }).slice(0, 8);
-        return { divergentes: divergentes, excluidasTotal: arred2(excl), pctExcluido: pct, excluidasDetalhe: det, duvidosa: divergentes.length > 0 || (tot > 0 && pct > DUVIDOSA_PCT) };
+        return { divergentes: divergentes, margens: margens, excluidasTotal: arred2(excl), pctExcluido: pct, excluidasDetalhe: det, duvidosa: divergentes.length > 0 || (tot > 0 && pct > DUVIDOSA_PCT) || (somaTotal > 0 && somaMargem / somaTotal > 0.10) };
     }
 
     // ── Pagador FIXO: quem paga todo mes (salario sem holerite, cliente fixo) nao leva o desconto de custo ──
@@ -638,14 +641,26 @@
         var per = periodoDoc(obj.periodoDocumentos);
 
         var meses = lista.map(function (m) {
-            var fixa = numPos(m.fixa), variavel = numPos(m.variavel), app = numPos(m.app);
-            return {
-                mes: String(m.mes || ''), fixa: fixa, variavel: variavel, app: app, excluidas: numPos(m.excluidas),
-                totalCreditos: numPos(m.totalCreditos),
+            var fixa = numPos(m.fixa), variavel = numPos(m.variavel), app = numPos(m.app), exc = numPos(m.excluidas), tot = numPos(m.totalCreditos), margem = 0, margemTipo = '';
+            // Regra dos 20%: o total impresso no extrato e a verdade. Soma lida ate 20% fora do total: vale o total (faltou = entra como renda "aleatoria", com o desconto
+            // de ganho variavel; passou = reduz tudo na mesma proporcao). Acima de 20% nada e ajustado: a divergencia segue para a conferencia (leitura recusada).
+            if (tot > 0) {
+                var s0 = fixa + variavel + app + exc, dif0 = tot - s0;
+                if (Math.abs(dif0) > Math.max(tot * TOL_SOMA_PCT, TOL_SOMA_MIN) && Math.abs(dif0) <= tot * TOL_LEITURA) {
+                    if (dif0 > 0) { variavel = arred2(variavel + dif0); margem = arred2(dif0); margemTipo = 'falta'; }
+                    else { var fc = tot / s0; fixa = arred2(fixa * fc); variavel = arred2(variavel * fc); app = arred2(app * fc); exc = arred2(exc * fc); margem = arred2(-dif0); margemTipo = 'excesso'; }
+                }
+            }
+            var o = {
+                mes: String(m.mes || ''), fixa: fixa, variavel: variavel, app: app, excluidas: exc,
+                totalCreditos: tot,
                 parcial: (function () { var pp = mesParcialPeloPeriodo(m.mes, per); return pp !== null ? pp : (m.parcial === true || m.parcial === 'true'); })(),
                 liquido: arred2(fixa + variavel * (1 - DESC_VARIAVEL) + app * (1 - DESC_APP)),
                 abatido: arred2(variavel * DESC_VARIAVEL + app * DESC_APP)
             };
+            if (margem > 0) { o.margem = margem; o.margemTipo = margemTipo; }
+            ['saidas', 'saidasInvest', 'saidasProprias', 'saldoInicial', 'saldoFinal', 'menorSaldo'].forEach(function (f) { if (typeof m[f] === 'number' && isFinite(m[f])) o[f] = m[f]; });   // lidos e provados pelo codigo (Nubank/universal)
+            return o;
         });
 
         var soma = meses.reduce(function (a, m) { return a + m.fixa + m.variavel + m.app; }, 0);
@@ -671,7 +686,7 @@
             return {
                 renda: arred2(totalLiq / span), fonte: 'codigo', meses: meses, usados: meses, media: arred2(totalLiq / span), mediana: arred2(totalLiq / span),
                 destoa: false, abatidoMedio: 0, parciaisIgnorados: 0, agrupado: true, span: span, itens: nItens, total: arred2(totalLiq), curto: curto, dias: per ? per.dias : null,
-                divergentes: aud.divergentes, excluidasTotal: aud.excluidasTotal, pctExcluido: aud.pctExcluido, excluidasDetalhe: aud.excluidasDetalhe, duvidosa: true
+                divergentes: aud.divergentes, margens: aud.margens, excluidasTotal: aud.excluidasTotal, pctExcluido: aud.pctExcluido, excluidasDetalhe: aud.excluidasDetalhe, duvidosa: true
             };
         }
 
@@ -692,7 +707,7 @@
                     renda: arred2(totLiqP / eq), fonte: 'codigo', meses: meses, usados: meses, media: arred2(totLiqP / eq), mediana: arred2(totLiqP / eq),
                     destoa: false, abatidoMedio: arred2(totAbP / eq), parciaisIgnorados: 0, metodo: 'periodo', diasPeriodo: diasEf, equivMeses: arred2(eq), totalLiquido: arred2(totLiqP),
                     periodoTxt: fmtDataUtc(per.ini) + ' a ' + fmtDataUtc(per.fim), curto: per.dias < DIAS_MINIMO, dias: per.dias, faltando: faltaP,
-                    divergentes: aud.divergentes, excluidasTotal: aud.excluidasTotal, pctExcluido: aud.pctExcluido, excluidasDetalhe: aud.excluidasDetalhe,
+                    divergentes: aud.divergentes, margens: aud.margens, excluidasTotal: aud.excluidasTotal, pctExcluido: aud.pctExcluido, excluidasDetalhe: aud.excluidasDetalhe,
                     duvidosa: aud.duvidosa || faltaP > 0
                 };
             }
@@ -714,7 +729,7 @@
             destoa: destoa, abatidoMedio: arred2(abatidoMedio), parciaisIgnorados: completos.length ? meses.length - completos.length : 0,
             periodoTxt: per && per.ini !== null ? fmtDataUtc(per.ini) + ' a ' + fmtDataUtc(per.fim) : '',
             curto: curto, dias: per ? per.dias : null, faltando: faltando,
-            divergentes: aud.divergentes, excluidasTotal: aud.excluidasTotal, pctExcluido: aud.pctExcluido, excluidasDetalhe: aud.excluidasDetalhe,
+            divergentes: aud.divergentes, margens: aud.margens, excluidasTotal: aud.excluidasTotal, pctExcluido: aud.pctExcluido, excluidasDetalhe: aud.excluidasDetalhe,
             duvidosa: aud.duvidosa || faltando > 0
         };
     }
@@ -731,6 +746,20 @@
     function unirPeriodos(a, b) {
         if (!a || !b || a.ini === null || b.ini === null || a.fim === null || b.fim === null) return a && a.ini !== null ? a : b;
         return { ini: Math.min(a.ini, b.ini), fim: Math.max(a.fim, b.fim) };
+    }
+    // Metades do mesmo mes em dois arquivos: saidas somam; saldo final vale o do arquivo mais recente, saldo inicial o do mais antigo, menor saldo o menor.
+    // Se so um dos arquivos foi lido pelo codigo (com prova), o dado fica sem valor: o mes inteiro nao esta provado.
+    function unirSaidasSaldos(a, b, perA, perB) {
+        ['saidas', 'saidasInvest', 'saidasProprias'].forEach(function (f) {
+            if (typeof a[f] === 'number' && typeof b[f] === 'number') a[f] = arred2(a[f] + b[f]); else delete a[f];
+        });
+        if (typeof a.saldoFinal === 'number' && typeof b.saldoFinal === 'number' && perA && perB && perA.fim !== perB.fim) {
+            var bDepois = perB.fim > perA.fim;
+            a.saldoFinal = bDepois ? b.saldoFinal : a.saldoFinal;
+            a.saldoInicial = typeof a.saldoInicial === 'number' && typeof b.saldoInicial === 'number' ? (bDepois ? a.saldoInicial : b.saldoInicial) : undefined;
+            if (typeof a.menorSaldo === 'number' && typeof b.menorSaldo === 'number') a.menorSaldo = Math.min(a.menorSaldo, b.menorSaldo); else delete a.menorSaldo;
+            if (a.saldoInicial === undefined) delete a.saldoInicial;
+        } else { delete a.saldoFinal; delete a.saldoInicial; delete a.menorSaldo; }
     }
     function unirRendaArquivos(lista) {
         var porMes = {}, ordem = [], ini = '', fim = '', det = [], titular = '';
@@ -753,6 +782,7 @@
                     if (v > atual.v) { atual.m = Object.assign({}, m); atual.v = v; }
                 } else {
                     ['fixa', 'variavel', 'app', 'excluidas', 'totalCreditos'].forEach(function (f) { atual.m[f] = numPos(atual.m[f]) + numPos(m[f]); });
+                    unirSaidasSaldos(atual.m, m, atual.per, per);
                     if (Array.isArray(m.pagadores) || Array.isArray(atual.m.pagadores)) atual.m.pagadores = somarPagadores(atual.m.pagadores, m.pagadores);
                     atual.v += v;
                 }
@@ -854,12 +884,53 @@
         if (/^RESGATE (RDB|DE |CDB|INVEST)|^RESGATE/.test(u)) return { g: 'excluidas', motivo: 'resgate RDB' };
         if (/^(REEMBOLSO|ESTORNO|DEVOLUCAO)/.test(u)) return { g: 'excluidas', motivo: u.indexOf('ESTORNO') === 0 ? 'estorno' : 'reembolso' };
         if (/^(RENDIMENTO|JUROS|CASHBACK)/.test(u)) return { g: 'excluidas', motivo: 'rendimento' };
+        if (/^VALOR ADICIONADO NA CONTA/.test(u)) return { g: 'excluidas', motivo: 'valor adicionado por cartão de crédito' };   // Pix no crédito: o cliente usa o limite do cartão, não é renda
         if (/^CREDITO EM CONTA/.test(u)) return { g: 'excluidas', motivo: 'crédito em conta sem origem' };
         if (/EMPRESTIMO|FINANCIAMENTO|CONSIGNADO|ANTECIPACAO|SAQUE.ANIVERSARIO/.test(u)) return { g: 'excluidas', motivo: 'empréstimo' };
         if ((titular && u.indexOf(titular) !== -1) || (cpfMeio && u.indexOf(cpfMeio) !== -1)) return { g: 'excluidas', motivo: 'autotransferência' };
         if (/\b(UBER|99 ?TECNOLOGIA|99 ?POP|INDRIVER|IFOOD|RAPPI|LOGGI)\b/.test(u)) return { g: 'app', motivo: '' };
         if (/SALARIO|PROVENTOS|FOLHA DE PAG|\bINSS\b|APOSENTADORIA|PENSAO|BENEFICIO/.test(u)) return { g: 'fixa', motivo: '' };
         return { g: 'variavel', motivo: '' };
+    }
+    // Saidas e saldos do Nubank, lidos pelo CODIGO e provados: cada dia fecha com o "Total de saidas" impresso, a soma dos dias com o resumo
+    // do extrato, e saldo inicial + entradas - saidas = saldo final. Prova que falha = os campos nao sao gravados (a tela volta a usar a IA).
+    // Grava em cada mes: saidas (gasto real), saidasInvest (aplicacao), saidasProprias (Pix para a propria conta), saldoInicial/saldoFinal/menorSaldo (fim de cada dia).
+    function nuAnexarSaidas(porMes, dias, saiDias, saiOrdem, saiOk, resumo) {
+        if (!saiOk || !saiOrdem.length) return;
+        var somaSai = 0, somaEnt = 0;
+        for (var q = 0; q < saiOrdem.length; q++) {
+            var sd = saiDias[saiOrdem[q]];
+            if (Math.abs(sd.itens.reduce(function (a, it) { return a + it.v; }, 0) - sd.tot) > 0.011) return;
+            somaSai += sd.tot;
+        }
+        if (resumo && Math.abs(somaSai - resumo.saidas) > 0.011) return;
+        dias.forEach(function (d) { somaEnt += d.tot; });
+        var ch = (resumo ? resumo.inicial + somaEnt - somaSai : null);
+        var saldosOk = !!resumo && Math.abs(ch - resumo.final) <= 0.011;
+        Object.keys(porMes).forEach(function (k) { var m = porMes[k]; m.saidas = 0; m.saidasInvest = 0; m.saidasProprias = 0; });
+        saiOrdem.forEach(function (k) {
+            var sd = saiDias[k], m = porMes[nuIsoMes(sd.a, sd.m)];
+            if (!m) return;   // mes sem nenhuma entrada no extrato: nao entra na conta
+            sd.itens.forEach(function (it) {
+                var f = it.tipo === 'invest' ? 'saidasInvest' : it.tipo === 'proprio' ? 'saidasProprias' : 'saidas';
+                m[f] = arred2(m[f] + it.v);
+            });
+        });
+        if (!saldosOk) return;
+        var ev = {};   // saldo no fim de cada dia (a ordem dentro do dia nao e impressa)
+        dias.forEach(function (d) { var k = d.a * 10000 + d.m * 100 + d.d; ev[k] = (ev[k] || 0) + d.tot; });
+        saiOrdem.forEach(function (k) { var sd = saiDias[k], kk = sd.a * 10000 + sd.m * 100 + sd.d; ev[kk] = (ev[kk] || 0) - sd.tot; });
+        var saldo = resumo.inicial, st = {};
+        Object.keys(ev).map(Number).sort(function (a, b) { return a - b; }).forEach(function (kk) {
+            var mk = nuIsoMes(Math.floor(kk / 10000), Math.floor(kk / 100) % 100);
+            if (!st[mk]) st[mk] = { ini: saldo, min: saldo };
+            saldo = arred2(saldo + ev[kk]);
+            st[mk].min = Math.min(st[mk].min, saldo); st[mk].fim = saldo;
+        });
+        Object.keys(st).forEach(function (mk) {
+            if (!porMes[mk]) return;
+            porMes[mk].saldoInicial = arred2(st[mk].ini); porMes[mk].saldoFinal = arred2(st[mk].fim); porMes[mk].menorSaldo = arred2(st[mk].min);
+        });
     }
     // texto = texto do PDF (como montarTextoDigital entrega). Devolve o objeto no formato de somarTrechos ou null.
     var NU_ULTIMO = 0;   // numero do motivo da ultima recusa (diagnostico)
@@ -873,12 +944,17 @@
         var titular = nuSemAcento(nome), cpf = /(\d{3}\.\d{3})-/.exec(cab), cpfMeio = cpf ? cpf[1] : '';
         if (titular.length < 5) return nuNao(2);
         // total do mes e periodo (cabecalho da primeira pagina)
-        var totMes = null, per = null, pm = /Total de entradas \+(\d[\d.]*,\d{2})/.exec(texto.replace(/\s+/g, ' '));
+        var totMes = null, per = null, resumo = null, pm = /Total de entradas \+(\d[\d.]*,\d{2})/.exec(texto.replace(/\s+/g, ' '));
         if (pm) totMes = nuValor(pm[1]);
-        if (totMes === null) {   // no texto do app os valores do resumo vem em linhas separadas, na ordem: saldo inicial, rendimento (+), entradas (+), saidas (-)
+        if (totMes === null) {   // no texto do app os valores do resumo vem em linhas separadas, na ordem: saldo inicial, rendimento (+), entradas (+), saidas (-), saldo final
             for (var j = ini; j < Math.min(linhas.length - 2, ini + 40); j++) {
-                var ra = /^\+(\d[\d.]*,\d{2})$/.exec(linhas[j]), rb = /^\+(\d[\d.]*,\d{2})$/.exec(linhas[j + 1]);
-                if (ra && rb && /^-\d[\d.]*,\d{2}$/.test(linhas[j + 2])) { totMes = nuValor(rb[1]); break; }
+                var ra = /^\+(\d[\d.]*,\d{2})$/.exec(linhas[j]), rb = /^\+(\d[\d.]*,\d{2})$/.exec(linhas[j + 1]), rc = /^-(\d[\d.]*,\d{2})$/.exec(linhas[j + 2]);
+                if (ra && rb && rc) {
+                    totMes = nuValor(rb[1]);
+                    var rsi = /^(\d[\d.]*,\d{2})$/.exec(linhas[j - 1] || ''), rsf = /^(\d[\d.]*,\d{2})$/.exec(linhas[j + 3] || '');
+                    if (rsi && rsf) resumo = { inicial: nuValor(rsi[1]), rendimento: nuValor(ra[1]), entradas: totMes, saidas: nuValor(rc[1]), final: nuValor(rsf[1]) };
+                    break;
+                }
             }
         }
         var datas = [], rd = /(\d{1,2}) DE ([A-ZÇ]+) DE (\d{4})/g, md;
@@ -886,7 +962,8 @@
         if (datas.length === 2) per = { inicio: nuIsoData(datas[0].a, datas[0].m, datas[0].d), fim: nuIsoData(datas[1].a, datas[1].m, datas[1].d) };
 
         var dias = [], dia = null, modo = '', pend = null, pulando = false;
-        var RE_INICIO = /^(Transfer[eê]ncia|Resgate|Reembolso|Estorno|Cr[eé]dito|Dep[oó]sito|Pix\b|Rendimento|Pagamento|Cashback|Devolu|Aplica|Compra|Ajuste|Boleto|Saque|Estorno)/;
+        var saiDias = {}, saiOrdem = [], diaSai = null, pendS = null, saiOk = true;   // SAIDAS: lidas e provadas dia a dia contra o "Total de saidas" impresso; se algo nao fechar, so as saidas ficam sem prova (a renda segue valendo)
+        var RE_INICIO = /^(Transfer[eê]ncia|Resgate|Reembolso|Estorno|Cr[eé]dito|Dep[oó]sito|Pix\b(?!\s*$)|Valor adicionado na conta|Rendimento|Pagamento|Cashback|Devolu|Aplica|Compra|Ajuste|Boleto|Saque|Estorno)/;
         // Uma entrada = a linha de inicio + as linhas de continuacao (nome do pagador, banco, agencia). O valor e a UNICA linha que termina em "1.234,56".
         function fecharEntrada() {
             if (!pend) return true;
@@ -898,18 +975,39 @@
             pend = null;
             return true;
         }
+        var RE_INICIO_SAIDA = /^(Transfer[eê]ncia|Pagamento|Aplica|Compra|Boleto|Saque|Pix\b(?!\s*$)|Plano|D[eé]bito|Tarifa|Recarga|Anuidade|IOF|Fatura|Parcela|Seguro|Mensalidade|Ajuste|Estorno|Resgate)/;
+        // Uma saida = mesma ideia da entrada. 'invest' (aplicacao RDB) e 'proprio' (Pix para a propria conta do titular) nao sao gasto.
+        function fecharSaida() {
+            if (!pendS) return true;
+            var valores = [];
+            pendS.forEach(function (l) { var mv = /(?:^|\s)(\d[\d.]*,\d{2})$/.exec(l); if (mv) valores.push(nuValor(mv[1])); });
+            var u = nuSemAcento(pendS.join(' '));
+            pendS = null;
+            if (valores.length !== 1 || !diaSai) return false;
+            var tipo = /^APLICA/.test(u) ? 'invest' : ((titular && u.indexOf(titular) !== -1) || (cpfMeio && u.indexOf(cpfMeio) !== -1)) ? 'proprio' : 'real';
+            diaSai.itens.push({ v: valores[0], tipo: tipo });
+            return true;
+        }
+        function abrirDiaSaida(a, m, d, tot) {
+            var k = a + '-' + m + '-' + d;
+            if (!saiDias[k]) { saiDias[k] = { a: a, m: m, d: d, tot: 0, itens: [] }; saiOrdem.push(k); }
+            saiDias[k].tot = arred2(saiDias[k].tot + tot);
+            return saiDias[k];
+        }
         for (var i = ini + 2; i < linhas.length; i++) {
             var ln = linhas[i];
-            if (/^(===|---)/.test(ln)) continue;
+            if (/^(===|---)/.test(ln)) { pulando = false; continue; }   // fim da pagina: o rodape acaba junto (extrato sem a linha "Extrato gerado" nao pode engolir o resto)
             if (/^(Tem alguma d[uú]vida|Asseguramos a autenticidade)/.test(ln)) { pulando = true; continue; }
             if (pulando) { if (/^Extrato gerado/.test(ln)) pulando = false; continue; }
             if (/^\d+ de \d+$/.test(ln)) continue;   // "5 de 16" (numero da pagina, quebrado em outra linha)
             if (nuSemAcento(ln) === titular || /CPF.*Ag[eê]ncia.*Conta|VALORES EM R\$|^\d{5,}-\d$/.test(ln)) continue;   // cabecalho repetido em cada pagina
             var dh = /^(?:(\d{1,2}) ([A-Z]{3}) (\d{4}) )?Total de entradas \+ (\d[\d.]*,\d{2})$/.exec(ln);
             var ds = /^(?:(\d{1,2}) ([A-Z]{3}) (\d{4}) )?Total de sa[ií]das /.test(ln);
+            var dsv = ds ? /^(?:(\d{1,2}) ([A-Z]{3}) (\d{4}) )?Total de sa[ií]das - ?(\d[\d.]*,\d{2})$/.exec(ln) : null;
             var dd = /^(\d{1,2}) ([A-Z]{3}) (\d{4}) /.exec(ln);
             if (dh || ds || dd) {
                 if (!fecharEntrada()) return nuNao(3);
+                if (!fecharSaida()) saiOk = false;
                 if (dh) {
                     var ant = dia;
                     if (dh[1]) { var mm = NU_MES_ABREV[dh[2]]; if (!mm) return nuNao(4); dia = { a: +dh[3], m: mm, d: +dh[1], tot: nuValor(dh[4]), itens: [] }; }
@@ -919,7 +1017,14 @@
                 } else {
                     modo = 'out';
                     if (dd && !dh) { if (!NU_MES_ABREV[dd[2]]) return nuNao(6); dia = { a: +dd[3], m: NU_MES_ABREV[dd[2]], d: +dd[1], tot: 0, itens: [], soSaidas: true }; }
+                    if (dsv && dia) diaSai = abrirDiaSaida(dia.a, dia.m, dia.d, nuValor(dsv[4]));   // o dia da saida e o da linha (ou o do bloco de entradas logo acima)
+                    else { diaSai = null; saiOk = false; }
                 }
+                continue;
+            }
+            if (modo === 'out') {   // itens de saida (so conferencia: qualquer duvida aqui NAO derruba a leitura da renda). Item novo = 1a linha depois do total do dia ou linha de inicio conhecida
+                if (!pendS || RE_INICIO_SAIDA.test(ln)) { if (!fecharSaida()) saiOk = false; pendS = [ln]; }
+                else pendS.push(ln);
                 continue;
             }
             if (modo !== 'in') continue;
@@ -928,6 +1033,7 @@
             else return nuNao(9);
         }
         if (!fecharEntrada() || !dias.length) return nuNao(10);
+        if (!fecharSaida()) saiOk = false;
         // conferencia: cada dia fecha ao centavo e a soma dos dias fecha com o total do mes impresso
         var somaDias = 0;
         for (var k = 0; k < dias.length; k++) {
@@ -948,9 +1054,367 @@
         });
         if (ordem.length === 1 && totMes !== null) porMes[ordem[0]].totalCreditos = arred2(totMes);   // extrato de mais de um mes: o total impresso e do periodo, nao de um mes
         det.sort(function (a, b) { return b.valor - a.valor; });
+        nuAnexarSaidas(porMes, dias, saiDias, saiOrdem, saiOk, resumo);
         return {
             titular: nome, periodoDocumentos: per, rendaMeses: ordem.map(function (k) { return porMes[k]; }),
             excluidasDetalhe: det.slice(0, 8), leituraCodigo: 'nubank'
+        };
+    }
+
+    // ── Leitura UNIVERSAL de extrato digital (qualquer banco, sem leitor por banco) ──────────────────────────
+    // O CODIGO acha todos os lancamentos (data, descricao, valor, saldo) e PROVA que nao faltou nenhum pela cadeia de saldos:
+    // cada linha traz o saldo depois dela, entao saldo(linha) - saldo(linha anterior) tem que ser igual ao valor da linha.
+    // Linha perdida, valor lido errado ou pagina faltando QUEBRAM a cadeia. O sinal (entrada/saida) tambem sai dessa conta,
+    // sem depender de coluna Credito/Debito. A IA so CLASSIFICA a lista numerada de entradas; quem soma e o codigo.
+    // Se a cadeia nao fechar em tudo, devolve null e a leitura volta para o leitor de antes (nunca fica pior).
+    var UN_ULTIMO = '';   // motivo da ultima recusa (diagnostico)
+    var UN_FOLGA_DIAS = 15;
+    var UN_LOTE = 120;    // entradas por chamada da IA
+    function unNao(m) { UN_ULTIMO = m; return null; }
+    function unNormalizarLinha(s) {
+        return String(s == null ? '' : s)
+            .replace(/R\s*\$/g, 'R$')
+            .replace(/(\d)\s+([.,])\s*(?=\d)/g, '$1$2')                                          // "13 , 58" -> "13,58"
+            .replace(/(\d[.,])\s+(?=\d)/g, '$1')
+            .replace(/(\d{1,2})\s*\/\s*(\d{1,2})\s*\/\s*(\d{2,4})/g, '$1/$2/$3')                 // "13 / 11 / 2026"
+            .replace(/\s+/g, ' ').trim();
+    }
+    // Todos os valores em reais da linha, com o sinal impresso (-1 saida, +1 entrada, 0 sem sinal): -R$ 1,00 | R$ -1,00 | 1,00 D | 1,00- | (-) 1,00
+    function unAchaDinheiro(ln) {
+        var re = /\d{1,3}(?:\.\d{3})*,\d{2}(?!\d)/g, m, out = [];
+        while ((m = re.exec(ln))) {
+            var ini = m.index, fim = ini + m[0].length;
+            if (ini > 0 && /[\d.,]/.test(ln.charAt(ini - 1))) continue;
+            if (ln.charAt(fim) === '%') continue;
+            var pre = ln.slice(Math.max(0, ini - 12), ini), sinal = 0, ini2 = ini, fim2 = fim, mp;
+            if ((mp = /(\(\s?-\s?\)|[-+−–])? ?R\$ ?([-+−–])?$/.exec(pre))) {   // com R$: o sinal vem antes ou depois do R$
+                var sg = mp[2] || mp[1] || '';
+                sinal = sg === '+' ? 1 : sg ? -1 : 0;
+                ini2 = ini - mp[0].length;
+            } else if ((mp = /(\(\s?-\s?\) ?|[-+−–])$/.exec(pre))) {   // sem R$: so vale o sinal COLADO no numero ("- 1.000,00" com espaco e separador de coluna)
+                sinal = mp[1].charAt(0) === '+' ? 1 : -1;
+                ini2 = ini - mp[0].length;
+            }
+            var suf = ln.slice(fim, fim + 3), ms;
+            if ((ms = /^ ?([CD])(?![A-Za-z])/.exec(suf))) { sinal = ms[1] === 'C' ? 1 : -1; fim2 = fim + ms[0].length; }
+            else if (/^-(?![\w])/.test(suf)) { sinal = -1; fim2 = fim + 1; }
+            out.push({ v: nuValor(m[0]), s: sinal, ini: ini2, fim: fim2 });
+        }
+        return out;
+    }
+    // Datas da linha: dd/mm/aaaa (/ - .), dd/mm/aa, "12 de novembro (de) 2026" e, com anoRef, "dd/mm" colado no inicio da linha
+    function unAchaDatas(ln, anoRef) {
+        var out = [], m, re = /(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4}|\d{2})(?!\d)/g;
+        while ((m = re.exec(ln))) {
+            if (m.index > 0 && /[\d\/\-.,]/.test(ln.charAt(m.index - 1))) continue;
+            var a = +m[3]; if (a < 100) a += 2000;
+            if (+m[1] >= 1 && +m[1] <= 31 && +m[2] >= 1 && +m[2] <= 12 && a >= 2000 && a <= 2100) out.push({ a: a, m: +m[2], d: +m[1], ini: m.index, fim: m.index + m[0].length });
+        }
+        var re2 = /(\d{1,2}) de ([A-Za-zÀ-ÿ]+)(?: de)? (\d{4})/g, n;
+        while ((n = re2.exec(ln))) {
+            var mm = NU_MES_NOME[nuSemAcento(n[2])];
+            if (mm && +n[1] >= 1 && +n[1] <= 31) out.push({ a: +n[3], m: mm, d: +n[1], ini: n.index, fim: n.index + n[0].length });
+        }
+        if (anoRef && !out.length) {   // extrato sem ano nas datas ("05/08 PIX ..."): o ano vem do cabecalho
+            var m3 = /^(?:[A-Za-zÀ-ÿ\-]{0,14}[, ]+)?(\d{1,2})\/(\d{1,2})(?![\d\/])/.exec(ln);
+            if (m3 && +m3[1] >= 1 && +m3[1] <= 31 && +m3[2] >= 1 && +m3[2] <= 12) out.push({ a: anoRef, m: +m3[2], d: +m3[1], ini: m3[0].length - (m3[1].length + m3[2].length + 1), fim: m3[0].length });
+        }
+        return out.sort(function (x, y) { return x.ini - y.ini; });
+    }
+    function unIso(d) { return d ? nuIsoData(d.a, d.m, d.d) : ''; }
+    // Linha de saldo (nao e lancamento). "TRANSF SALDO C/SAL" e lancamento: so vale o inicio da frase ou as expressoes de saldo conhecidas.
+    var UN_RE_SALDO = /^(?:\([+=\-]\) ?)?SALDO (?:DO DIA|FINAL|INICIAL|ANTERIOR|EM CONTA|DE CONTA|DISPONIVEL|BLOQUEADO|AO FINAL|PARCIAL|TOTAL|ATUAL|DA CONTA|CONTABIL|EM \d)|SALDO (?:AO FINAL DO DIA|DO DIA)\b/;
+    var UN_RE_RESUMO = /^(?:\([+=\-]\) ?)?(?:(?:ENTRADAS?|SAIDAS?|CREDITOS|DEBITOS) ?:|TOTAL |LIMITE |RESUMO\b|JUROS (?:VENCIDOS|REMANESC|PREVISTOS)|TARIFAS (?:VENCIDAS|REMANESC)|PREVISAO|CHEQUE ESPECIAL|ENCARGOS|VENCIMENTO |TAXA |CUSTO EFETIVO|IOF PREV|SALDO BLOQUEADO)/;
+    var UN_RE_CAB = /^DATA\b.*\b(?:DESCRICAO|HISTORICO|LANCAMENTOS?|MOVIMENTA\w*)\b.*\bSALDO\b/;   // cabecalho da tabela de lancamentos com coluna de saldo (reabre a leitura depois de um saldo final; tabelas de cartao/comprovantes nao reabrem)
+    var UN_RE_ANO = /\b(?:JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)[A-Z]*\/(20\d\d)\b/;
+    var UN_RE_DATA_PREFIXO = /\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}|\d{1,2} de [A-Za-zÀ-ÿ]+(?: de)? \d{4}|^\d{1,2}:\d{2}(?::\d{2})?|^\d{1,2}\/\d{1,2}(?![\d\/])/g;
+
+    // Prova na ordem do tempo: entre dois saldos conhecidos (saldo de uma linha, saldo anterior, saldo final, saldo do dia),
+    // a soma das linhas tem que ser a diferenca dos saldos. Devolve { ok, ... } ou { erro }.
+    function unProvar(rs, anc, rev) {
+        var n = rs.length, i, q, viol = 0, dm = [], maxD = '', desord = false;
+        for (q = 0; q < n; q++) {   // datas na ordem do tempo; alguns bancos (Santander) datam compras de debito uns dias fora do lugar: ai so valem os saldos de linha, nao os "saldo em dd/mm"
+            var dq = unIso(rs[q].data);
+            if (maxD && dq < maxD) { viol++; if (Math.round((Date.parse(maxD) - Date.parse(dq)) / 86400000) > 5) desord = true; }
+            if (dq > maxD) maxD = dq;
+            dm.push(maxD);
+        }
+        if (viol > Math.max(2, n * 0.05)) desord = true;
+        var ini = dm[0], fim = dm[n - 1], A = [];
+        rs.forEach(function (r, k) { if (r.saldo !== null) A.push({ pos: k + 1, bal: r.saldo }); });
+        anc.forEach(function (a) {
+            var pos = -1;
+            if (a.tipo === 'abertura') pos = 0;
+            else if (a.tipo === 'fechamento') pos = n;
+            else if (a.tipo === 'linha') pos = Math.max(0, Math.min(n, rev ? n - a.idx : a.idx));   // saldo impresso entre dois lancamentos (Itau: "saldo do dia" antes dos lancamentos do dia)
+            else if (a.data) { var d = unIso(a.data); pos = d < ini ? 0 : d >= fim ? n : desord ? -1 : dm.filter(function (x) { return x <= d; }).length; }
+            if (pos >= 0) A.push({ pos: pos, bal: a.bal });
+        });
+        A.sort(function (x, y) { return x.pos - y.pos; });
+        var P = [];   // uma ancora por posicao (as repetidas tem que concordar)
+        for (i = 0; i < A.length; i++) {
+            if (P.length && P[P.length - 1].pos === A[i].pos) { if (Math.abs(P[P.length - 1].bal - A[i].bal) > 0.011) return { erro: 'dois saldos diferentes na mesma posicao (' + P[P.length - 1].bal + ' x ' + A[i].bal + ')' }; }
+            else P.push(A[i]);
+        }
+        if (P.length < (desord ? 3 : 2)) return { erro: (desord ? 'datas fora de ordem e poucos saldos (' : 'saldos insuficientes (') + P.length + ')' };
+        var fora = P[0].pos + (n - P[P.length - 1].pos);
+        var melhorD = null;
+        [1, -1].forEach(function (d) {   // sinal das linhas sem sinal impresso quando ha mais de uma por trecho: todas entrada (+1) ou todas saida (-1)
+            var sinal = new Array(n), quebras = 0, primeira = '', k;
+            for (k = 0; k < n; k++) sinal[k] = rs[k].s || 0;
+            for (var s = 0; s + 1 < P.length; s++) {
+                var a0 = P[s], b0 = P[s + 1], conh = 0, U = [];
+                for (k = a0.pos; k < b0.pos; k++) { if (sinal[k]) conh += sinal[k] * rs[k].v; else U.push(k); }
+                var alvo = b0.bal - a0.bal - conh, ok = false;
+                if (!U.length) ok = Math.abs(alvo) <= 0.011;
+                else if (U.length === 1) {
+                    var vv = rs[U[0]].v;
+                    if (Math.abs(alvo - vv) <= 0.011) { sinal[U[0]] = 1; ok = true; } else if (Math.abs(alvo + vv) <= 0.011) { sinal[U[0]] = -1; ok = true; }
+                } else {
+                    var tot = 0; U.forEach(function (u) { tot += d * rs[u].v; });
+                    if (Math.abs(alvo - tot) <= 0.011) { U.forEach(function (u) { sinal[u] = d; }); ok = true; }
+                }
+                if (!ok) { quebras++; if (!primeira) primeira = 'trecho linhas ' + (a0.pos + 1) + '-' + b0.pos + ' saldo ' + a0.bal + ' -> ' + b0.bal + ', soma lida ' + (b0.bal - a0.bal - alvo).toFixed(2) + ' (faltam ' + alvo.toFixed(2) + '): ' + (rs[a0.pos] ? (rs[a0.pos].antes + ' ' + rs[a0.pos].linha).slice(0, 40) : ''); }
+            }
+            if (!melhorD || quebras < melhorD.quebras) melhorD = { sinal: sinal, quebras: quebras, primeira: primeira };
+        });
+        if (melhorD.quebras) return { erro: 'saldos nao fecham em ' + melhorD.quebras + ' de ' + (P.length - 1) + ' trechos, primeiro: ' + melhorD.primeira };
+        return { ok: true, sinal: melhorD.sinal, ancoras: P.length, fora: fora, foraIni: P[0].pos };
+    }
+
+    // texto = texto do PDF (como montarTextoDigital entrega). Devolve { lanc:[{i,data,mes,valor,saldo,desc}], periodo, ... } ou null.
+    function lerExtratoUniversal(texto) {
+        var T = String(texto || '');
+        if (T.indexOf('RESTANTE DESTE ARQUIVO CORTADO') !== -1) return unNao('arquivo cortado por tamanho');
+        var linhas = [];
+        T.split('\n').forEach(function (l) { if (/^(---|===)/.test(l)) return; var n = unNormalizarLinha(l); if (n) linhas.push(n); });
+        if (linhas.length < 8) return unNao('texto curto');
+        // ano de referencia (extratos com datas "05/08"): primeira data completa ou "agosto/2026" do cabecalho
+        var anoRef = 0, cheias = 0, ia, anosMes = 0, anos = {};
+        for (ia = 0; ia < linhas.length; ia++) {
+            var dc = unAchaDatas(linhas[ia]);
+            if (dc.length && dc[0].ini <= 12) cheias++;
+            if (ia < 80) {   // "agosto/2026" no cabecalho vale mais que uma data solta (ex.: "versao 27/11/2024" impressa em toda pagina)
+                var my = UN_RE_ANO.exec(nuSemAcento(linhas[ia])); if (my && !anosMes) anosMes = +my[1];
+                dc.forEach(function (x) { anos[x.a] = (anos[x.a] || 0) + 1; });
+            }
+        }
+        anoRef = anosMes || +Object.keys(anos).sort(function (x, y) { return anos[y] - anos[x]; })[0] || 0;
+        var semAno = anoRef && cheias < 3 ? anoRef : 0;   // so aceita "dd/mm" quando o extrato quase nao tem data completa (evita confundir "4/12" de pagina)
+        // ── 1) lancamentos e linhas de saldo ──
+        var secs = [], sec = { recs: [], anc: [], fechada: false }, pend = [], dataAtual = null, ultimo = null, rotulo = '', fecha = [];
+        secs.push(sec);
+        for (var i = 0; i < linhas.length; i++) {
+            var ln = linhas[i], din = unAchaDinheiro(ln), dts = unAchaDatas(ln, semAno);
+            var inicia = (dts.length > 0 && dts[0].ini <= 12 && /^[A-Za-zÀ-ÿ\-]{0,14}[, ]*$/.test(ln.slice(0, dts[0].ini))) || /^\d{1,2}:\d{2}(?::\d{2})?\b/.test(ln);
+            var resto = ln;
+            for (var k = din.length - 1; k >= 0; k--) resto = resto.slice(0, din[k].ini) + ' ' + resto.slice(din[k].fim);
+            var cabPeriodo = dts.length >= 2 && !din.length && /PERIODO|\bAL\b|\bATE\b|\bA\b/.test(nuSemAcento(ln));   // "De 01-09-2026 al 30-09-2026": periodo do cabecalho, nao abre lancamento
+            if (dts.length && inicia && !cabPeriodo) dataAtual = dts[0];
+            var rotAnt = rotulo; rotulo = '';
+            var rs = resto.replace(/\s+/g, ' ').trim(), corpo = rs.replace(UN_RE_DATA_PREFIXO, ' ').replace(/\s+/g, ' ').trim();
+            var U = nuSemAcento(rs).replace(/^\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4} /, '').replace(/^\d{1,2}\/\d{1,2} /, '').replace(/^\d{1,2}:\d{2}(?::\d{2})? /, '');
+            if (!din.length) {
+                if (sec.fechada && UN_RE_CAB.test(U)) { sec = { recs: [], anc: [], fechada: false }; secs.push(sec); ultimo = null; pend = []; continue; }   // depois do saldo final so volta a ler lancamentos num novo cabecalho de tabela
+                if (sec.fechada) continue;
+                if (inicia) {   // linha que abre um lancamento (data/hora) sem valor ainda
+                    if (pend.length && ultimo && ultimo.unica) ultimo.depois = pend.join(' ').slice(0, 120);
+                    pend = [];
+                    if (corpo.length > 2 && !UN_RE_SALDO.test(nuSemAcento(corpo)) && !UN_RE_RESUMO.test(nuSemAcento(corpo))) pend.push(corpo);
+                } else if (UN_RE_SALDO.test(U)) {   // "Saldo em conta" numa linha e o valor na seguinte
+                    if (U.length < 40) rotulo = /SALDO (?:ANTERIOR|INICIAL)/.test(U) ? 'abertura' : /SALDO (?:FINAL|ATUAL)/.test(U) ? 'fechamento' : 'linha';
+                } else if (!UN_RE_RESUMO.test(U)) pend.push(rs);
+                if (pend.length > 12) pend = pend.slice(-12);
+                continue;
+            }
+            // linha com valor: saldo (ancora), resumo ou lancamento
+            if (sec.fechada) continue;   // tabelas depois do saldo final (resumo por periodo, comprovantes...) nao sao lancamentos
+            if (rotAnt && !dts.length && !rs) {   // valor da linha de saldo que veio so com o rotulo na linha de cima
+                var vb = din[din.length - 1], balR = (vb.s < 0 ? -1 : 1) * vb.v;
+                if (rotAnt === 'abertura') sec.anc.push({ tipo: 'abertura', data: null, bal: balR, soft: true });
+                else if (rotAnt === 'fechamento') fecha.push({ tipo: 'fechamento', data: null, bal: balR, soft: true });
+                else sec.anc.push({ tipo: 'linha', idx: sec.recs.length, bal: balR, soft: true });
+                pend = []; continue;
+            }
+            if (UN_RE_SALDO.test(U) || /\bSALDO (?:DO DIA|AO FINAL DO DIA|FINAL DO DIA)\b/.test(U)) {
+                var tl = din[din.length - 1], tf = din[0];
+                var bal = (din.length >= 2 && tl.v === 0 && tf.v > 0) ? (tf.s < 0 ? -1 : 1) * tf.v : (tl.s < 0 ? -1 : 1) * tl.v;   // "SALDO ANTERIOR 4.659,16 C 0,00 C": o saldo e o primeiro
+                var emD = /\bEM (\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/.exec(rs), dtA = dts[0] || null;
+                if (!dtA && emD && anoRef) dtA = { a: emD[3] ? (+emD[3] < 100 ? 2000 + +emD[3] : +emD[3]) : anoRef, m: +emD[2], d: +emD[1] };
+                var tipo = /SALDO (?:ANTERIOR|INICIAL)/.test(U) ? 'abertura' : /SALDO (?:FINAL|ATUAL)(?! DO DIA)/.test(U) && !dtA ? 'fechamento' : (dtA ? 'dia' : '');
+                if (tipo) {
+                    var a1 = { tipo: tipo, data: dtA, bal: bal }, ult = sec.recs.length ? sec.recs[sec.recs.length - 1] : null;
+                    var ehFim = tipo === 'fechamento' || (/SALDO (?:FINAL|ATUAL|EM \d)/.test(U) && !/DO DIA/.test(U) && dtA && ult && unIso(dtA) >= unIso(ult.data));
+                    if (ehFim && ult && (ult.saldo !== null ? Math.abs(ult.saldo - bal) <= 0.011 : true)) { sec.anc.push(a1); sec.fechada = true; }   // fecha com o ultimo lancamento: o que vem depois (resumos, comprovantes) nao e lancamento
+                    else if (tipo === 'fechamento') fecha.push(a1);   // saldo final impresso fora do lugar (topo/rodape da 1a pagina): vale no fim do extrato
+                    else sec.anc.push(a1);
+                }
+                pend = []; continue;
+            }
+            if (UN_RE_RESUMO.test(U)) { pend = []; continue; }
+            if (inicia && dts.length && !corpo && !pend.length && din.length === 1) {   // so data e valor: saldo do dia sem o rotulo (Itau)
+                sec.anc.push({ tipo: 'linha', idx: sec.recs.length, bal: (din[0].s < 0 ? -1 : 1) * din[0].v, soft: true });
+                continue;
+            }
+            if (!dataAtual) { pend = []; continue; }   // valor antes de qualquer data (cabecalho/resumo)
+            var unica = inicia;
+            if (ultimo && ultimo.unica && pend.length) { ultimo.depois = pend.join(' ').slice(0, 120); pend = []; }
+            var vt = din.length >= 2 ? din[din.length - 2] : din[din.length - 1], st = din.length >= 2 ? din[din.length - 1] : null;
+            var rec = {
+                i: sec.recs.length, data: dataAtual, v: vt.v, s: vt.s, saldo: st ? (st.s < 0 ? -1 : 1) * st.v : null, unica: unica,
+                antes: pend.join(' ').slice(0, 140), linha: corpo.slice(0, 120), depois: ''
+            };
+            sec.recs.push(rec); ultimo = rec; pend = [];
+        }
+        secs = secs.filter(function (z) { return z.recs.length || z.anc.length; });
+        if (secs.length) fecha.forEach(function (a) { secs[secs.length - 1].anc.push(a); });
+        var total = 0; secs.forEach(function (z) { total += z.recs.length; });
+        if (total < 5) return unNao('poucos lancamentos (' + total + ')');
+        // ── 2) prova de cada secao (na ordem do tempo: tenta como esta e invertida) ──
+        var lanc = [], fora = 0, foraIni = 0, pares = 0, dirs = [], falha = '';
+        for (var zs = 0; zs < secs.length && !falha; zs++) {
+            var zc = secs[zs], recs = zc.recs, nz = recs.length, prova = null, erros = [];
+            if (!nz) continue;
+            var duras = zc.anc.filter(function (a) { return !a.soft; }), jogos = duras.length < zc.anc.length ? [zc.anc, duras] : [zc.anc];   // saldos "adivinhados" (rotulo solto, data+valor) valem primeiro; se estragarem a conta, tenta sem eles
+            jogos.forEach(function (av) {
+                [{ dir: 'asc', rs: recs.slice() }, { dir: 'desc', rs: recs.slice().reverse() }].forEach(function (t) {
+                    if (prova) return;
+                    var r = unProvar(t.rs, av, t.dir === 'desc');
+                    if (r.ok) prova = { dir: t.dir, rs: t.rs, r: r }; else erros.push(t.dir + ': ' + r.erro);
+                });
+            });
+            if (!prova) { falha = (secs.length > 1 ? 'secao ' + (zs + 1) + ' de ' + secs.length + ' (' + nz + ' linhas): ' : '') + erros.join(' | '); break; }
+            if (prova.r.fora > Math.max(1, Math.floor(nz * 0.01))) { falha = 'linhas fora de qualquer trecho com saldo: ' + prova.r.fora + ' de ' + nz + ' (' + prova.dir + ')'; break; }
+            var rsC = prova.rs, sinal = prova.r.sinal;
+            rsC.forEach(function (r, z) {   // linhas fora dos trechos (so a primeira, no maximo): sinal impresso, ou pelo texto
+                if (sinal[z]) return;
+                var tx = nuSemAcento(r.antes + ' ' + r.linha + ' ' + r.depois);
+                sinal[z] = /RECEBID|CREDIT|DEPOSIT|ESTORN|RENDIMENT|RESGAT|SALARIO|PROVENTO|REEMBOLS|DEVOLUC/.test(tx) && !/ENVIAD|DEBIT|COMPRA|PAGAMENTO|TARIFA|SAQUE/.test(tx) ? 1 : -1;
+            });
+            for (var y = 0; y < nz && !falha; y++) if (rsC[y].s && rsC[y].s !== sinal[y]) falha = 'sinal impresso contradiz os saldos na linha ' + (y + 1);
+            rsC.forEach(function (r, idx) {
+                lanc.push({ i: lanc.length, data: unIso(r.data), mes: nuIsoMes(r.data.a, r.data.m), valor: sinal[idx] * r.v, saldo: r.saldo, desc: (r.antes + ' ' + r.linha + ' ' + r.depois).replace(/\s+/g, ' ').trim().slice(0, 150) });
+            });
+            fora += prova.r.fora; foraIni += prova.r.foraIni; pares += prova.r.ancoras - 1; dirs.push(prova.dir);
+        }
+        if (falha) return unNao(falha);
+        var n = lanc.length, minD = lanc[0].data, maxD = lanc[0].data;
+        lanc.forEach(function (l) { if (l.data < minD) minD = l.data; if (l.data > maxD) maxD = l.data; });
+        // periodo impresso no cabecalho (primeira linha com duas datas); senao do primeiro ao ultimo lancamento
+        var per = null;
+        for (var h = 0; h < Math.min(linhas.length, 40) && !per; h++) {
+            var dh = unAchaDatas(linhas[h]);
+            if (dh.length >= 2 && /PERIODO|DE .* A |ATE|EXTRATO/.test(nuSemAcento(linhas[h]))) per = { inicio: unIso(dh[0]) < unIso(dh[1]) ? unIso(dh[0]) : unIso(dh[1]), fim: unIso(dh[0]) < unIso(dh[1]) ? unIso(dh[1]) : unIso(dh[0]) };
+        }
+        if (per && (minD < per.inicio.slice(0, 7) + '-01' || maxD > per.fim)) per = null;   // cabecalho que nao combina com os lancamentos
+        // sem saldo anterior conhecido, uma pagina perdida no comeco/fim do arquivo nao quebra a conta: confere as pontas com o periodo impresso (tolerancia: conta parada por 15 dias)
+        if (per && fora > 0) {
+            var dd = function (a, b) { return Math.round((Date.parse(b) - Date.parse(a)) / 86400000); };
+            if (dd(per.inicio, minD) > UN_FOLGA_DIAS || dd(maxD, per.fim) > UN_FOLGA_DIAS) return unNao('lancamentos nao cobrem o periodo ' + per.inicio + '..' + per.fim + ' (lido ' + minD + '..' + maxD + ')');
+        }
+        return {
+            lanc: lanc, periodo: per || { inicio: minD, fim: maxD }, cabecalho: linhas.slice(0, 8).join(' | ').slice(0, 300),
+            prova: { dir: dirs.join('+'), pares: pares, linhas: n, fora: fora, secoes: secs.length }
+        };
+    }
+
+    // Nome de quem pagou, tirado da descricao (para reconhecer quem paga todo mes)
+    function unNomePagador(desc) {
+        var t = String(desc || '');
+        for (var k = 0; k < 4; k++) t = t.replace(/^(?:PIX|TED|DOC|TRANSF\w*|TRANSFER[EÊ]NCIA|RECEBID[OA]S?|RECEBIMENTO|CR[EÉ]DITO|DEP[OÓ]SITO|REM|DE|DO|DA|POR|CP)\b[:.\s-]*/i, '');
+        t = t.replace(/["“”]/g, ' ').replace(/[•*\d.\-\/]{5,}/g, ' ').replace(/\s+/g, ' ').trim();
+        return t.split(' ').slice(0, 5).join(' ').slice(0, 40);
+    }
+    function unPromptClassificar(cabecalho, lote) {
+        var L = lote.map(function (l, j) { return (j + 1) + ' | ' + l.data + ' | ' + l.valor.toFixed(2).replace('.', ',') + ' | ' + l.desc; }).join('\n');
+        return 'Voce CLASSIFICA entradas (creditos) de um extrato bancario brasileiro. NAO some, NAO calcule, NAO pule nenhuma: devolva um codigo para CADA numero da lista.\n' +
+            'Codigos:\n' +
+            '  F = fixa: salario/proventos, beneficio (INSS, aposentadoria, pensao) ou pagador FIXO que paga todo mes.\n' +
+            '  V = variavel: Pix/TED recebido de TERCEIROS (clientes, vendas, servicos, comissoes, repasses, maquininha), MESMO que a pessoa repasse tudo depois.\n' +
+            '  A = app: repasse de app de transporte/entrega (Uber, 99, InDrive, iFood, Rappi, Loggi).\n' +
+            '  X = excluida (escreva "X:motivo curto"): so quando CLARAMENTE for autotransferencia (Pix/TED do proprio titular entre contas dele), credito de emprestimo/financiamento/consignado/antecipacao/saque-aniversario, estorno/reembolso/devolucao/cashback/rendimento/juros, resgate de investimento/poupanca/CDB, deposito em dinheiro sem origem, premio ou saque de casa de aposta, 13o/ferias/PLR/rescisao, venda de bem ou emprestimo entre pessoas (so se a descricao disser), valor adicionado por cartao de credito.\n' +
+            'NA DUVIDA use V. Nao exclua uma entrada so porque o valor e alto ou diferente das outras.\n' +
+            'A descricao pode ter o nome de quem pagou antes ou depois do tipo da operacao. O titular da conta aparece no cabecalho abaixo (use para achar autotransferencia).\n' +
+            'CABECALHO DO EXTRATO: ' + cabecalho + '\n\n' +
+            'Responda SO com um JSON {"1":"V","2":"X:autotransferencia",...} com TODOS os numeros de 1 a ' + lote.length + '.\n' +
+            'LISTA (numero | data | valor | descricao):\n' + L + '\n';
+    }
+    // Le a resposta da IA (JSON, ou pares "numero":"codigo" soltos) e preenche cls[l.i]
+    function unLerClasses(resposta, lote, cls) {
+        var r = String(resposta || ''), re = /"?(\d{1,4})"?\s*:\s*"?\s*([FVAXfvax])(?![A-Za-z])\s*(?::\s*([^",}\n]*))?/g, m;
+        while ((m = re.exec(r))) {
+            var l = lote[+m[1] - 1];
+            if (l && !cls[l.i]) cls[l.i] = { g: { F: 'fixa', V: 'variavel', A: 'app', X: 'excluidas' }[m[2].toUpperCase()], motivo: String(m[3] || '').trim().slice(0, 50) };
+        }
+    }
+    // Saidas e saldos pelo codigo (a cadeia de saldos ja deu o sinal de cada linha). So grava quando TODAS as linhas ficaram dentro de trechos provados.
+    // saidas = debitos reais; aplicacao/investimento e Pix para a propria conta ficam de fora. Saldo do mes = o da ultima linha com saldo impresso.
+    var UN_RE_INVEST = /APLICA[CÇ]|\bRDB\b|INVESTIMENT|INVEST FACIL|\bCDB\b|POUPAN|TESOURO|COMPRA DE (?:FUNDO|TITULO)|FUNDOS? DE INVEST/;
+    var UN_RE_PROPRIO = /PROPRIA CONTA|CONTA PROPRIA|MESMA TITULARIDADE|ENTRE CONTAS (?:PROPRIAS|MESMA)|MESMO TITULAR/;
+    function unAnexarSaidas(u, porMes) {
+        if (!u || !u.prova || u.prova.fora !== 0) return;
+        var meses = Object.keys(porMes);
+        meses.forEach(function (k) { porMes[k].saidas = 0; porMes[k].saidasInvest = 0; porMes[k].saidasProprias = 0; });
+        var ult = {}, menor = {}, ini = {}, linhas = {}, comSaldo = {}, soma = {};   // saldo do mes so vale se TODAS as linhas do mes trazem saldo e a conta fecha
+        u.lanc.forEach(function (l) {
+            var m = porMes[l.mes];
+            if (!m) return;
+            if (l.valor < 0) {
+                var v = -l.valor, t = nuSemAcento(l.desc);
+                var f = UN_RE_INVEST.test(t) ? 'saidasInvest' : UN_RE_PROPRIO.test(t) ? 'saidasProprias' : 'saidas';
+                m[f] = arred2(m[f] + v);
+            }
+            linhas[l.mes] = (linhas[l.mes] || 0) + 1; soma[l.mes] = (soma[l.mes] || 0) + l.valor;
+            if (typeof l.saldo === 'number') {
+                comSaldo[l.mes] = (comSaldo[l.mes] || 0) + 1;
+                if (!(l.mes in ini)) ini[l.mes] = arred2(l.saldo - l.valor);
+                ult[l.mes] = l.saldo; menor[l.mes] = l.mes in menor ? Math.min(menor[l.mes], l.saldo) : l.saldo;
+            }
+        });
+        meses.forEach(function (k) {
+            if (comSaldo[k] !== linhas[k] || Math.abs(ini[k] + soma[k] - ult[k]) > 0.011) return;
+            porMes[k].saldoInicial = ini[k]; porMes[k].saldoFinal = arred2(ult[k]); porMes[k].menorSaldo = arred2(Math.min(menor[k], ini[k]));
+        });
+    }
+    // Leitura universal completa: o codigo acha e PROVA os lancamentos; a IA so classifica as entradas; o codigo soma por mes.
+    // Devolve o mesmo formato do leitor Nubank ({ rendaMeses... }) ou null (volta para o leitor de antes).
+    async function lerExtratoUniversalIA(texto, chamar, opts) {
+        opts = opts || {};
+        var u = lerExtratoUniversal(texto);
+        if (!u) { if (opts.log) opts.log('universal recusou: ' + UN_ULTIMO); return null; }
+        var cred = u.lanc.filter(function (l) { return l.valor > 0; }), cls = {}, pendentes = cred.slice();
+        var limitar = opts.limitar || criarLimitador(PARALELO_IA);
+        for (var tent = 0; tent < 2 && pendentes.length; tent++) {
+            var lotes = [];
+            for (var j = 0; j < pendentes.length; j += UN_LOTE) lotes.push(pendentes.slice(j, j + UN_LOTE));
+            await Promise.all(lotes.map(function (lote, li) {
+                return limitar(async function () {
+                    try { unLerClasses(await chamar(unPromptClassificar(u.cabecalho, lote), 'u' + tent + '-' + li), lote, cls); }
+                    catch (e) { if (opts.fatal && opts.fatal(e)) throw e; }
+                });
+            }));
+            pendentes = cred.filter(function (l) { return !cls[l.i]; });
+        }
+        if (pendentes.length > Math.max(3, Math.floor(cred.length * 0.1))) { if (opts.log) opts.log('universal recusou: IA nao classificou ' + pendentes.length + ' de ' + cred.length + ' entradas'); return null; }
+        pendentes.forEach(function (l) { cls[l.i] = { g: 'variavel', motivo: '' }; });   // na duvida, conta como variavel (regra do dono)
+        var porMes = {}, ordem = [], det = [];
+        u.lanc.forEach(function (l) {
+            if (!porMes[l.mes]) { ordem.push(l.mes); porMes[l.mes] = { mes: l.mes, fixa: 0, variavel: 0, app: 0, excluidas: 0, totalCreditos: 0, parcial: false }; }
+        });
+        cred.forEach(function (l) {
+            var c = cls[l.i], m = porMes[l.mes];
+            m[c.g] = arred2(m[c.g] + l.valor);
+            m.totalCreditos = arred2(m.totalCreditos + l.valor);
+            if (c.g === 'excluidas') det.push({ mes: l.mes, valor: l.valor, motivo: c.motivo || 'excluida' });
+            else if (c.g === 'variavel') { var nm = unNomePagador(l.desc); if (nm) m.pagadores = somarPagadores(m.pagadores, [{ nome: nm, valor: l.valor }]); }
+        });
+        ordem.sort();
+        det.sort(function (a, b) { return b.valor - a.valor; });
+        unAnexarSaidas(u, porMes);
+        if (opts.log) opts.log('universal leu ' + u.lanc.length + ' lancamentos (' + cred.length + ' entradas, cadeia ' + u.prova.dir + ' ' + u.prova.pares + ' pares)' + (pendentes.length ? ', ' + pendentes.length + ' sem classe (contadas como variavel)' : ''));
+        return {
+            titular: '', periodoDocumentos: u.periodo, rendaMeses: ordem.map(function (k) { return porMes[k]; }),
+            excluidasDetalhe: det.slice(0, 8), leituraCodigo: 'universal'
         };
     }
 
@@ -969,7 +1433,16 @@
     // O quanto a soma lida ficou longe do total impresso (0 = fechou). Serve para escolher a melhor de duas leituras.
     function desvioDivergencia(c) {
         if (!c || !c.divergentes) return 0;
-        return c.divergentes.reduce(function (a, d) { return a + (d.total > 0 ? Math.abs(d.total - d.soma) / d.total : 0); }, 0);
+        return c.divergentes.reduce(function (a, d) { return a + (d.total > 0 ? Math.abs(d.total - d.soma) / d.total : 0); }, 0) +
+            (c.margens || []).reduce(function (a, d) { return a + (d.total > 0 ? d.valor / d.total : 0); }, 0);
+    }
+
+    // Renda que o codigo fechou: vale mesmo sendo R$ 0 (todas as entradas sao autotransferencia, emprestimo, cartao...),
+    // desde que cada mes tenha o total impresso e a soma bata com ele. Sem isso, o R$ 0 pode ser so leitura falha: a etapa 2 recalcula.
+    function rendaFechada(c) {
+        if (!c || c.fonte !== 'codigo') return false;
+        if (c.renda > 0) return true;
+        return (c.usados || []).length > 0 && !(c.divergentes || []).length && !(c.faltando > 0) && c.usados.every(function (m) { return m.totalCreditos > 0; });
     }
 
     // Le UM arquivo (texto) em trechos. chamar(prompt, rotulo) -> Promise<texto da IA>.
@@ -980,6 +1453,11 @@
         opts = opts || {};
         var nb = lerExtratoNubank(texto);   // extrato Nubank que fecha com os totais impressos: sem IA
         if (nb) return nb;
+        if (opts.log && NU_ULTIMO > 1) opts.log('nubank recusou: motivo ' + NU_ULTIMO);   // 1 = nao e Nubank; os outros dizem onde o leitor do Nubank parou
+        if (opts.universal) {   // qualquer banco: o codigo le e prova pela cadeia de saldos, a IA so classifica (se nao fechar, segue o leitor de antes)
+            var un = await lerExtratoUniversalIA(texto, chamar, opts);
+            if (un) return un;
+        }
         var limitar = opts.limitar || criarLimitador(PARALELO_IA);
         async function lerTrecho(tx, n, de, tag) {
             var base = '=== EXTRATO BANCARIO DIGITAL (texto extraido do PDF) ===\n' + tx;
@@ -1003,7 +1481,7 @@
             return { obj: obj, c: c, n: trechos.length, alvo: alvo };
         }
         var p1 = await passada(ALVO_TRECHO, 'a');
-        var fechou = function (p) { return !!(p && p.c && p.c.fonte === 'codigo' && p.c.renda > 0 && !(p.c.divergentes && p.c.divergentes.length)); };
+        var fechou = function (p) { return !!(p && p.c && p.c.fonte === 'codigo' && p.c.renda > 0 && !(p.c.divergentes && p.c.divergentes.length) && !(p.c.margens && p.c.margens.length)); };   // com margem de erro ainda vale tentar a releitura (trechos menores)
         if (!p1 || fechou(p1)) return p1 ? p1.obj : null;
         var menor = Math.max(MIN_TRECHO, Math.floor(p1.alvo / 2));
         if (menor >= p1.alvo || dividirTrechos(texto, menor).length <= p1.n || (opts.sobra && opts.sobra() < 40000)) return p1.obj;   // sem trechos novos a releitura seria igual
@@ -1060,6 +1538,11 @@
         if (c.faltando > 0) L.push('⚠ A IA detalhou só ' + c.usados.length + ' de ' + (c.usados.length + c.faltando) + ' meses do período: a renda usa os meses lidos. Confira o extrato.');
         (c.divergentes || []).forEach(function (d) {
             L.push('⚠ ' + labelMes(d.mes) + ': a soma das entradas lidas (' + reaisCurto(d.soma) + ') não bate com o total do extrato (' + reaisCurto(d.total) + '). Confira.');
+        });
+        (c.margens || []).forEach(function (g) {
+            var pg = g.total > 0 ? Math.round(g.valor / g.total * 100) : 0;
+            L.push((pg > 10 ? '⚠ ' : '') + labelMes(g.mes) + ': margem de erro de leitura de ' + reaisCurto(g.valor) + ' (' + pg + '% do extrato). ' +
+                (g.tipo === 'falta' ? 'Valeu o total do extrato; a diferença entrou como renda aleatória (com o desconto de ganho variável).' : 'Valeu o total do extrato; o excesso lido foi descartado.'));
         });
         if (c.excluidasTotal > 0 && c.pctExcluido > 0) {
             var pct = Math.round(c.pctExcluido * 100);
@@ -1135,29 +1618,85 @@
     var SINAIS_COMPROMISSO = [
         { k: 'fatura de cartão', re: /fatura/g },
         { k: 'parcela', re: /parcel|presta[cç][aã]o/g },
-        { k: 'financiamento', re: /financ/g },
+        { k: 'financiamento', re: /financiamento/g },
         { k: 'empréstimo', re: /empr[eé]stimo|consignado/g },
         { k: 'consórcio', re: /cons[oó]rcio/g },
         { k: 'aluguel', re: /alugu[eé]l|imobili[aá]ri/g },
         { k: 'boleto', re: /boleto/g },
         { k: 'mensalidade', re: /mensalidade|faculdade|col[eé]gio/g },
-        { k: 'seguro/plano', re: /seguro|plano de sa[uú]de|unimed|\bamil\b/g },
+        { k: 'seguro/plano', re: /\bseguro\b|plano de sa[uú]de|unimed|\bamil\b/g },
         { k: 'carnê/crediário', re: /carn[eê]|credi[aá]rio/g }
     ];
     // Frases fixas dos extratos (propaganda, tabela de tarifas, rodape) que repetem as palavras acima sem ser compromisso
     var SINAIS_PROPAGANDA = /parcelamento em at[eé] \d+x|valor da mensalidade|mensalidade dos pacotes|mais seguro online|[íi]ndices econ[oô]micos ?\/ ?financeiros/g;
+    // Nome de banco/instituicao que contem as palavras acima (PagSeguro, CredSeguro, "Nu Financeira ... financiamento e investimento", "servicos financeiros") nao e compromisso
+    var SINAIS_INSTITUICAO = /pag ?seguro|cred ?seguro|nu financeira|financeira s\.?a|sociedade de cr[eé]dito[^\n]{0,60}|servi[cç]os? financeiros?|solu[cç][oõ]es financeiras?/g;
     var SINAIS_MINIMO = 3;   // ocorrencias no texto para a IA ter que justificar "nenhum compromisso"
 
     function detectarSinaisCompromisso(texto) {
         var t = String(texto || '').toLowerCase();
         if (!t) return null;
-        t = t.replace(SINAIS_PROPAGANDA, ' ');
+        t = t.replace(SINAIS_PROPAGANDA, ' ').replace(SINAIS_INSTITUICAO, ' ');
         var termos = [], total = 0;
         SINAIS_COMPROMISSO.forEach(function (s) {
             var m = t.match(s.re);
             if (m && m.length) { termos.push(s.k + ' (' + m.length + ')'); total += m.length; }
         });
         return total ? { total: total, termos: termos } : null;
+    }
+
+    // Pagamentos que se repetem em 2+ meses para o mesmo favorecido (boleto, fatura, parcela, financiamento, seguro, aluguel...), lidos do TEXTO pelo codigo.
+    // Serve quando a IA nao lista compromisso nenhum: o sistema nao reprova por "palavra no extrato", ele mostra o que achou. Devolve [{ desc, tipo, valor, meses }] (maior valor primeiro).
+    var RECOR_TERMO = /boleto|fatura|parcel|presta[cç][aã]o|financiamento|empr[eé]stimo|consignado|cons[oó]rcio|alugu[eé]l|mensalidade|\bseguro\b|plano de sa[uú]de|carn[eê]|credi[aá]rio/;
+    var RECOR_IGNORA = /receb|estorn|devol|reembols|cashback|rendimento|cr[eé]dito em conta/;
+    var RECOR_VALOR = /(\d{1,3}(?:\.\d{3})*,\d{2})\s*$/;
+    // extrato com coluna de saldo: a linha termina em "valor saldo" (o valor e o primeiro dos dois)
+    var RECOR_VALOR_SALDO = /(\d{1,3}(?:\.\d{3})*,\d{2})\s+(?:R\$\s*)?-?\d{1,3}(?:\.\d{3})*,\d{2}\s*$/;
+    var RECOR_MESES = { JAN: 1, FEV: 2, MAR: 3, ABR: 4, MAI: 5, JUN: 6, JUL: 7, AGO: 8, SET: 9, OUT: 10, NOV: 11, DEZ: 12 };
+    var RECOR_VAZIAS = { DE: 1, DA: 1, DO: 1, DAS: 1, DOS: 1, E: 1, EM: 1, PAGAMENTO: 1, PAGTO: 1, PAG: 1, EFETUADO: 1, EFETUADA: 1, BOLETO: 1, FATURA: 1, PARCELA: 1, PIX: 1, TRANSFERENCIA: 1, ENVIADA: 1, ENVIADO: 1, COM: 1, PARA: 1, CARTAO: 1, DEBITO: 1, LTDA: 1, SA: 1, ME: 1, EPP: 1 };
+    function dataDaLinha(ln) {
+        var m = /^\s*(\d{1,2}) ([A-Za-z]{3}) (\d{4})\b/.exec(ln);
+        if (m && RECOR_MESES[m[2].toUpperCase()]) return m[3] + '-' + (RECOR_MESES[m[2].toUpperCase()] < 10 ? '0' : '') + RECOR_MESES[m[2].toUpperCase()];
+        m = /^\s*(\d{2})[\/-](\d{2})[\/-](\d{4})\s*$/.exec(ln) || /^\s*(\d{2})\/(\d{2})\/(\d{4})\b/.exec(ln);
+        if (m && +m[2] >= 1 && +m[2] <= 12) return m[3] + '-' + m[2];
+        return null;
+    }
+    function detectarRecorrencias(texto) {
+        var linhas = String(texto || '').replace(SINAIS_PROPAGANDA, ' ').split('\n'), mes = null, grupos = {};
+        for (var i = 0; i < linhas.length; i++) {
+            var ln = linhas[i], dm = dataDaLinha(ln);
+            if (dm) mes = dm;
+            var baixo = ln.toLowerCase().replace(SINAIS_INSTITUICAO, ' ');
+            if (!mes || !RECOR_TERMO.test(baixo) || RECOR_IGNORA.test(baixo)) continue;
+            var corpo = ln.replace(/\s+/g, ' ').trim(), mv = RECOR_VALOR_SALDO.exec(corpo) || RECOR_VALOR.exec(corpo);
+            if (!mv) {   // o valor pode vir na linha de baixo (extratos que quebram a linha)
+                for (var j = i + 1; j <= i + 2 && j < linhas.length && !mv; j++) {
+                    var nx = linhas[j].replace(/\s+/g, ' ').trim();
+                    if (dataDaLinha(nx) || RECOR_TERMO.test(nx.toLowerCase())) break;
+                    mv = RECOR_VALOR.exec(nx);
+                    if (!mv && nx) corpo += ' ' + nx;
+                }
+                if (!mv) continue;
+            }
+            var valor = parseFloat(mv[1].replace(/\./g, '').replace(',', '.'));
+            if (!(valor > 0)) continue;
+            var nome = corpo.replace(RECOR_VALOR_SALDO, ' ').replace(RECOR_VALOR, ' ').replace(/[+\-−]\s*$/, '');
+            var toks = nome.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').split(/\s+/).filter(function (t) { return t.length >= 2 && /[A-Z]/.test(t) && !RECOR_VAZIAS[t]; });
+            if (!toks.length) continue;
+            var chave = toks.slice(0, 2).join(' ');
+            var g = grupos[chave] || (grupos[chave] = { chave: chave, meses: {}, valores: [], desc: '' });
+            g.meses[mes] = true; g.valores.push(valor);
+            if (!g.desc) g.desc = toks.slice(0, 4).join(' ').toLowerCase().replace(/(^| )([a-z])/g, function (x, a1, a2) { return a1 + a2.toUpperCase(); });
+        }
+        var out = [];
+        Object.keys(grupos).forEach(function (k) {
+            var g = grupos[k], nm = Object.keys(g.meses).length;
+            if (nm < 2) return;
+            var v = g.valores.slice().sort(function (a, b) { return a - b; }), med = v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2;
+            out.push({ desc: 'Pago todo mês: ' + g.desc, tipo: 'recorrente', valor: arred2(med), meses: nm });
+        });
+        out.sort(function (a, b) { return b.valor - a.valor; });
+        return out.slice(0, 8);
     }
 
     // Lista de compromissos da IA -> itens limpos e soma. Formato antigo: so o total em compromissosMensais.
@@ -1181,6 +1720,34 @@
         return isFinite(comp) && comp >= 0 ? { fonte: 'total', itens: [], total: arred2(comp) } : null;
     }
 
+    // Entradas x saidas lidas pelo CODIGO (extrato Nubank/universal, com prova): entradas = fixa + variavel + app (sem resgate, estorno,
+    // autotransferencia, emprestimo) e saidas = gasto real (sem aplicacao e sem Pix para a propria conta). Sem prova em todos os meses = null.
+    function fluxoDoCodigo(calc) {
+        var ms = calc && calc.meses ? calc.meses.slice(-MAX_MESES) : [];
+        if (!ms.length || ms.some(function (m) { return typeof m.saidas !== 'number'; })) return null;
+        var ent = 0, sai = 0;
+        ms.forEach(function (m) { ent += m.fixa + m.variavel + m.app; sai += m.saidas; });
+        if (!(ent > 0)) return null;
+        return { entradas: arred2(ent), saidas: arred2(sai), pct: Math.round(sai / ent * 100), meses: ms.length, fonte: 'codigo' };
+    }
+    // Saldo de fim de mes lido pelo codigo (so quando TODOS os meses tem): mesmo formato de lerSaldos
+    function saldosDoCodigo(calc) {
+        var ms = calc && calc.meses ? calc.meses.slice(-MAX_MESES) : [];
+        if (!ms.length || ms.some(function (m) { return typeof m.saldoFinal !== 'number'; })) return null;
+        var neg = ms.filter(function (m) { return m.saldoFinal < 0 || (typeof m.menorSaldo === 'number' && m.menorSaldo < 0); }).length;
+        return { n: ms.length, negativos: neg, media: arred2(ms.reduce(function (a, m) { return a + m.saldoFinal; }, 0) / ms.length), fonte: 'codigo' };
+    }
+    // Fluxo para a nota: o do codigo quando existe; senao o da IA, mas so se as ENTRADAS dela ficarem a ate 20% das entradas ja conferidas
+    // (a IA le saidas sem total impresso para conferir: se ela erra as entradas, as saidas dela nao merecem confianca).
+    function fluxoConfiavel(raw, calc) {
+        var cod = fluxoDoCodigo(calc);
+        if (cod) return cod;
+        var ia = calcularFluxo(raw), ms = calc && calc.meses ? calc.meses.slice(-MAX_MESES) : [];
+        if (!ia || !ms.length) return null;
+        var ref = 0; ms.forEach(function (m) { ref += m.fixa + m.variavel + m.app; });
+        if (ref > 0 && Math.abs(ia.entradas - ref) > ref * TOL_LEITURA) return { descartado: true, entradasIA: ia.entradas, entradasRef: arred2(ref) };
+        return null;
+    }
     // Entradas x saidas por mes (informativo; nao entra na nota): quanto do que entrou foi embora
     function calcularFluxo(raw) {
         var lista = Array.isArray((raw || {}).fluxoMeses) ? raw.fluxoMeses : [];
@@ -1196,11 +1763,16 @@
     // Lista vazia com varios sinais no extrato = duvida: o item nao pontua e a tela avisa.
     function calcularComprometimento(d) {
         var l = listarCompromissos(d.rawJson);
+        if ((!l || l.total === 0) && d.compromissosCodigo && d.compromissosCodigo.length) {   // a IA nao listou, mas o codigo achou pagamentos que se repetem no extrato
+            l = { fonte: 'codigo', itens: d.compromissosCodigo.map(function (i) { return { desc: i.desc, tipo: i.tipo, valor: i.valor, meses: i.meses }; }), total: arred2(d.compromissosCodigo.reduce(function (a, i) { return a + i.valor; }, 0)) };
+        }
         d.compromissos = l ? l.total : null;
         d.compromissosLista = l ? l.itens : [];
         d.compromissoDuvida = !!(l && l.total === 0 && d.sinaisCompromisso && d.sinaisCompromisso.total >= SINAIS_MINIMO);
         d.comprometimentoPct = (!d.compromissoDuvida && d.compromissos !== null && d.rendaEstimada > 0) ? Math.round(d.compromissos / d.rendaEstimada * 100) : null;
-        d.fluxo = calcularFluxo(d.rawJson);
+        var fc = d.fluxoCodigo;   // do codigo (provado) ou {descartado:true} quando a IA errou as entradas
+        d.fluxo = fc ? (fc.descartado ? null : fc) : calcularFluxo(d.rawJson);
+        d.fluxoDescartado = !!(fc && fc.descartado);
         return d;
     }
 
@@ -1273,7 +1845,7 @@
     function avaliarFaixa(d) {
         var raw = d.rawJson || {}, calc = d.rendaCalc, scan = d.sinaisRisco || null;
         var sin = raw.sinais && typeof raw.sinais === 'object' ? raw.sinais : {};
-        var saldos = lerSaldos(raw), fl = d.fluxo, pct = d.comprometimentoPct;
+        var saldos = d.saldosCodigo || lerSaldos(raw), fl = d.fluxo, pct = d.comprometimentoPct;
         var graves = [], leves = [], obs = [];
         function grupo(sev, nome, texto) {
             if (sev === 'grave') graves.push({ grupo: nome, texto: texto });
@@ -1394,6 +1966,8 @@
         var calc = calcPre || calcularRenda(raw);
         separarCasasJogo(d);
         d.rendaCalc = calc || null;
+        d.fluxoCodigo = fluxoConfiavel(raw, calc);   // saidas e saldos provados pelo codigo (ou fluxo da IA descartado); fica salvo com a analise
+        d.saldosCodigo = saldosDoCodigo(calc);
         if (calc && calc.fonte === 'codigo') { d.rendaEstimada = calc.renda; d.rendaDetalhe = descreverRenda(calc); }
         else d.rendaDetalhe = '';
 
@@ -1432,7 +2006,7 @@
     function motivosConfiancaBaixa(d) {
         var L = [], c = d.rendaCalc;
         if (c && c.fonte === 'codigo') {
-            if ((c.divergentes || []).length) L.push({ t: 'Os extratos não batem', x: c.divergentes.map(function (v) { return labelMes(v.mes) + ': lido ' + reaisCurto(v.soma) + ', o extrato diz ' + reaisCurto(v.total) + '.'; }).join(' ') + ' Sem número confiável não dá para saber a renda.' });
+            if ((c.divergentes || []).length) L.push({ t: 'Não consegui ler o extrato', x: c.divergentes.map(function (v) { return labelMes(v.mes) + ': lido ' + reaisCurto(v.soma) + ', o extrato diz ' + reaisCurto(v.total) + '.'; }).join(' ') + ' A leitura errou mais de ' + Math.round(TOL_LEITURA * 100) + '% do total impresso: sem número confiável não dá para saber a renda. Peça o PDF baixado direto do app do banco.' });
             var inc = [];
             if (c.faltando > 0) inc.push('a IA detalhou só ' + c.usados.length + ' de ' + (c.usados.length + c.faltando) + ' meses do período');
             if (c.agrupado) inc.push('a leitura juntou o período inteiro num item só, sem separar por mês');
@@ -1797,8 +2371,11 @@
 
     function gerarWpp(produto, en, np, vp, d) {
         if (!d.aprov) return gerarWppReprovado(d.nomeCliente);
+        // sem produto informado (ou o padrao "Aparelho"), a frase fica genérica
+        var nomeAp = String(produto || '').trim();
+        if (!nomeAp || nomeAp === 'Aparelho') nomeAp = 'aparelho';
         if (d.downgrade) return 'Ol\u00e1 '+d.nomeCliente+'! Boas not\u00edcias, liberamos cr\u00e9dito pra voc\u00ea! \u2705\n\nO '+produto+' ultrapassou sua margem ideal, MAS temos um limite mais acess\u00edvel aprovado AGORA! \ud83d\ude80\nTemos \u00f3timas op\u00e7\u00f5es no estoque que cabem no seu bolso!\nMe fala qual modelo te interessa \ud83d\udc47';
-        if (d.entradaAlta) return 'Ol\u00e1 '+d.nomeCliente+', tudo bem? \ud83d\ude0a\ud83d\udcf2\nSeu cadastro foi avaliado na Workcell! \u2705\n\nPara liberar o aparelho e manter a parcela suave, o sistema calculou uma entrada de '+R$(en)+'.\nSua parcela fica em apenas '+np+'x de '+R$(vp)+' MENSAL no boleto! \ud83d\udcc9\n\nVoc\u00ea tem esse valor dispon\u00edvel (FGTS, acerto, poupan\u00e7a)? \ud83d\udc47';
+        if (d.entradaAlta) return 'Ol\u00e1 '+d.nomeCliente+', tudo bem? \ud83d\ude0a\ud83d\udcf2\nSeu cadastro foi avaliado na Workcell! \u2705\n\nPara liberar o '+nomeAp+' e manter a parcela suave, o sistema calculou uma entrada de '+R$(en)+'.\nSua parcela fica em apenas '+np+'x de '+R$(vp)+' MENSAL no boleto! \ud83d\udcc9\n\nVoc\u00ea tem esse valor dispon\u00edvel (FGTS, acerto, poupan\u00e7a)? \ud83d\udc47';
         return 'Ol\u00e1 '+d.nomeCliente+', tudo bem? \ud83d\ude0a\ud83d\udcf2\nSeu cadastro foi APROVADO aqui na Workcell! \u2705\n\n\ud83d\udcf1 '+produto+'\n\ud83d\udcb0 Entrada: '+R$(en)+'\n\ud83d\udcb3 + '+np+'x de '+R$(vp)+' MENSAL no boleto\n\n\u2714 Aparelho revisado e com garantia\nMe confirma aqui pra gente seguir com a libera\u00e7\u00e3o \ud83d\udc47';
     }
 
@@ -1822,6 +2399,9 @@
                 rendaDetalhe: d.rendaDetalhe || null,
                 calculoFinal: d.calculo || null,
                 sinaisCompromisso: d.sinaisCompromisso ? d.sinaisCompromisso.total : null,
+                compromissosCodigo: d.compromissosCodigo && d.compromissosCodigo.length ? JSON.stringify(d.compromissosCodigo) : null,
+                fluxoCodigo: d.fluxoCodigo ? JSON.stringify(d.fluxoCodigo) : null,
+                saldosCodigo: d.saldosCodigo ? JSON.stringify(d.saldosCodigo) : null,
                 casasJogo: (d.casasJogo || []).filter(Boolean).join(','),
                 entrada: d.entrada || null,
                 parcelas: d.parcelas || null,
@@ -3423,6 +4003,7 @@
         d._produto = '';
         d.telefone = job.tel || '';
         d.sinaisCompromisso = detectarSinaisCompromisso(textoParaApostas);   // confere a lista de compromissos da IA com o texto do extrato
+        d.compromissosCodigo = detectarRecorrencias(textoParaApostas);       // pagamentos que se repetem no extrato (usados so se a IA nao listou nenhum)
         d.sinaisRisco = detectarSinaisRisco(textoParaApostas);               // confere atraso/cheque especial/rotativo que a IA disse ter visto
 
         finalizarPontuacao(d, rendaPre);   // renda (media/mediana/abatimentos) + faixa por sinais e pilares, no codigo
@@ -3459,14 +4040,14 @@
             var m = montarTextoDigital([arq], LIMITE_RENDA_ARQUIVO);
             if (!m.texto) return Promise.resolve(undefined);   // PDF sem texto (nada a ler)
             return lerRendaPorTrechos(m.texto, function (prompt, rotulo) { return aiCallTexto(prompt, chaveIA(job, 'renda-' + idx + '-' + rotulo)); }, {
-                limitar: limitar, fatal: function (e) { return e === CANCELADO; }, sobra: function () { return 150000 - (Date.now() - inicio); }
+                limitar: limitar, fatal: function (e) { return e === CANCELADO; }, sobra: function () { return 150000 - (Date.now() - inicio); }, universal: true
             });
         }));
         // um PDF que a IA nao conseguiu ler faria a renda sair de menos meses sem ninguem saber: nesse caso a etapa 2 calcula tudo
         if (leituras.some(function (l) { return l === null; })) return null;
         var uniao = unirRendaArquivos(leituras.filter(Boolean));
         var c = uniao.rendaMeses.length ? calcularRenda(uniao) : null;
-        return c && c.renda > 0 ? c : null;
+        return rendaFechada(c) ? c : null;
     }
 
     function concluirJob(job, d, texto) {
@@ -3527,6 +4108,9 @@
         if (it.rendaDetalhe && parseFloat(it.rendaEstimada) > 0) { d.rendaEstimada = parseFloat(it.rendaEstimada); d.rendaDetalhe = String(it.rendaDetalhe); }
         if (d.rawJson) {
             if (parseInt(it.sinaisCompromisso) > 0) d.sinaisCompromisso = { total: parseInt(it.sinaisCompromisso), termos: [] };
+            if (it.fluxoCodigo) { try { var fx0 = JSON.parse(it.fluxoCodigo); if (fx0 && typeof fx0 === 'object') d.fluxoCodigo = fx0; } catch (e) {} }
+            if (it.saldosCodigo) { try { var sd0 = JSON.parse(it.saldosCodigo); if (sd0 && typeof sd0 === 'object') d.saldosCodigo = sd0; } catch (e) {} }
+            if (it.compromissosCodigo) { try { var cc0 = JSON.parse(it.compromissosCodigo); if (Array.isArray(cc0)) d.compromissosCodigo = cc0.filter(function (i) { return i && i.valor > 0; }); } catch (e) {} }
             calcularComprometimento(d);
         }
         if (it.calculoFinal) d.calculo = String(it.calculoFinal);
@@ -3847,7 +4431,8 @@
             id: job.uid, nome: job.nome || '', usuario: job.usuario || usuarioAtual(), tel: job.tel || '', cpf: cpf || '',
             cpf_s: (job.tempos && job.tempos.cpf_s) || 0,
             prep_s: Math.max(0, Math.round((Date.now() - (job.ts || Date.now())) / 1000)),   // do toque em Analisar até aqui: leitura dos arquivos no celular
-            docsId: job.docsId.map(docParaServidor), docsRend: job.docsRend.map(docParaServidor)
+            docsId: job.docsId.map(docParaServidor), docsRend: job.docsRend.map(docParaServidor),
+            universal: true   // pede ao servidor o leitor universal de extratos (qualquer banco, provado pela cadeia de saldos)
         });
         var envioMB = Math.round(corpo.length / 100000) / 10;   // tamanho do envio, em MB (o tempo de envio depende dele)
         corpo = corpo.slice(0, -1) + ',"mb":' + envioMB + '}';
@@ -4367,6 +4952,13 @@
             '<div class="cs-hero-info"><div class="cs-hero-nome">' + esc(d.nomeCompleto || nomeDoJob(job)) + '</div>' +
             (!reprov && d.titConferir ? '<span class="cs-pill warn"><i class="bi bi-exclamation-triangle-fill"></i>Conferir titularidade antes de vender</span>' : '<span class="cs-pill ' + c + '"><i class="bi ' + (reprov ? 'bi-x-lg' : 'bi-check-lg') + '"></i>' + (reprov ? (d.confBaixa ? 'Reprovado — confiança baixa' : 'Reprovado — não vender') : 'Aprovado — pode vender') + '</span>') + '</div></div>';
 
+        // Parcela confortavel (estimativa sem aparelho): logo abaixo da nota, e a primeira coisa que o vendedor precisa
+        if (!reprov && d.rendaEstimada > 0) {
+            h += '<div class="cs-card cs-conf"><div><span class="cs-lab">Parcela confortável (estimativa)</span>' +
+                '<strong>até ' + R$(d.rendaEstimada * tetoPct(d.nota)).replace(',00', '') + ' / mês</strong></div>' +
+                '<span class="cs-lab r">' + Math.round(tetoPct(d.nota) * 100) + '% da<br>renda</span></div>';
+        }
+
         // confiança baixa: o motivo vem logo abaixo da decisão, antes de renda e indicadores
         if (reprov && d.confBaixa && d.confMotivos && d.confMotivos.length) h += '<div class="cs-card cs-motivos cs-cb"><span class="cs-lab">Por que foi reprovado</span>' + d.confMotivos.map(function (m, i) {
             return '<div class="cs-cb-m"><span class="cs-cb-n">' + (i + 1) + '</span><div><b>' + esc(m.t) + '</b><span>' + esc(m.x) + '</span></div></div>';
@@ -4417,14 +5009,10 @@
         if (d.fluxo) {
             var fp = d.fluxo.pct;
             h += '<div class="cs-card cs-ind cs-fluxo"><span class="cs-lab">Saídas ÷ entradas</span><b class="' + (fp >= 98 ? 'bad' : fp >= 90 ? 'warn' : 'ok') + '">' + fp + '%</b>' +
-                '<span class="cs-det">De cada R$ 100 que entraram, saíram R$ ' + fp + ' (entradas ' + R$(d.fluxo.entradas) + ' · saídas ' + R$(d.fluxo.saidas) + ' em ' + d.fluxo.meses + (d.fluxo.meses === 1 ? ' mês' : ' meses') + '). Valores aproximados; não muda a nota.</span></div>';
-        }
-
-        // Parcela confortavel (estimativa sem aparelho)
-        if (!reprov && d.rendaEstimada > 0) {
-            h += '<div class="cs-card cs-conf"><div><span class="cs-lab">Parcela confortável (estimativa)</span>' +
-                '<strong>até ' + R$(d.rendaEstimada * tetoPct(d.nota)).replace(',00', '') + ' / mês</strong></div>' +
-                '<span class="cs-lab r">' + Math.round(tetoPct(d.nota) * 100) + '% da<br>renda</span></div>';
+                '<span class="cs-det">De cada R$ 100 que entraram, saíram R$ ' + fp + ' (entradas ' + R$(d.fluxo.entradas) + ' · saídas ' + R$(d.fluxo.saidas) + ' em ' + d.fluxo.meses + (d.fluxo.meses === 1 ? ' mês' : ' meses') + '). ' + (d.fluxo.fonte === 'codigo' ? 'Lido e conferido pelo sistema, centavo a centavo.' : 'Valores aproximados.') + '</span></div>';
+        } else if (d.fluxoDescartado) {
+            h += '<div class="cs-card cs-ind cs-fluxo"><span class="cs-lab">Saídas ÷ entradas</span><b class="warn">—</b>' +
+                '<span class="cs-det">Não deu para conferir as saídas deste extrato (a leitura das entradas não bateu). Este item ficou fora da análise.</span></div>';
         }
 
         h += cartaoTelefone(job);
