@@ -1,7 +1,7 @@
 // sw.js — Central Workcell
 // Arquivo deve ficar na raiz do repositório (mesma pasta do index.html)
 
-const CACHE = 'ctw-259'; // Por aparelho: a engrenagem so edita o cadastro do sistema para perfil dev; os demais ajustam o valor so naquele calculo
+const CACHE = 'ctw-260'; // CreditoScan: perfil gestor, pedidos de produto e fila do gestor
 
 // Arquivos do próprio app: baixados na instalação para o app abrir offline.
 const ARQUIVOS_DO_APP = [
