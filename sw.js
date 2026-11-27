@@ -1,7 +1,7 @@
 // sw.js — Central Workcell
 // Arquivo deve ficar na raiz do repositório (mesma pasta do index.html)
 
-const CACHE = 'ctw-263'; // CreditoScan: nova tela de analise (abas, documentos juntos, botao fixo) e Fila como tela inicial do gestor
+const CACHE = 'ctw-264'; // CreditoScan: botao Analisar credito fixo na tela; gestor entra na Fila pelo card do menu
 
 // Arquivos do próprio app: baixados na instalação para o app abrir offline.
 const ARQUIVOS_DO_APP = [
