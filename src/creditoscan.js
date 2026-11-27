@@ -3649,8 +3649,15 @@
     function iniciarAnalise() {
         if (!_docsRend.length || _enviando > 0) return;
         var campoTel = el('cs_tel');
-        if (restrito()) ppFecharTexto('f');
-        var job = criarJob(_docsId, _docsRend, normalizarTelefone(campoTel ? campoTel.value : ''), { usuario: usuarioAtual(), produtos: restrito() ? _ppSel.f.slice() : [] });
+        ppFecharTexto('f');   // o que foi digitado e nao adicionado entra junto
+        if (!_ppSel.f.length) {   // produto e obrigatorio: e ele que decide se responde sozinho ou vai para o gestor
+            var cp = el('cs_prod_card'), ip = el('cs_pp_in_f');
+            avisar('Informe o produto que o cliente quer.');
+            if (cp && cp.scrollIntoView) cp.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            if (ip) ip.focus();
+            return;
+        }
+        var job = criarJob(_docsId, _docsRend, normalizarTelefone(campoTel ? campoTel.value : ''), { usuario: usuarioAtual(), produtos: _ppSel.f.slice() });
         pedCriarNoEnvio(job);   // produtos pedidos no envio: o pedido nasce agora e fecha quando a analise terminar
         _ppSel.f = []; ppTop('f');
         try { if (window.Notification && Notification.permission === 'default') Notification.requestPermission(); } catch (e) {}   // para o aviso "Analise pronta" com o app em segundo plano
@@ -5431,7 +5438,8 @@
         '.cs-btn-ghost{background:transparent;border:1px solid rgba(var(--primary-color-rgb),.6);color:var(--primary-color);font-weight:600}',
         '.cs-btn-sm{min-height:44px;width:auto;font-size:13px}',
         '.cs-hint{font-size:12px;color:var(--text-secondary);text-align:center;line-height:1.5;margin:0}',
-        '.cs-novaform{min-height:56px;border-radius:16px;border:1px dashed rgba(var(--primary-color-rgb),.5);background:transparent;color:var(--primary-color);font:600 14px "Poppins",sans-serif;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;width:100%}',
+        '.cs-acoes{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}',
+        '.cs-acao{min-height:52px;font-size:13px;white-space:nowrap}',
         '.cs-link{background:none;border:none;font:500 13px "Poppins",sans-serif;min-height:44px;padding:0 6px;cursor:pointer;color:var(--text-secondary)}',
         '.cs-link.bad{color:var(--cs-bad)}',
         /* ── listas: em andamento / prontas ── */
@@ -5682,10 +5690,10 @@
             '<button type="button" class="cs-ibtn" id="cs_cfg_open" aria-label="Configurações"><i class="bi bi-gear-fill"></i></button>'+
         '</div>'+
         '<div class="cs-body">'+
-            '<button type="button" class="cs-novaform cs-h" id="cs_btn_novaform"><i class="bi bi-plus-lg"></i> Nova análise</button>'+
-            '<button type="button" class="cs-btn cs-btn-ghost cs-h" id="cs_btn_fila"><i class="bi bi-hourglass-split"></i> Fila do gestor <span class="cs-fila-n cs-h" id="cs_fila_n"></span></button>'+
+            '<button type="button" class="cs-btn cs-btn-pri cs-btn-big cs-h" id="cs_btn_novaform"><i class="bi bi-plus-lg"></i> Nova análise</button>'+
+            '<div class="cs-acoes"><button type="button" class="cs-btn cs-btn-ghost cs-acao cs-h" id="cs_btn_fila"><i class="bi bi-hourglass-split"></i> Fila do gestor <span class="cs-fila-n cs-h" id="cs_fila_n"></span></button></div>'+
             '<div id="cs_form" style="display:flex;flex-direction:column;gap:14px">'+
-                '<div class="cs-intro"><h2>Nova análise</h2><p id="cs_intro_p">Envie os documentos do cliente. Produto e valor ficam para depois.</p></div>'+
+                '<div class="cs-intro"><h2>Nova análise</h2><p id="cs_intro_p">Envie os documentos do cliente e informe o produto que ele quer.</p></div>'+
                 '<div class="cs-card">'+
                     '<div class="cs-up-h"><i class="bi bi-person-vcard"></i><b>RG ou CNH</b><span class="cs-cnt" id="cs_counter_id"></span><small>Opcional</small></div>'+
                     '<div class="cs-files" id="cs_docs_id"></div>'+
@@ -5702,8 +5710,8 @@
                     '<input id="cs_tel" class="cs-in" type="tel" inputmode="tel" autocomplete="off" maxlength="24" placeholder="(62) 99999-9999" aria-label="WhatsApp do cliente">'+
                     '<div class="cs-hint" id="cs_tel_hint" style="margin-top:-2px">Com o número, os botões de WhatsApp abrem direto na conversa do cliente.</div>'+
                 '</div>'+
-                '<div class="cs-card cs-h" id="cs_prod_card">'+
-                    '<div class="cs-up-h"><i class="bi bi-phone"></i><b>Produtos que o cliente quer</b><small>Opcional</small></div>'+
+                '<div class="cs-card" id="cs_prod_card">'+
+                    '<div class="cs-up-h"><i class="bi bi-phone"></i><b>Produto que o cliente quer</b><small class="req">Obrigatório</small></div>'+
                     ppHtml('f')+
                     '<div class="cs-hint" style="margin-top:-2px">Produto da lista responde sozinho quando a análise terminar. Os outros vão para o gestor.</div>'+
                 '</div>'+
@@ -6576,8 +6584,10 @@
             if (veTudo()) {
                 var novos = pedAguardando(p).filter(function (x) { return !ag[x.pid]; });
                 if (novos.length) pedBanner(key, 'gestor', 'Pedido novo para o gestor', (p.nome || 'Cliente') + ' · ' + novos.map(function (x) { return x.nome; }).join(', '), 'Responder');
-            } else if (ehDono(p.vendedor) && p.vendedor) {
-                var respondidos = pedProdutos(p).filter(function (x) { return ag[x.pid] && (x.estado === 'aprovado' || x.estado === 'recusado'); });
+            }
+            if (ehDono(p.vendedor) && p.vendedor) {   // perfil e vendedor E gestor/dev: avisa quando OUTRO gestor responde o pedido dele (a propria resposta nao precisa de aviso)
+                var eu = usuarioAtual();
+                var respondidos = pedProdutos(p).filter(function (x) { return ag[x.pid] && (x.estado === 'aprovado' || x.estado === 'recusado') && !(veTudo() && x.gestor && x.gestor === eu); });
                 if (respondidos.length) pedBanner(key, 'vend', 'O gestor respondeu', (p.nome || 'Cliente') + ' · ' + respondidos.map(function (x) { return x.nome; }).join(', '), 'Ver resposta');
             }
         });
@@ -6653,7 +6663,7 @@
     // ── Seletor de produtos (tela "Nova analise" e tela do pedido) ──
     function ppHtml(ctx) {
         return '<div class="cs-pp" data-ctx="' + ctx + '"><div class="cs-pp-top" id="cs_pp_top_' + ctx + '"></div>' +
-            '<div class="cs-pp-row"><input id="cs_pp_in_' + ctx + '" class="cs-in" type="text" autocomplete="off" maxlength="80" placeholder="Outro produto (ex.: Redmi Note 14 Pro 256GB)" aria-label="Produto">' +
+            '<div class="cs-pp-row"><input id="cs_pp_in_' + ctx + '" class="cs-in" type="text" autocomplete="off" maxlength="80" placeholder="Outro produto, fora da lista (ex.: Redmi Note 14 Pro)" aria-label="Produto">' +
             '<button type="button" class="cs-btn cs-btn-sec cs-btn-sm" data-act="pp-add" data-ctx="' + ctx + '"><i class="bi bi-plus-lg"></i></button></div>' +
             '<div class="cs-pp-sug" id="cs_pp_sug_' + ctx + '"></div></div>';
     }
@@ -6670,7 +6680,7 @@
         }
         var lib = (_aps || []).filter(function (a) { return a.ativo && !jaTem[pedNorm(a.nome)]; });
         if (lib.length) {
-            h += '<div class="cs-pp-lab">Aparelhos da lista</div><div class="cs-pp-chips">' + lib.map(function (a) {
+            h += '<div class="cs-pp-lab">iPhones seminovos · escolha um ou mais</div><div class="cs-pp-chips">' + lib.map(function (a) {
                 return '<button type="button" class="cs-pp-chip" data-act="pp-chip" data-ctx="' + ctx + '" data-id="' + esc(a.id) + '">+ ' + esc(a.nome) + '</button>';
             }).join('') + '</div>';
         }
@@ -6732,15 +6742,12 @@
         if (inp && inp.value.trim()) { if (ppAdicionar(ctx, inp.value)) inp.value = ''; }
     }
 
-    // "Nova analise": o card dos produtos so aparece para quem nao e gestor/dev
+    // "Nova analise": o card do produto aparece para todos (todo perfil vende); gestor/dev so ganham a Fila a mais
     function pedFormRender() {
         pedFormToggle();
-        if (restrito()) { ppTop('f'); apCarregar(false).then(function () { if (restrito()) ppTop('f'); }); }
+        ppTop('f'); apCarregar(false).then(function () { ppTop('f'); });
     }
     function pedFormToggle() {
-        var card = el('cs_prod_card'); if (!card) return;
-        card.classList.toggle('cs-h', !restrito());
-        var ip = el('cs_intro_p'); if (ip) ip.textContent = restrito() ? 'Envie os documentos do cliente. Se já souber o produto, informe abaixo.' : 'Envie os documentos do cliente. Produto e valor ficam para depois.';
         var bf = el('cs_btn_fila');
         if (bf) {
             bf.classList.toggle('cs-h', !veTudo());
@@ -6977,6 +6984,7 @@
             var corN = p.nota >= 60 ? 'ok' : p.nota > NOTA_REPROVA ? 'warn' : 'bad', ce = _pedAba === 'pend' ? pedCorEspera(it.t) : 'ok';
             h += '<button type="button" class="cs-card cs-g-fila ' + ce + '" data-act="fila-abrir" data-key="' + esc(it.key) + '">' +
                 '<span class="cs-g-fila-h"><b>' + esc(p.nome || 'Cliente') + '</b><span class="cs-g-tag ' + corN + '">Nota ' + esc(p.nota != null ? p.nota : '—') + '</span></span>' +
+                (p.vendedor && ehDono(p.vendedor) ? '<span class="cs-g-fila-p"><i class="bi bi-person-fill"></i><b>Pedido seu</b></span>' : '') +
                 prods.map(function (x) {
                     return '<span class="cs-g-fila-p"><i class="bi bi-phone"></i>' + esc(x.nome) + (_pedAba === 'resp' ? ' · ' + (x.estado === 'recusado' ? 'recusado' : 'aprovado') : '') + '</span>';
                 }).join('') +
